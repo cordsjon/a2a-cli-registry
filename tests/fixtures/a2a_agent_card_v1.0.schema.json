@@ -1,0 +1,10 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["protocolVersion", "name", "skills", "capabilities", "securityScheme"],
+  "properties": {
+    "protocolVersion": {"const": "1.0"},
+    "skills": {"type": "array", "items": {"type": "object", "required": ["id"]}},
+    "capabilities": {"type": "object", "required": ["pushNotifications"]}
+  }
+}
