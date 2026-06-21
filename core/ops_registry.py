@@ -50,3 +50,10 @@ def op_by_mcp_tool(name: str) -> Op:
         if o.mcp_tool == name:
             return o
     raise KeyError(name)
+
+
+def op_by_a2a_skill(name: str) -> Op:
+    for o in OPS:
+        if o.a2a_skill == name:
+            return o
+    raise KeyError(name)
