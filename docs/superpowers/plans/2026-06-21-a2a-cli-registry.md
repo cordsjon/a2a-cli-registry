@@ -97,6 +97,238 @@ pyproject.toml
 
 ---
 
+## Phase 0 — OSS launch deliverables (repo trust artifacts)
+
+> **Why first:** these are launch blockers (spec §10.5). They are docs/config, not
+> code, so they have no test cycle — each task's "verify" is a content check. Doing
+> them first means the repo is publishable-shaped from commit one, and the honest-
+> scope framing is locked before any code tempts scope creep. A reviewer who clones
+> mid-build still sees LICENSE + README + SECURITY.
+
+### Task 0a: Legal + security trust files (hard blockers)
+
+**Files:**
+- Create: `LICENSE` (Apache-2.0 full text)
+- Create: `NOTICE`
+- Create: `SECURITY.md`
+
+**Interfaces:** none (repo artifacts).
+
+- [ ] **Step 1: Add the Apache-2.0 LICENSE**
+
+Fetch the canonical text (do not hand-type): `curl -fsSL https://www.apache.org/licenses/LICENSE-2.0.txt -o LICENSE`. Verify the file starts with `Apache License` and `Version 2.0, January 2004` and is ~11.3 KB.
+
+- [ ] **Step 2: Write `NOTICE`**
+
+```
+a2a-cli-registry
+Copyright 2026 Jonas Cords
+
+This product includes software developed as an open-source project.
+Licensed under the Apache License, Version 2.0.
+
+Third-party dependencies (FastAPI, SQLModel, MCP SDK, httpx, portalocker,
+uvicorn) are distributed under their own licenses; see their respective
+distributions.
+```
+
+- [ ] **Step 3: Write `SECURITY.md`**
+
+```markdown
+# Security Policy
+
+a2a-cli-registry exposes a network-reachable MCP/A2A endpoint and processes
+untrusted catalog text. It has a real attack surface; we take reports seriously.
+
+## Reporting a vulnerability
+Email **jonas.cords@gmail.com** with subject `SECURITY: a2a-cli-registry`.
+Please do **not** open a public issue for undisclosed vulnerabilities.
+Expect an acknowledgement within 72 hours.
+
+## Scope / threat model
+The registry is **describe + plan only** — it never executes a managed CLI for a
+network caller. Known surface and mitigations (see the design spec §8):
+- **Untrusted catalog text** (descriptions, intent_tags, inferred capabilities) is
+  returned inert as data on every surface, never as instruction.
+- **Webhook bus**: HMAC-signed payloads; outbound SSRF guard + timeouts.
+- **Auth**: bearer securityScheme gates A2A and MCP; unauth omits launch specs.
+- **Prober isolation**: 10s timeout + SIGKILL + output cap + bulkhead.
+
+## Supported versions
+Pre-1.0 (0.x): only the latest 0.x minor receives security fixes.
+```
+
+- [ ] **Step 4: Verify**
+
+Run: `test -s LICENSE && head -1 LICENSE && test -s NOTICE && test -s SECURITY.md && echo OK`
+Expected: prints `Apache License` then `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add LICENSE NOTICE SECURITY.md
+git commit -m "docs: Apache-2.0 LICENSE, NOTICE, SECURITY.md (OSS launch blockers)
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" -- LICENSE NOTICE SECURITY.md
+```
+
+---
+
+### Task 0b: Adoption + contribution files
+
+**Files:**
+- Create: `README.md`
+- Create: `CONTRIBUTING.md`
+- Create: `CODE_OF_CONDUCT.md`
+- Create: `CHANGELOG.md`
+- Create: `.github/ISSUE_TEMPLATE/bug_report.md`
+- Create: `.github/ISSUE_TEMPLATE/prior_art_check.md`
+
+**Interfaces:** none (repo artifacts).
+
+- [ ] **Step 1: Write `README.md`** (lead with honest scope; include the landscape table)
+
+````markdown
+# a2a-cli-registry
+
+> Point an AI agent at the CLIs already on your machine — discover them,
+> see which are healthy, and get a **suggested chain of tools** to reach a goal.
+> Served over both **MCP** and **A2A**. Describe + plan only (no remote execution).
+
+**Status:** v1 ships a **Python** tool adapter. Language-agnostic *by design*
+(Go/Node/shell adapters are stubs — non-Python tools work today by *declaring*
+their capabilities). Tracks **A2A ≥ `<tag>`** / **MCP rev `<date>`** (see SECURITY
++ design spec). Apache-2.0. **Pre-1.0: surfaces may change.**
+
+## Who this is for
+A developer/team with ~10+ local CLIs who wants an AI coding agent (Claude Code,
+Copilot, any MCP/A2A client) to *find* those tools and *reason about chaining*
+them — instead of re-describing the toolbox every session.
+
+## Isn't this just an MCP registry?
+No — those catalog *remote servers to install*. This catalogs the **local tools you
+already have**, health-tracks them, and type-chains them:
+
+| | local fleet | health-tracked | typed chaining | dual A2A+MCP |
+|---|---|---|---|---|
+| Smithery / mcp.so / Glama / official MCP registry | ✗ remote | ✗ | ✗ | MCP only |
+| LangChain tool registries | n/a in-app | ✗ | ✗ | neither |
+| **a2a-cli-registry** | **✓** | **✓** | **✓** | **✓** |
+
+## Quickstart
+```bash
+pip install a2a-cli-registry            # or: pip install -e .
+a2a-cli-registry populate --source filesystem --path ~/bin
+a2a-cli-registry graph                  # see the computed call-graph
+# then point Claude Code / any MCP client at the MCP endpoint
+```
+
+## Demo
+> _TODO at v0.1: asciinema of `plan-cli-chain file:pdf → text:summary` returning
+> `[pdf2text, summarize]`._ (The marquee feature is visual — show it.)
+
+## Docs
+Design spec: `docs/superpowers/specs/2026-06-21-a2a-cli-registry-design.md`.
+Security: `SECURITY.md`. Contributing (incl. adding a language adapter):
+`CONTRIBUTING.md`.
+````
+
+- [ ] **Step 2: Write `CONTRIBUTING.md`**
+
+````markdown
+# Contributing
+
+PRs welcome. Maintained by Jonas Cords.
+
+## Dev setup
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+## Adding a language adapter (the main contribution path)
+Non-Python languages currently use a stub (declared-capabilities-required). To add
+a real adapter, implement the `LanguageAdapter` protocol (`core/adapters/base.py`):
+`detect(rec)`, `launch_spec(rec)`, `health_cmd(rec)`, `infer_capability(rec)`.
+- Inference is **optional** and experimental — return `None` to require declared
+  capabilities (recommended for a first adapter).
+- Add a regression test mirroring `tests/test_adapters.py`.
+- Declared capabilities ALWAYS win over inferred — do not override declared fields.
+
+## Rules
+- TDD: failing test → minimal impl → pass → commit.
+- No new runtime deps without discussion (open an issue first).
+- `pytest -q` green + coverage floor on `core/` before a PR.
+````
+
+- [ ] **Step 3: Write `CODE_OF_CONDUCT.md`**
+
+```markdown
+# Code of Conduct
+
+This project adopts the [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+Report conduct concerns to jonas.cords@gmail.com.
+```
+
+- [ ] **Step 4: Write `CHANGELOG.md`**
+
+```markdown
+# Changelog
+
+All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
+[SemVer](https://semver.org/). Pre-1.0: minor versions may break surfaces.
+
+## [Unreleased]
+### Added
+- Initial design spec (capability model, dual A2A+MCP surfaces, outcome planner).
+```
+
+- [ ] **Step 5: Write the two issue templates**
+
+`.github/ISSUE_TEMPLATE/bug_report.md`:
+```markdown
+---
+name: Bug report
+about: Something is broken
+---
+**What happened / expected:**
+**Repro (command + fixture):**
+**Version / OS / Python:**
+```
+
+`.github/ISSUE_TEMPLATE/prior_art_check.md`:
+```markdown
+---
+name: Prior-art / "isn't this just X?"
+about: Point to an existing project that overlaps
+---
+**Which project overlaps?** (link)
+**Which cell of the landscape table does it fill?** (local fleet / health-tracked /
+typed chaining / dual-surface)
+**What does it do that this should learn from?**
+```
+
+- [ ] **Step 6: Verify**
+
+Run: `for f in README.md CONTRIBUTING.md CODE_OF_CONDUCT.md CHANGELOG.md .github/ISSUE_TEMPLATE/bug_report.md .github/ISSUE_TEMPLATE/prior_art_check.md; do test -s "$f" || echo "MISSING $f"; done; echo done`
+Expected: prints only `done` (no MISSING lines).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add README.md CONTRIBUTING.md CODE_OF_CONDUCT.md CHANGELOG.md .github/
+git commit -m "docs: README (honest scope + landscape), CONTRIBUTING, CoC, CHANGELOG, templates
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" -- README.md CONTRIBUTING.md CODE_OF_CONDUCT.md CHANGELOG.md .github/ISSUE_TEMPLATE/bug_report.md .github/ISSUE_TEMPLATE/prior_art_check.md
+```
+
+> **CI badge (folded into Task 1):** when `pyproject.toml` lands, add a GitHub
+> Actions workflow (`.github/workflows/ci.yml`: `pip install -e ".[dev]"` →
+> `pytest -q`) and a status badge to the README. Dependabot config
+> (`.github/dependabot.yml`) for the supply-chain posture goes in the same commit.
+
+---
+
 ## Phase 1 — Foundation (store, capability model, vocabulary admission)
 
 ### Task 1: Project scaffold + pinned dependencies

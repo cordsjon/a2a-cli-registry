@@ -1,13 +1,24 @@
-# a2a-cli-registry — Design Spec (rev 5)
+# a2a-cli-registry — Design Spec
+
+> **Naming note:** the name is historical (the project began as an A2A catalog).
+> MCP is an equal first-class surface — see §6.2. A rename that surfaces both
+> protocols + "local tools" is an **open call** before public launch (the MCP
+> audience is larger and won't find "a2a-*"); tracked as a pre-1.0 issue.
+
+**Capability-typed registry for your *local* CLI fleet — discover, health-check,
+and get suggested tool-chains, served over both A2A and MCP. Python adapter ships
+in v1; describe-and-plan only (no remote execution). Apache-2.0.**
 
 **Date:** 2026-06-21
-**Status:** Draft rev 5 — scope expanded to a language-agnostic, capability-driven
-fleet registry with outcome-search, call-graph, and dual A2A+MCP surfaces.
-Supersedes rev 3 (which passed panels at ai 7.9 / arch 7.8 / test 7.6 for the
-narrower A2A-catalog design). Rev 4 cracked on re-gate (ai 7.1 / arch 6.6 FAIL /
-test 6.9 FAIL) when scope 2–3×'d; rev 5 applies the full consensus punch-list and
-needs a fresh panel pass.
+**Status:** Pre-implementation design spec, panel-reviewed. Scope: a
+language-agnostic-by-design (Python ships), capability-driven fleet registry with
+outcome-search, call-graph, and dual A2A+MCP surfaces.
 **Author:** Jonas Cords + Claude (Opus 4.8)
+
+> *Internal review history (engineering gate; not part of the public README): rev
+> 3 panels ai 7.9 / arch 7.8 / test 7.6; rev 4 re-gate failed on scope expansion;
+> rev 5 applied the consensus punch-list and re-passed ai 7.4 / arch 8.1 / test 7.6.
+> Strip this block when publishing — it is internal gate provenance, not user docs.*
 
 > **What changed in rev 5 (re-gate fixes — consensus across ai/arch/test panels):**
 > (1) Planner bounded + made falsifiable: bounded-BFS over `cli_edge` with
@@ -39,24 +50,61 @@ needs a fresh panel pass.
 
 ## 1. Summary
 
-`a2a-cli-registry` discovers a fleet of **local command-line tools (any
-language)**, models **what each one does** (intent + typed I/O), and serves that
-model as:
+**One line:** Point an AI agent (Claude Code, Copilot, any MCP/A2A client) at the
+pile of command-line tools already installed on your machine, and it can *discover*
+them, *see which are healthy*, and *get a suggested chain of tools to achieve a
+goal* — without you wiring each tool up by hand.
+
+**Status (read this first):** v1 ships a **Python tool adapter**. The architecture
+is language-agnostic by design (a `LanguageAdapter` seam), but Go/Node/shell
+adapters are **stubs** in v1 — non-Python tools work today by *declaring* their
+capabilities, not by auto-inference. The registry **describes and plans; it does
+not execute** your tools for a network caller (running a suggested chain is phase-2,
+behind an explicit execution boundary). If you need auto-discovery of non-Python
+tools or remote execution today, this is not yet that.
+
+`a2a-cli-registry` discovers a fleet of local command-line tools, models **what
+each one does** (intent + typed I/O), and serves that model as:
 1. a queryable **catalog** (REST),
-2. one discoverable **A2A v1.0 agent** (catalog operations as skills),
+2. one discoverable **A2A agent** (catalog operations as skills),
 3. an **MCP server** (catalog operations as MCP tools), and
-4. an **outcome planner + call-graph** ("achieve X → chain these CLIs").
+4. an **outcome planner + call-graph** ("achieve X → here's a *suggested* chain").
 
-It health-monitors every CLI and manages each one's lifecycle. Built **OSS-first**:
-the generic engine (`core/`) is the deliverable; the operator's fleet is the
-reference adapter (`examples/jonas-fleet/`).
+It health-monitors every CLI. Built **OSS-first** (Apache-2.0): the generic engine
+(`core/`) is the deliverable; the operator's fleet is a reference adapter
+(`examples/jonas-fleet/`), and a stranger uses the generic `filesystem_source`.
 
-### Why this exists (the gap)
-No existing tool (verified vs awesome-a2a, 2026-06-21) serves a health-tracked,
-**capability-typed** catalog of *many* local CLIs behind *both* A2A and MCP, with
-outcome-driven chaining. Existing tools wrap one CLI as one agent, generate one
-card, or consume agents. The novel contribution: a **capability model with four
-projections** over a heterogeneous local CLI fleet.
+### Who this is for
+A developer or small team with **many (≈10+) local CLIs** — converters, extractors,
+publishers, internal scripts — who wants an AI coding agent to *find* those tools
+and *reason about how to combine them*, instead of the human remembering which tool
+does what. Trigger: "Claude Code can't see my local tooling, and I have too much of
+it to describe by hand every session." If you have three scripts, you don't need
+this; if you have a drawer full and an agent that keeps reinventing them, you do.
+
+### Why this exists (the gap) — competitive landscape
+
+The MCP/A2A ecosystem has **registries of remotely-hosted servers/agents to
+install**. This is the inverse: a typed, health-tracked catalog of the **local
+tools you already have**, with deterministic outcome-chaining, served over both
+protocols off one model. Landscape as of 2026-06-21 (named, not hand-waved):
+
+| Project | What it catalogs | Local fleet? | Health-tracked? | Typed capability chaining? | Dual A2A+MCP? |
+|---|---|---|---|---|---|
+| **Smithery** | hosted MCP servers (install/discover) | no (remote) | no | no | MCP only |
+| **mcp.so / Glama / PulseMCP** | directories of MCP servers | no (remote) | no | no | MCP only |
+| **Official MCP registry** | published MCP servers | no (remote) | no | no | MCP only |
+| **Docker MCP Catalog/Toolkit** | containerized MCP servers | no (images) | partial | no | MCP only |
+| **LangChain tool registries / toolkits** | in-process tool defs (code) | n/a (in-app) | no | no (no I/O type graph) | neither |
+| **awesome-a2a / A2A directories** | A2A agents | no (remote) | no | no | A2A only |
+| **a2a-cli-registry (this)** | **your local CLIs** | **yes** | **yes** | **yes (I/O type graph + planner)** | **yes** |
+
+The novel contribution is the **capability model with four projections** (§4.5)
+over a *local, heterogeneous* CLI fleet. Every existing tool above catalogs
+*remote things to install* or *in-code tool definitions*; none health-tracks and
+type-chains the binaries already on a developer's box. If a reviewer knows of a
+direct competitor in *this* cell, that is a tracked issue — the claim is falsifiable
+and dated, not "we couldn't find one."
 
 ---
 
@@ -244,11 +292,34 @@ A/B disposition — all carried by `python_adapter.py` and pinned by per-lesson
 regression tests (§9). Other adapters are NOT required to implement these
 Python-specific rules.
 
+### 5.5 Protocol conformance pinning (anti-rot policy)
+Both surfaces target **moving external specs**. Asserting bare version numbers
+("A2A v1.0", "MCP conformant") in the present tense is a credibility trap when the
+exact tag is unpinned. Therefore every protocol claim is pinned to a **dated,
+tagged, vendored** spec artifact, and unverified claims are marked
+`[planned, unverified]` until the artifact lands:
+
+| Protocol | Pinned to | Vendored artifact | Status |
+|---|---|---|---|
+| A2A | a tagged A2A release (exact tag = **open call**, decided at impl start) | `tests/fixtures/a2a_agent_card_v<tag>.schema.json` | `[planned, unverified]` — rev-3 verified against released A2A v1.0.0; re-verify on tag pin |
+| MCP | a dated MCP spec revision + exact SDK version (**open call**) | pinned `mcp==<x.y.z>` in `pyproject.toml`; vendored tool-schema fixtures | `[planned, unverified]` — §6.2 transport (Streamable HTTP) is the spec revision that replaced HTTP+SSE; verify the dated revision before impl |
+
+**Policy:** (1) the vendored schema/SDK version is the source of truth, not prose;
+(2) a conformance test validates against the vendored artifact (`card validates
+v<tag>`, `tool_schema_is_valid_jsonschema`); (3) a spec/SDK bump is a **tracked
+issue**, not a silent edit; (4) the README states "tracks A2A ≥ `<tag>`, MCP rev
+`<date>`" so consumers know the rot surface. No present-tense conformance claim
+ships until its artifact is vendored and its test is green.
+
 ---
 
 ## 6. Surfaces
 
-### 6.1 A2A v1.0 (as rev 3, verified-correct)
+### 6.1 A2A surface (target: A2A spec — see §5.5 conformance pinning)
+> Conformance to a *specific* dated A2A tag is pinned in §5.5; until that tag's
+> schema is vendored, the claims below are `[planned, verified against rev-3's
+> reading of the released A2A v1.0.0]`, not "conformant" in the present tense.
+
 One card at `/.well-known/agent-card.json`; PascalCase `SendMessage`/`GetTask`;
 `pushNotifications:false`; webhook bus declared under `capabilities.extensions[]`;
 bearer `securityScheme`; **describe-only** (never spawns a CLI). Skills:
@@ -262,7 +333,10 @@ cannot drift. Naming transform is mechanical: **kebab-case for A2A skills**
 (`plan-cli-chain`) ↔ **snake_case for MCP tools** (`plan_cli_chain`), derived from
 one canonical op id. A test asserts the two surfaces expose the same op set.
 
-### 6.2 MCP server (new)
+### 6.2 MCP server (target: dated MCP revision — see §5.5)
+> `[planned, unverified]` until the MCP SDK version + dated spec revision are
+> pinned (§5.5) and the tool-schema conformance test is green.
+
 Mounts an MCP server exposing the SAME catalog operations as MCP tools:
 `search_cli_catalog`, `describe_cli`, `get_cli_health`, `plan_cli_chain`,
 `get_cli_graph`. Describe-only (tools return catalog/plan data, never execute a CLI).
@@ -496,6 +570,53 @@ vocabulary, the alias/normalization map (`pdf → file:pdf`), and the inference
 precision/recall floor (e.g. 0.6).
 Ships `cli_audit_source` + `python_adapter`; a stranger uses `filesystem_source`
 + the language adapter matching their fleet.
+
+---
+
+## 10.5 OSS launch deliverables (repo table-stakes, not engineering)
+
+The engine is necessary but not sufficient for a credible public repo. A
+maintainer scanning the repo in 30 seconds looks for trust signals before reading
+code. These are **launch blockers**, tracked as repo artifacts (Phase 0 of the
+implementation plan), not nice-to-haves:
+
+**Legal / trust (hard blockers — without these it is not credibly OSS):**
+- **LICENSE — Apache-2.0** (chosen: permissive + explicit patent grant; standard
+  for agent/protocol infra so companies can adopt without legal review). The
+  `Apache-2.0` header/notice convention applied to source files.
+- **SECURITY.md** — disclosure policy + contact. Non-optional here: the project has
+  a real attack surface (SSRF guard, HMAC webhooks, untrusted catalog text /
+  prompt-injection, a network-reachable MCP/A2A endpoint). A security tool with no
+  disclosure path is a red flag. Link to the §8 threat model.
+- **NOTICE / third-party attributions** as Apache-2.0 requires for bundled deps.
+
+**Adoption / contribution (blockers as a set):**
+- **README** — the 30-second "what & why" (the §1 one-liner + who-it's-for +
+  the competitive-landscape table), a copy-paste **quickstart** (`pip install` →
+  point at a fleet → one `plan-cli-chain` call), and a **runnable demo / asciinema**
+  showing a real goal → suggested chain (the marquee feature is visual; a spec with
+  no shown output under-sells it). Plus a "tracks A2A ≥ `<tag>` / MCP rev `<date>`"
+  conformance line (§5.5) and SEO keywords (MCP, A2A, local tools, agent, tool-chaining).
+- **CONTRIBUTING.md** — the design *depends* on outside contributors writing the
+  go/node/shell adapter stubs; banking on contributions with no contribution guide
+  is incoherent. Document the `LanguageAdapter` contract + how to add an adapter.
+- **CODE_OF_CONDUCT.md** (Contributor Covenant) and **issue/PR templates**
+  (including an "is this a duplicate of an existing MCP registry?" prior-art prompt).
+
+**Process / supply-chain:**
+- **SemVer commitment** + **CHANGELOG.md** (Keep-a-Changelog). State the pre-1.0
+  stability contract (0.x = surfaces may change).
+- **CI** (pytest + coverage floor on `core/`) with a status **badge**; a
+  **lockfile** and **`pip-audit`/Dependabot** for the dependency posture (this runs
+  against a developer's local machine — supply-chain hygiene is part of the pitch).
+- **Governance line** — "maintained by Jonas Cords; PRs welcome" is fine, but say it
+  rather than leaving governance implied.
+
+> Honest-scope guardrail for the README: lead with **"Python tool fleet,
+> language-agnostic by design (Python ships; Go/Node/shell are stubs), describe +
+> plan only"** — the §1 status block — so the ambition-to-delivery ratio is visible
+> up front and pre-empts the "architecture-astronaut" / "any-language but only
+> Python" dismissal.
 
 ---
 
