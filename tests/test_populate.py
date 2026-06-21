@@ -38,3 +38,42 @@ def test_mass_removal_trips_breaker(db, clock):
     # now a source that removes both (100% > 30%) must trip the breaker
     with pytest.raises(MassRemovalBreaker):
         populate(db, FakeSource([]), [PythonAdapter()], vocab, clock)
+
+
+def test_removed_cli_leaves_no_orphan_capabilities(db, clock):
+    # Start with 4 CLIs so removing 1 = 25% < 30% threshold; breaker does NOT trip.
+    vocab = VocabularyRegistry(
+        registered={"file:pdf", "text:doc", "text:summary", "text:report"},
+        aliases={},
+    )
+    initial_recs = [
+        _rec("pdf2text",  ["file:pdf"],      ["text:doc"]),
+        _rec("summarize", ["text:doc"],      ["text:summary"]),
+        _rec("reporter",  ["text:summary"],  ["text:report"]),
+        _rec("doomed",    ["file:pdf"],      ["text:doc"]),
+    ]
+    populate(db, FakeSource(initial_recs), [PythonAdapter()], vocab, clock)
+
+    # Verify "doomed" has a Capability row before removal.
+    before = db.exec(select(Capability).where(Capability.cli_slug == "doomed")).all()
+    assert len(before) == 1, "setup: doomed must have exactly one Capability row"
+
+    # Second populate: drop "doomed" (1 of 4 = 25% < 30% → no breaker).
+    reduced_recs = [r for r in initial_recs if r.slug != "doomed"]
+    result = populate(db, FakeSource(reduced_recs), [PythonAdapter()], vocab, clock)
+
+    assert result["removed"] == 1
+
+    # No orphan Capability rows for the removed CLI.
+    orphans = db.exec(select(Capability).where(Capability.cli_slug == "doomed")).all()
+    assert orphans == [], f"orphan Capability rows remain: {orphans}"
+
+    # No orphan Cli row either.
+    removed_cli = db.get(Cli, "doomed")
+    assert removed_cli is None, "Cli row for 'doomed' should be deleted"
+
+    # No phantom edges referencing "doomed".
+    from core.graph.edges import current_edges
+    edges = current_edges(db)
+    phantom = [(f, t, v) for (f, t, v) in edges if f == "doomed" or t == "doomed"]
+    assert phantom == [], f"phantom edges remain after removal: {phantom}"

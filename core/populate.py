@@ -65,6 +65,10 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
     for slug in to_remove:
         obj = session.get(Cli, slug)
         if obj:
+            for old_cap in session.exec(
+                select(Capability).where(Capability.cli_slug == slug)
+            ).all():
+                session.delete(old_cap)
             session.delete(obj)
     session.commit()
 
