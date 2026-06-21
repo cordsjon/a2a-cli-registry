@@ -1,0 +1,9 @@
+a2a-cli-registry
+Copyright 2026 Jonas Cords
+
+This product includes software developed as an open-source project.
+Licensed under the Apache License, Version 2.0.
+
+Third-party dependencies (FastAPI, SQLModel, MCP SDK, httpx, portalocker,
+uvicorn) are distributed under their own licenses; see their respective
+distributions.
