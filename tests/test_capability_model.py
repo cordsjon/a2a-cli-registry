@@ -22,7 +22,23 @@ def test_inferred_fills_null_fields_only():
     merged = merge_capabilities(declared, inferred)
     assert merged.intent_tags == ["convert"]       # declared had it
     assert merged.input_types == ["file:pdf"]       # filled from inferred (declared empty)
+    assert merged.output_types == ["text"]          # filled from inferred (declared empty)
     assert merged.side_effect == "writes-fs"        # filled from inferred
+
+
+def test_fully_inferred_merge_keeps_inferred_confidence():
+    # Empty declared (all fields falsy) merged with full inferred must NOT
+    # promote confidence to "declared" — the downstream fail-UNSAFE guard relies on this.
+    declared = CapabilityRecord(intent_tags=[], input_types=[],
+                                output_types=[], side_effect="", confidence="declared")
+    inferred = CapabilityRecord(intent_tags=["extract"], input_types=["file:pdf"],
+                                output_types=["text"], side_effect="writes-fs", confidence="inferred")
+    merged = merge_capabilities(declared, inferred)
+    assert merged.intent_tags == ["extract"]
+    assert merged.input_types == ["file:pdf"]
+    assert merged.output_types == ["text"]
+    assert merged.side_effect == "writes-fs"
+    assert merged.confidence == "inferred"   # must NOT be "declared"
 
 
 def test_admit_ports_quarantines_unregistered():
