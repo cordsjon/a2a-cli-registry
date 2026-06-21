@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "run_id": "run-123",
+  "clis": [
+    {"slug": "pdf2text", "lang": "python", "path": "/fleet/pdf2text",
+     "bucket": "convert", "project": "tools", "description": "pdf to text",
+     "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                    "output_types": ["text"], "side_effect": "none"}}
+  ]
+}
