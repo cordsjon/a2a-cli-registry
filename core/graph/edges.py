@@ -17,13 +17,13 @@ def _desired_edges(session, vocab) -> set[tuple[str, str, str]]:
     caps = _caps(session)
     edges = set()
     for from_slug, from_caps in caps.items():
-        out_ports = {p for c in from_caps for p in c.output_types.split(",") if p}
-        from_tags = {t for c in from_caps for t in c.intent_tags.split(",") if t}
+        out_ports = {p.strip() for c in from_caps for p in c.output_types.split(",") if p.strip()}
+        from_tags = {t.strip() for c in from_caps for t in c.intent_tags.split(",") if t.strip()}
         for to_slug, to_caps in caps.items():
             if to_slug == from_slug:
                 continue
-            in_ports = {p for c in to_caps for p in c.input_types.split(",") if p}
-            to_tags = {t for c in to_caps for t in c.intent_tags.split(",") if t}
+            in_ports = {p.strip() for c in to_caps for p in c.input_types.split(",") if p.strip()}
+            to_tags = {t.strip() for c in to_caps for t in c.intent_tags.split(",") if t.strip()}
             for via in out_ports & in_ports:
                 if not vocab.is_edge_eligible(via):
                     continue                      # unregistered/unverified excluded
@@ -44,8 +44,10 @@ def compute_edges(session, vocab, clock, changed_slugs=None) -> list:
     existing = current_edges(session)
     if changed_slugs is not None:
         # incremental: only consider edges where a changed slug is an endpoint
-        scope = lambda e: e[0] in changed_slugs or e[1] in changed_slugs
-        desired = {e for e in desired if scope(e)} | {e for e in existing if not scope(e)}
+        desired = (
+            {e for e in desired if e[0] in changed_slugs or e[1] in changed_slugs}
+            | {e for e in existing if e[0] not in changed_slugs and e[1] not in changed_slugs}
+        )
     if desired == existing:
         return []                                  # no-op emits nothing
     # shadow-swap: delete all, insert desired, single transaction
