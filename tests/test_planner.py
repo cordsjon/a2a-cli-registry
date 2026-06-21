@@ -61,6 +61,24 @@ def test_ranking_keys_are_independently_ordered(db):
     assert chains[0].slugs[-1] == "A"
 
 
+def test_chain_hops_carry_routing_fields(db):
+    _fleet(db)
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"])
+    assert chains, "expected at least one chain"
+    chain = chains[0]
+    assert chain.slugs == ["pdf2text", "summarize"]
+    # every hop must have side_effect and provenance
+    for hop in chain.hops:
+        assert "side_effect" in hop, f"missing side_effect in hop: {hop}"
+        assert "provenance" in hop, f"missing provenance in hop: {hop}"
+    # second hop (index 1) must carry the routing edge fields
+    hop1 = chain.hops[1]
+    assert hop1["from"] == "pdf2text", f"expected from=pdf2text, got {hop1.get('from')}"
+    assert hop1["to"] == "summarize", f"expected to=summarize, got {hop1.get('to')}"
+    assert "via_type" in hop1, f"missing via_type in second hop: {hop1}"
+    assert hop1["via_type"] == "text:doc"
+
+
 def test_terminates_on_cyclic_typegraph(db):
     db.add(Cli(slug="a", lang="python")); db.add(Cli(slug="b", lang="python"))
     db.add(Capability(cli_slug="a", input_types="t", output_types="t", intent_tags="x",

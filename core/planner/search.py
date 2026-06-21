@@ -65,6 +65,8 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     candidates = []
 
     for start in starts:
+        if len(candidates) >= max_candidate_chains:
+            break
         # BFS state: (path, visited, hops). Cycle guard via visited set.
         q = deque([([start], {start}, [])])
         while q and len(candidates) < max_candidate_chains:
@@ -74,7 +76,7 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
             if _slug_side_effect(caps[tail]) in excluded:
                 continue
             if _slug_produces(caps[tail]) & goal_out:
-                candidates.append(_finalize(path, caps))
+                candidates.append(_finalize(path, caps, hops))
                 continue
             if len(path) >= max_chain_depth:
                 continue
@@ -88,14 +90,20 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     return candidates[:max_candidate_chains]
 
 
-def _finalize(path, caps) -> Chain:
+def _finalize(path, caps, hop_trace) -> Chain:
     se_count = sum(1 for s in path if _slug_side_effect(caps[s]) != "none")
     min_conf = max(_slug_confidence_rank(caps[s]) for s in path)
     hops = []
-    for s in path:
+    for i, s in enumerate(path):
         se = _slug_side_effect(caps[s])
         conf = "inferred" if _slug_confidence_rank(caps[s]) else "declared"
         prov = f"{se} ({conf}{', unverified' if conf == 'inferred' else ''})"
-        hops.append({"slug": s, "side_effect": se, "provenance": prov})
+        hop = {"slug": s, "side_effect": se, "provenance": prov}
+        if i > 0:
+            edge = hop_trace[i - 1]
+            hop["from"] = edge["from"]
+            hop["to"] = edge["to"]
+            hop["via_type"] = edge["via_type"]
+        hops.append(hop)
     return Chain(slugs=path, length=len(path), side_effect_count=se_count,
                  min_confidence_rank=min_conf, hops=hops)
