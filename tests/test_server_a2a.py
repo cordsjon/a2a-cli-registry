@@ -10,7 +10,8 @@ _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 
 def test_agent_card_validates_v1(db):
     card = build_agent_card("http://localhost:8080")
-    schema = json.load(open("tests/fixtures/a2a_agent_card_v1.0.schema.json"))
+    with open("tests/fixtures/a2a_agent_card_v1.0.schema.json") as f:
+        schema = json.load(f)
     jsonschema.validate(card, schema)
     assert card["capabilities"]["pushNotifications"] is False
     assert "plan-cli-chain" in [s["id"] for s in card["skills"]]
@@ -36,12 +37,14 @@ def test_unauth_wrong_token_rejected_401(db, monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
     app = create_app(db)
     client = TestClient(app, raise_server_exceptions=False)
-    resp = client.get("/clis", headers={"Authorization": "Bearer wrong-token"})
-    assert resp.status_code == 401
+    bad = {"Authorization": "Bearer wrong-token"}
+    assert client.get("/clis", headers=bad).status_code == 401
+    assert client.get("/clis/some-slug", headers=bad).status_code == 401
+    assert client.get("/graph", headers=bad).status_code == 401
 
     resp = client.post("/a2a", json={"method": "SendMessage",
         "params": {"skill": "search-cli-catalog", "input": {"query": ""}}},
-        headers={"Authorization": "Bearer wrong-token"})
+        headers=bad)
     assert resp.status_code == 401
 
 
