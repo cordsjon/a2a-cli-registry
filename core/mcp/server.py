@@ -12,8 +12,39 @@ def build_mcp_tools() -> list[dict]:
     # deliberately NO outputSchema keyed off output_types
 
 
+def _validate_arguments(op, arguments: dict):
+    """Validate argument keys against op.input_schema.
+    Returns an error string or None. Mirrors the same check in core/server/a2a.py."""
+    allowed = set(op.input_schema.get("properties", {}).keys())
+    required = set(op.input_schema.get("required", []))
+    given = set(arguments.keys())
+
+    unknown = given - allowed
+    if unknown:
+        return f"unknown input keys: {sorted(unknown)}"
+
+    missing = required - given
+    if missing:
+        return f"missing required input keys: {sorted(missing)}"
+
+    return None
+
+
+def _error_block(msg: str) -> dict:
+    """Return a structured error in the same content-block shape as success."""
+    return {"content": [{"type": "json", "json": {"error": msg}}]}
+
+
 def call_mcp_tool(session, name: str, arguments: dict) -> dict:
-    op = op_by_mcp_tool(name)
+    try:
+        op = op_by_mcp_tool(name)
+    except KeyError:
+        return _error_block(f"unknown tool: {name}")
+
+    err = _validate_arguments(op, arguments)
+    if err:
+        return _error_block(err)
+
     payload = op.handler(session, **arguments)
     # structured JSON content block — capability model appears INSIDE as data
     return {"content": [{"type": "json", "json": payload}]}
