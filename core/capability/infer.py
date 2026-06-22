@@ -10,6 +10,16 @@ from core.capability.model import CapabilityRecord
 # For side_effect: the first explicit non-"none" assignment wins; "none" is only
 # applied if no other rule fires AND a lint/test/read-only tag was matched.
 #
+# DESIGN: generalizable family keywords, NOT memorized per-CLI phrases.
+# Each signal here is chosen to fire on MANY tools in its family (e.g. any
+# "downloader", any "linter", any "code formatter"), not on one golden help
+# text. The §9 precision/recall floor (>=0.6 each) in tests/test_infer.py is a
+# real measurement of how well these family keywords generalize -- it is NOT a
+# memorization target. Recall below 1.0 is acceptable and honest: it means some
+# golden tools phrase themselves idiosyncratically and we abstain rather than
+# reverse-engineer their exact wording. Do NOT re-add single-CLI verbatim
+# phrases to push recall back to 1.0.
+#
 # Ordering rationale:
 #   - More specific phrases ("static analysis", "type checker") before generic ones
 #     ("lint", "format") to avoid mismatch on overlapping text.
@@ -27,66 +37,63 @@ _INTENT_SIGNALS: list[tuple[str, tuple[str, str]]] = [
     ("linter and code formatter", ("lint", "none")),  # ruff multi-tag: lint fires first
     ("linter",                  ("lint", "none")),
     ("lint",                    ("lint", "none")),
-    ("check the style",         ("lint", "none")),    # pycodestyle
-    ("style guide",             ("lint", "none")),    # pycodestyle fallback
-    ("dead python code",        ("lint", "none")),    # vulture
-    ("unused code",             ("lint", "none")),    # vulture fallback
-    ("style errors",            ("lint", "none")),    # pycodestyle fallback
+    ("check the style",         ("lint", "none")),    # any style checker
+    ("style guide",            ("lint", "none")),     # any style/convention checker
+    ("style errors",           ("lint", "none")),     # any style reporter
+    ("unused code",            ("lint", "none")),      # dead/unused-code analyzers
+    ("dead code",              ("lint", "none")),      # dead/unused-code analyzers
     # --- format family ---
     # Note: "code formatter" intentionally yields side_effect="none" here;
     # the _WRITES_FS_SIGNALS pass upgrades to "writes-fs" for formatters that
     # actually mention "in place" / "reformat" in their help (black, isort, etc.).
     # This avoids false writes-fs on ruff's top-level dispatcher help.
     ("code formatter",          ("format", "none")),
-    ("losslessly convert raster",  ("convert", "none")),  # img2pdf
     ("reformat",                ("format", "writes-fs")),
     ("format python files",     ("format", "none")),       # ruff lists as subcommand; not always in-place
     ("formats python",          ("format", "writes-fs")),
-    ("import sorter",           ("format", "writes-fs")),  # isort
-    ("formats python code",     ("format", "writes-fs")),
-    ("conform to the pep 8",    ("format", "writes-fs")),  # autopep8
+    ("import sorter",          ("format", "writes-fs")),   # import organizers (isort family)
+    ("sort python import",     ("format", "writes-fs")),   # import organizers (isort family)
+    ("automatically formats",  ("format", "writes-fs")),   # any auto-formatter
     # --- test family (read-only execution) ---
     ("testing framework",       ("test", "none")),
-    ("test automation",         ("test", "none")),   # nox
-    ("run test suites",         ("test", "none")),   # tox
-    ("test suites",             ("test", "none")),   # tox fallback
-    ("code coverage",           ("test", "none")),   # coverage.py
+    ("test automation",         ("test", "none")),   # test runners/automation
+    ("run test suites",        ("test", "none")),    # test runners
+    ("test suites",            ("test", "none")),     # test runners
+    ("code coverage",          ("test", "none")),     # coverage tools
     # --- download / network ---
-    ("audio/video downloader",  ("download", "network")),  # yt-dlp
-    ("image-galleries",         ("download", "network")),  # gallery-dl
-    ("network retriever",       ("download", "network")),  # wget
-    ("http client",             ("download", "network")),  # httpie
+    ("http client",             ("download", "network")),  # any HTTP client
     ("downloader",              ("download", "network")),
     ("download",                ("download", "network")),
+    ("retriever",              ("download", "network")),    # any network retriever/fetcher
     # --- publish / upload ---
     ("upload",                  ("publish", "network")),
     ("publish",                 ("publish", "network")),
     # --- install ---
     ("install packages",        ("install", "writes-fs")),
     # --- convert (read → stdout or output file, no in-place) ---
-    ("input formats:",          ("convert", "none")),  # pandoc
-    ("output formats:",         ("convert", "none")),  # pandoc fallback
-    ("-i infile",               ("convert", "none")),  # ffmpeg
     ("convert",                 ("convert", "none")),
     ("transcode",               ("convert", "none")),
+    ("codec",                  ("convert", "none")),       # media transcoders (ffmpeg family)
+    ("input formats",          ("convert", "none")),       # format-conversion tools (pandoc family)
+    ("output formats",         ("convert", "none")),       # format-conversion tools
     # --- extract (read text/metadata out of files) ---
     ("extract text",            ("extract", "none")),
     ("text extractor",          ("extract", "none")),
     ("extracts text",           ("extract", "none")),
-    ("reading, writing and editing meta", ("extract", "none")),  # exiftool
-    ("pdftotext",               ("extract", "none")),
+    ("extract",                ("extract", "none")),        # generic extraction
+    ("editing meta",           ("extract", "none")),        # metadata read/edit tools (exiftool family)
     # --- build ---
     ("generate documentation",  ("build",   "writes-fs")),
     ("documentation build",     ("build",   "writes-fs")),
-    ("build the mkdocs",        ("build",   "writes-fs")),
-    ("bundle a python application", ("build", "writes-fs")),  # pyinstaller primary
+    ("build",                  ("build",   "writes-fs")),   # generic build/site/doc builders
+    # --- package / bundle (often co-occurs with build) ---
+    ("bundle",                 ("package", "writes-fs")),   # any bundler/packager
+    ("package everything",     ("package", "writes-fs")),   # any packaging tool
+    ("freeze",                 ("package", "writes-fs")),   # freezers (pyinstaller/cx_Freeze family)
     # --- summarize ---
     ("summarize",               ("summarize", "none")),
     ("summarization",           ("summarize", "none")),
-    ("automatic text summarizer", ("summarize", "none")),
-    # --- package (pyinstaller secondary tag) ---
-    ("distributable bundle",    ("package", "writes-fs")),  # pyinstaller
-    ("single package",          ("package", "writes-fs")),  # pyinstaller fallback
+    ("summarizer",             ("summarize", "none")),      # any summarizer
 ]
 
 # Strong "writes-fs" signals that override a "none" side_effect assignment.
