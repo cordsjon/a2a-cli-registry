@@ -1,7 +1,6 @@
 import types
 
 import httpx
-import pytest
 from pathlib import Path
 
 from core.cli.main import load_config, main
