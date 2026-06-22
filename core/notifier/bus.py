@@ -88,7 +88,11 @@ def enqueue_event(
 
     The delivery payload JSON includes ``schema_version``, ``event_id``,
     per-subscriber ``seq``, ``event_type``, and the caller-supplied ``payload``
-    dict.  All writes are committed atomically before returning.
+    dict.  Each subscriber's seq increment is committed individually (so
+    ``session.refresh`` sees the DB value); Delivery rows are committed in a
+    final batch.  This is NOT a single atomic transaction: a crash mid-loop
+    leaves earlier subscribers enqueued and later ones not — partial enqueue is
+    intentional for v1, since deliveries are subscriber-independent.
     """
     subs = session.exec(select(Subscriber).where(Subscriber.enabled == True)).all()  # noqa: E712
     deliveries: list[Delivery] = []
