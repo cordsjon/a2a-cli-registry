@@ -1,5 +1,5 @@
 port = 8080
-cli_audit_path = "/Users/jonas/cli-audit/latest.json"
+cli_audit_path = "./cli-audit/latest.json"   # path to your cli-audit JSON export
 brokers = []
 buckets = ["convert", "extract", "publish"]
 

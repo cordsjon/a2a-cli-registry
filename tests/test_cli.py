@@ -8,7 +8,7 @@ from core.announcer.announcer import announce
 
 
 def test_load_config_reads_planner_bounds_and_vocab():
-    cfg = load_config(str(Path(__file__).parent.parent / "examples/jonas-fleet/config.toml"))
+    cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
     assert cfg["planner"]["max_chain_depth"] == 4
     assert "file:pdf" in cfg["vocabulary"]["registered"]
     assert cfg["vocabulary"]["aliases"]["pdf"] == "file:pdf"
