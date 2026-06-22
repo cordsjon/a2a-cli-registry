@@ -1,0 +1,182 @@
+[
+  {
+    "slug": "black",
+    "help_text": "The uncompromising code formatter.\nUsage: black [OPTIONS] SRC ...\n\nReformat the given SRC files or all files under SRC in place.\n\nOptions:\n  --check               Don't write the files back, just return the status.\n  --diff                Don't write the files back, just output a diff.\n  --line-length INTEGER How many characters per line to allow.  [default: 88]\n  --target-version [py33|py34|py35|py36|py37|py38|py39|py310]\n                        Python versions that should be supported by Black's output.\n  --help                Show this message and exit.",
+    "expected": {"intent_tags": ["format"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "isort",
+    "help_text": "isort - The Python code import sorter.\nUsage: isort [OPTIONS] [FILES]...\n\nSort Python import declarations alphabetically and automatically separate them into sections.\nIsort will overwrite contents of files in place.\n\nOptions:\n  --check-only, -c      Don't actually write to the file(s).\n  --diff                Show diff output.\n  --line-length INTEGER, -l INTEGER\n                        The max length of an import line.  [default: 79]\n  --help                Show this message and exit.",
+    "expected": {"intent_tags": ["format"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "autopep8",
+    "help_text": "usage: autopep8 [-h] [--version] [-v] [-d] [-i] [--global-config filename]\n                [--ignore-local-config] [-r] [-j n] [-p n] [-a] [--experimental]\n                [--exclude globs] [--list-fixes] [--ignore errors]\n                [--select errors] [--max-line-length n] [--line-range line line]\n                [--indent-size n]\n                [files [files ...]]\n\nAutomatically formats Python code to conform to the PEP 8 style guide.\n\npositional arguments:\n  files                 files to format or '-' for standard in\n\noptional arguments:\n  -i, --in-place        make changes in-place\n  -d, --diff            print the diff for the fixed source code\n  --help                show this help message and exit",
+    "expected": {"intent_tags": ["format"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "flake8",
+    "help_text": "Usage: flake8 [options] file file ...\n\nA tool that glues together pycodestyle, pyflakes, mccabe, and third-party plugins\nto check the style and quality of Python code.\n\nOptions:\n  --version             show program's version number and exit\n  -h, --help            show this help message and exit\n  --filename=FILENAME_PATTERNS\n                        Only check for filenames matching the patterns in this\n                        comma-separated list\n  --max-line-length=n   Maximum allowed line length for the entirety of this run\n  --select=ERRORS       Comma-separated list of errors/warnings to enable\n  --ignore=ERRORS       Comma-separated list of errors and warnings to ignore\n  --count                Print total number of errors and warnings to standard\n                        output and set the exit code to 1 if total is not null",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  },
+  {
+    "slug": "pylint",
+    "help_text": "usage: pylint [options]\n\nPylint is a static code analysis tool which looks for programming errors,\nhelps enforcing a coding standard, sniffs for code smells and offers simple\nrefactoring suggestions.\n\nOptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n  --disable=<msg ids>   Disable the message, report, category or checker\n                        with the given id(s).\n  --enable=<msg ids>    Enable the message, report, category or checker\n                        with the given id(s).\n  --output-format=<format>\n                        Set the output format. Available formats are: text,\n                        parseable, colorized, json, msvs.\n  --errors-only, -E     In error mode, messages with a category besides ERROR\n                        or FATAL are suppressed.",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  },
+  {
+    "slug": "mypy",
+    "help_text": "usage: mypy [-h] [-v] [-V] [more options; see below]\n            [-m MODULE] [-p PACKAGE] [-c PROGRAM_TEXT] [files ...]\n\nMypy is a static type checker for Python.\n\noptional arguments:\n  -h, --help            show this help message and exit\n  -V, --version         Show program's version number and exit\n  --ignore-missing-imports\n                        Silently ignore imports of missing modules\n  --strict              Strict mode; enables the following flags\n  --disallow-untyped-defs\n                        Disallow defining functions without type annotations\n  --check-untyped-defs  Check the bodies of functions without type annotations\n  --no-error-summary    Do not show error summary\n  --show-error-codes    Show error codes in error messages",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  },
+  {
+    "slug": "bandit",
+    "help_text": "usage: bandit [-h] [-r] [-a {file,vuln}] [-n CONTEXT_LINES] [-c CONFIG_FILE]\n              [-p PROFILE] [-t TESTS] [-s SKIPS] [-l] [-i]\n              [-f {csv,custom,html,json,screen,txt,xml,yaml}]\n              [--msg-template MSG_TEMPLATE] [-o OUTPUT_FILE] [-v] [-d]\n              [-q] [--ignore-nosec] [-x SKIPS] [-b BASELINE]\n              [--ini INI_PATH] [--version]\n              [targets [targets ...]]\n\nBandit - a Python source code security linter\n\npositional arguments:\n  targets               source file(s) or directory(s) to be tested\n\noptional arguments:\n  -r, --recursive       find and process files in subdirectories\n  --severity-level {all,low,medium,high}\n                        report only issues of a given severity level or higher",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  },
+  {
+    "slug": "pytest",
+    "help_text": "usage: pytest [options] [file_or_dir] [file_or_dir] [...]\n\npytest is a testing framework that makes it easy to write small, readable tests.\n\ngeneral:\n  -v, --verbose         increase verbosity\n  -q, --quiet           decrease verbosity\n  --tb=style            traceback print mode (auto/long/short/line/native/no)\n  -x, --exitfirst       exit instantly on first error or failed test\n  -s                    shortcut for --capture=no\n  --collect-only, --co  only collect tests, do not execute them\n  --junitxml=path       create junit-xml style report file at path\n  --html=path           create html report at path\n  -k EXPRESSION         only run tests which match the given substring expression",
+    "expected": {"intent_tags": ["test"], "side_effect": "none"}
+  },
+  {
+    "slug": "coverage",
+    "help_text": "Coverage.py, version 7.3.2\nMeasure, collect, and report on code coverage in Python programs.\n\nusage: coverage <command> [options] [args]\n\nCommands:\n    annotate    Annotate source files with execution information.\n    combine     Combine a number of data files.\n    debug       Display information about the internals of coverage.py\n    erase       Erase previously collected coverage data.\n    html        Create an HTML report.\n    json        Create a JSON report of coverage results.\n    lcov        Create an LCOV report of coverage results.\n    report      Report coverage stats on modules.\n    run         Run a Python program and measure code coverage.\n    xml         Create an XML report of coverage results.\n\nUse \"coverage help <command>\" for help on any command.",
+    "expected": {"intent_tags": ["test"], "side_effect": "none"}
+  },
+  {
+    "slug": "yt-dlp",
+    "help_text": "Usage: yt-dlp [OPTIONS] URL [URL...]\n\nA feature-rich command-line audio/video downloader.\n\nGeneral Options:\n  -h, --help                      Print this help text and exit\n  --version                       Print program version and exit\n  -U, --update                    Update this program to the latest version\n  -i, --ignore-errors             Continue on download errors\n  -o, --output TEMPLATE           Output filename template\n  --paths [TYPES:]PATH            The paths where the files should be downloaded to\n  -f, --format FORMAT             Video format code\n  --audio-format FORMAT           Format to convert the audio to\n  --download-archive FILE         Download only videos not listed in the archive file",
+    "expected": {"intent_tags": ["download"], "side_effect": "network"}
+  },
+  {
+    "slug": "gallery-dl",
+    "help_text": "usage: gallery-dl [OPTION]... URL...\n\nDownload image-galleries and -collections from several image hosting sites.\n\nGeneral Options:\n  -h, --help            Print this help message and exit\n  -v, --verbose         Print various debugging information\n  -q, --quiet           Activate quiet mode\n  -d, --dest DEST       Destination directory\n  -f, --filename FILENAME\n                        Filename format string for downloaded files\n  --cookies FILE        File to load/store cookies from/to\n  --sleep N             Number of seconds to sleep between requests\n  --rate RATE           Maximum download rate (e.g. 500k or 2.5M)",
+    "expected": {"intent_tags": ["download"], "side_effect": "network"}
+  },
+  {
+    "slug": "wget",
+    "help_text": "GNU Wget 1.21.4, a non-interactive network retriever.\nUsage: wget [OPTION]... [URL]...\n\nMandatory arguments to long options are mandatory for short options too.\n\nStartup:\n  -V,  --version           display the version of Wget and exit.\n  -h,  --help              print this help.\n\nLogging and input file:\n  -o,  --output-file=FILE    log messages to FILE.\n  -q,  --quiet               quiet (no output).\n  -nv, --no-verbose          turn off verbose without being quiet.\n  -i,  --input-file=FILE     download URLs found in local or external FILE.\n\nDownload:\n  -t,  --tries=NUMBER        set number of retries to NUMBER (0 unlimits).\n  -O,  --output-document=FILE write documents to FILE.\n  -nc, --no-clobber          skip downloads that would download to existing files.\n  -c,  --continue            resume getting a partially-downloaded file.",
+    "expected": {"intent_tags": ["download"], "side_effect": "network"}
+  },
+  {
+    "slug": "twine-upload",
+    "help_text": "usage: twine upload [-h] [-r REPOSITORY] [--repository-url REPOSITORY_URL]\n                    [-s] [--sign-with SIGN_WITH] [-i IDENTITY] [-u USERNAME]\n                    [-p PASSWORD] [--non-interactive] [-c COMMENT]\n                    [--config-file CONFIG_FILE] [--skip-existing]\n                    [--cert path] [--client-cert path] [--verbose] [--disable-progress-bar]\n                    dist [dist ...]\n\nUpload one or more distributions to a repository.\n\npositional arguments:\n  dist                  The distribution files to upload to the repository,\n                        may additionally contain a .asc file to include an\n                        existing signature.\n\noptional arguments:\n  -r REPOSITORY, --repository REPOSITORY\n                        The repository (package index) to upload the package to.",
+    "expected": {"intent_tags": ["publish"], "side_effect": "network"}
+  },
+  {
+    "slug": "pip-install",
+    "help_text": "usage: pip install [-h] [-r requirements] [-c constraints] [--no-deps]\n                   [--pre] [-e] [-t TARGET] [--platform PLATFORM]\n                   [--python-version PYTHON_VERSION]\n                   [--implementation IMPLEMENTATION] [--abi ABI]\n                   [--user] [--root ROOT] [--prefix PREFIX] [-b BUILD]\n                   [--src SRC] [-U, --upgrade]\n                   [--upgrade-strategy UPGRADE_STRATEGY] [--force-reinstall]\n                   [--ignore-installed] [--ignore-requires-python]\n                   [--no-build-isolation] [--use-pep517 | --no-use-pep517]\n                   [--check-build-dependencies] [--break-system-packages]\n                   package [package ...]\n\nInstall packages from PyPI, version control, local projects, and/or distribution files.\n\nPIP_INDEX_URL and --index-url control which package index is used.",
+    "expected": {"intent_tags": ["install"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "img2pdf",
+    "help_text": "usage: img2pdf [-h] [-v] [-V] [-o out] [--version]\n               [--without-pdfrw] [--first-frame-only]\n               [-C colorspace] [-D]\n               [-S LxW] [-s LxW] [-b L] [-m L]\n               [-d IGNORE_OWN_METADATA] [-a]\n               [images ...]\n\nLosslessly convert raster images to PDF.\n\npositional arguments:\n  images                images to convert\n\noptional arguments:\n  -h, --help            show this help message and exit\n  -o out, --output out  output file (default: stdout)\n  -V, --verbose         verbose output\n  --first-frame-only    Only convert the first frame of multi-frame images",
+    "expected": {"intent_tags": ["convert"], "side_effect": "none"}
+  },
+  {
+    "slug": "pandoc",
+    "help_text": "pandoc [OPTIONS] [FILES]\n  -f FORMAT, -r FORMAT  --from=FORMAT, --read=FORMAT\n  -t FORMAT, -w FORMAT  --to=FORMAT, --write=FORMAT\n  -o FILENAME           --output=FILENAME\n                        --data-dir=DIRECTORY\n  -M KEY[:VALUE]        --metadata=KEY[:VALUE]\n  -d FILE               --defaults=FILE\n  --verbose             give verbose debugging output\n  --quiet               suppress warnings\n  --fail-if-warnings    exit with error status if there are any warnings\n  --sandbox             run in sandbox, prohibiting access to files and the network\n\nInput formats:  commonmark, creole, csv, docbook, docx, dokuwiki, epub, fb2,\n                gfm, haddock, html, ipynb, jats, jira, json, latex, man,\nOutput formats: asciidoc, beamer, commonmark, context, csljson, docbook,\n                docx, dokuwiki, dzslides, epub, fb2, gfm, haddock, html, ipynb",
+    "expected": {"intent_tags": ["convert"], "side_effect": "none"}
+  },
+  {
+    "slug": "ffmpeg",
+    "help_text": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers\nUsage: ffmpeg [options] [[infile options] -i infile]... {[outfile options] outfile}...\n\nPrint help / information / capabilities:\n-L                  show license\n-h                  show help\n-? help             show help (alias for -h)\n-formats            show available formats\n-codecs             show available codecs\n\nAudio options:\n-aframes number     set the number of audio frames to output\n-aq quality         set audio quality (codec-specific)\n-ar rate            set audio sampling rate (in Hz)\n-ac channels        set number of audio channels\n\nVideo options:\n-vframes number     set the number of video frames to output\n-vcodec codec       force video codec ('copy' to copy stream)\n-r rate             set frame rate (Hz value, fraction or abbreviation)",
+    "expected": {"intent_tags": ["convert"], "side_effect": "none"}
+  },
+  {
+    "slug": "pdftotext",
+    "help_text": "pdftotext version 22.12.0\nCopyright 2005-2022 The Poppler Developers - http://poppler.freedesktop.org\nCopyright 1996-2011 Glyph & Cog, LLC\nUsage: pdftotext [options] <PDF-file> [<text-file>]\n  -f <int>          : first page to convert\n  -l <int>          : last page to convert\n  -r <fp>           : resolution, in DPI (default is 72)\n  -x <int>          : x-coordinate of the crop area top left corner\n  -y <int>          : y-coordinate of the crop area top left corner\n  -W <int>          : width of crop area in pixels (default is 0)\n  -H <int>          : height of crop area in pixels (default is 0)\n  -layout           : maintain original physical layout\n  -raw              : keep strings in content stream order\n  -nodiag           : discard diagonal text\n  -enc <string>     : output text encoding name (default is UTF-8)\n  -eol <string>     : output end-of-line convention (unix, dos, or mac)\n  -nopgbrk          : don't insert page breaks between pages",
+    "expected": {"intent_tags": ["extract"], "side_effect": "none"}
+  },
+  {
+    "slug": "pdfminer",
+    "help_text": "usage: pdf2txt.py [-h] [-d] [-p PAGENOS] [-m MAXPAGES] [-P PASSWORD] [-o OUTPUT]\n                  [-C] [-n] [-A] [-V] [-M CHAR_MARGIN] [-L LINE_MARGIN]\n                  [-W WORD_MARGIN] [-F BOXES_FLOW] [-Y LAYOUT_MODE]\n                  [-O OUTPUT_DIR] [-R ROTATION] [-t OUTPUT_TYPE]\n                  [-c INPUT_CODEC] [-s STRIP_CONTROL]\n                  pdf_file [pdf_file ...]\n\nPDF Miner text extractor. Extracts text and other content from PDF files.\n\npositional arguments:\n  pdf_file    PDF files to extract text from\n\noptional arguments:\n  -o OUTPUT, --output OUTPUT\n                        Output file (default: stdout)\n  -t OUTPUT_TYPE, --type OUTPUT_TYPE\n                        Output type: text/html/xml/tag (default: text)",
+    "expected": {"intent_tags": ["extract"], "side_effect": "none"}
+  },
+  {
+    "slug": "exiftool",
+    "help_text": "Usage: exiftool [OPTIONS] FILE\n       exiftool [OPTIONS] -common_args [OPTIONS] FILE ...\n\nExifTool version 12.65\n\nReading options:\n  --printConv (-p) Use print conversion (-p2 for special)\n  --csv           Format tag output as CSV\n  --json          Use JSON formatting for console output\n  --xml           Use XML output format\n  --list          List available tag names (-listf for file types)\n\nWriting options:\n  -TAG=VALUE      Write new VALUE for specified TAG\n  -overwrite_original\n                  Overwrite original (instead of preserving it)\n\nExifTool is a platform-independent Perl library plus a command-line application\nfor reading, writing and editing meta information in a wide variety of files.",
+    "expected": {"intent_tags": ["extract"], "side_effect": "none"}
+  },
+  {
+    "slug": "sphinx-build",
+    "help_text": "usage: sphinx-build [OPTIONS] SOURCEDIR OUTPUTDIR [FILENAMES...]\n\nGenerate documentation from source files.\n\nsphinx-build generates a Sphinx documentation set.\nIt is called like this:\n  $ sphinx-build [options] sourcedir outdir [filenames]\n\nwhere the 'sourcedir' is the 'source directory' from the documentation\nconfiguration file, and 'outdir' is the directory in which you want to place\nthe built documentation.\n\nOptions:\n  --version             show program's version number and exit\n  -b BUILDER            builder to use (default: html)\n  -a                    write all files (default: only write new and changed files)\n  -E                    don't use a saved environment, always read all files\n  -d PATH               path for the cached environment and doctree files\n  -q                    no output on stdout, just warnings on stderr\n  -W                    turn warnings into errors",
+    "expected": {"intent_tags": ["build"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "mkdocs-build",
+    "help_text": "Usage: mkdocs build [OPTIONS]\n\n  Build the MkDocs documentation\n\nOptions:\n  -c, --clean        Remove old files from the site directory before building.\n  -f, --config-file FILENAME\n                     Provide a specific MkDocs config\n  -d, --site-dir PATH\n                     The directory to output the result of the documentation build.\n  --no-directory-urls\n                     Disable the use of \"pretty\" URLs.\n  -q, --quiet        Silence warnings\n  -v, --verbose      Enable verbose output\n  --help             Show this message and exit.",
+    "expected": {"intent_tags": ["build"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "summarize-cli",
+    "help_text": "usage: summarize [OPTIONS] INPUT_FILE\n\nSummarize text documents using extractive summarization.\n\nOptions:\n  -n, --num-sentences INTEGER  Number of sentences in the summary  [default: 5]\n  -o, --output PATH            Write summary to this file (default: stdout)\n  --ratio FLOAT                Ratio of sentences to keep from original\n  --language TEXT              Language of the input document  [default: english]\n  --algorithm [luhn|lsa|lex_rank|edmundson|kl-sum|random|reduction]\n                               Summarization algorithm to use  [default: luhn]\n  --help                       Show this message and exit.",
+    "expected": {"intent_tags": ["summarize"], "side_effect": "none"}
+  },
+  {
+    "slug": "sumy",
+    "help_text": "Usage: sumy [lex-rank|luhn|lsa|kl|random|edmundson|reduction] [--length=<n>] [--url=<url> | --file=<file>] [--format=<format>]\n\nAutomatic text summarizer.\n\nArguments:\n  (lex-rank|luhn|lsa|kl|random|edmundson|reduction)\n                              Summarization method\n\nOptions:\n  --length=<n>                Length of summarization (sentences count) [default: 20%]\n  --url=<url>                 URL address of summarized document, for example: http://en.wikipedia.org/wiki/Automatic_summarization\n  --file=<file>               Path to file with document to summarize, for example: CHANGES.rst\n  --format=<format>           Format of input document, for example: html, plaintext, rst\n  --language=<lang>           Natural language of summarized document, for example: english, chinese\n  --stop-words=<file>         Path to a file with stop words",
+    "expected": {"intent_tags": ["summarize"], "side_effect": "none"}
+  },
+  {
+    "slug": "ruff",
+    "help_text": "Ruff: An extremely fast Python linter and code formatter, written in Rust.\n\nUsage: ruff [OPTIONS] <COMMAND>\n\nCommands:\n  check    Run Ruff on the given files or directories (default)\n  rule     Explain a rule (or all rules)\n  config   List or describe the available configuration options\n  linter   List all supported upstream linters\n  clean    Clear any caches in the current directory and any subdirectories\n  format   Format Python files\n  server   Run the language server\n  version  Display Ruff's version\n  help     Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version",
+    "expected": {"intent_tags": ["lint", "format"], "side_effect": "none"}
+  },
+  {
+    "slug": "ruff-format",
+    "help_text": "Usage: ruff format [OPTIONS] [FILES]...\n\nFormat Python files.\n\nFormats Python files by rewriting them in place to conform to Ruff's code style.\nRuff's formatter is designed as a drop-in replacement for Black.\n\nOptions:\n      --check       Avoid writing any formatted files back; instead, exit with a non-zero status code if any files would have been reformatted.\n      --diff        Avoid writing any formatted files back; instead, exit with a non-zero status code and print a diff to stdout if any files would have been reformatted.\n      --line-length <LINE_LENGTH>  Set the line length [default: 88]\n  -h, --help        Print help",
+    "expected": {"intent_tags": ["format"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "pyinstaller",
+    "help_text": "usage: pyinstaller [-h] [-v] [-D] [-F] [--specpath DIR] [-n NAME]\n                   [--contents-directory CONTENTS_DIRECTORY]\n                   [--add-data SOURCE:DEST] [--add-binary SOURCE:DEST]\n                   [--hidden-import MODULENAME]\n                   [--collect-submodules MODULENAME]\n                   [--collect-data MODULENAME]\n                   [--collect-binaries MODULENAME] [--collect-all MODULENAME]\n                   [--copy-metadata PACKAGENAME]\n                   [-p DIR] [-d {all,imports,bootloader,noarchive}] [--clean]\n                   [--log-level LEVEL] [-y] [-c] [-w] [-i ICON] [--disable-windowed-traceback]\n                   [--version-file FILE] [--manifest FILE]\n                   [--no-embed-manifest] [--uac-admin] [--uac-uiaccess]\n                   [scriptname [scriptname ...]]\n\nBundle a Python application and all its dependencies into a single package.\n\nPackage everything needed to run a Python app into a distributable bundle.",
+    "expected": {"intent_tags": ["build", "package"], "side_effect": "writes-fs"}
+  },
+  {
+    "slug": "nox",
+    "help_text": "usage: nox [-h] [--version] [-l] [-s [SESSIONS]] [-k KEYWORDS] [-t TAGS]\n           [-e PYTHONS] [--no-venv] [-r] [-R] [--no-reuse-existing-virtualenvs]\n           [--nocolor] [--forcecolor] [-p] [--error-on-missing-interpreters]\n           [--error-on-external-run] [--install-only] [--report OUTPUT]\n           [--non-interactive] [--verbose] [-x] [--stop-on-first-error]\n           [-P POSARGS] [--noisy-on-dry-run] [-f NOXFILE]\n           [session [session ...]]\n\nFlexible test automation for Python.\n\noptional arguments:\n  -l, --list-sessions   List available sessions and exit\n  -s SESSIONS, --sessions SESSIONS\n                        Run a set of sessions. Uses glob patterns.\n  -k KEYWORDS           Only run sessions matching the given keywords\n  -x, --stop-on-first-error\n                        Stop after the first error",
+    "expected": {"intent_tags": ["test"], "side_effect": "none"}
+  },
+  {
+    "slug": "tox",
+    "help_text": "usage: tox [-h] [--version] [-v] [-q] [--listenvs] [--listenvs-all]\n           [-e ENVLIST] [--skip-env ENVLIST_FILTER] [-c CONFIGFILE]\n           [-i INDEXURL] [--pre] [--force-dep ARGS] [--skip-pkg-install]\n           [--no-provision [REQUIRES_JSON]] [--devenv DEVENVDIR]\n           [--runner {virtualenv,uv}]\n           [args ...]\n\nRun test suites in multiple Python environments.\n\noptional arguments:\n  -e ENVLIST, --env ENVLIST\n                        comma-separated list of environments to run tests in\n  -v, --verbose         increase verbosity\n  -r, --recreate        recreate virtual environments if they exist\n  --listenvs            show list of test environments (with description if verbose)\n  --notest              Do not run the test commands in each env\n  -c CONFIGFILE         config file name or directory with 'tox.ini',\n                        'setup.cfg', or 'pyproject.toml'",
+    "expected": {"intent_tags": ["test"], "side_effect": "none"}
+  },
+  {
+    "slug": "httpie",
+    "help_text": "usage: http [--json] [--form] [--multipart] [--boundary BOUNDARY]\n            [--raw RAW] [--compress] [--pretty {all,colors,format,none}]\n            [--style STYLE] [--unsorted-json] [--response-charset ENCODING]\n            [--print WHAT] [--headers] [--meta] [--body] [--all]\n            [--history-print WHAT] [--stream] [--output FILE]\n            [--download] [--continue] [--quiet]\n            [--session SESSION_NAME_OR_PATH] [--session-read-only ...]\n            [--auth AUTH] [--auth-type {basic,bearer,digest,...}]\n            [--ignore-stdin] [--offline] [--check-status] [--follow] [--max-redirects N]\n            [METHOD] URL [REQUEST_ITEM ...]\n\nHTTPie: modern, user-friendly command-line HTTP client for the API era.\nMake HTTP requests and inspect/debug API responses.\n\nHTTP method defaults to GET when no body is provided, POST otherwise.",
+    "expected": {"intent_tags": ["download"], "side_effect": "network"}
+  },
+  {
+    "slug": "version-checker",
+    "help_text": "Usage: check-version [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "expected": {"intent_tags": [], "side_effect": "unknown"}
+  },
+  {
+    "slug": "generic-tool-no-subcommand",
+    "help_text": "usage: mytool [-h] [-v]\n\noptional arguments:\n  -h, --help     show this help message and exit\n  -v, --verbose  increase output verbosity",
+    "expected": {"intent_tags": [], "side_effect": "unknown"}
+  },
+  {
+    "slug": "abstract-framework",
+    "help_text": "usage: framework [OPTIONS] COMMAND [ARGS]...\n\n  A general purpose orchestration framework.\n\nOptions:\n  --config TEXT  Path to config file\n  --env TEXT     Environment name\n  --verbose      Enable verbose logging\n  --dry-run      Show what would be done without doing it\n  --help         Show this message and exit.\n\nCommands:\n  init      Initialize a new project\n  status    Show current status\n  validate  Validate configuration",
+    "expected": {"intent_tags": [], "side_effect": "unknown"}
+  },
+  {
+    "slug": "debug-helper",
+    "help_text": "usage: debugtool [-h] [--attach PID] [--port PORT] [--timeout TIMEOUT]\n                  [--log-level {debug,info,warn,error}]\n                  [--output-format {json,text,csv}]\n\nProcess diagnostic and introspection utility.\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --attach PID          Attach to running process by PID\n  --port PORT           Port for debug server  [default: 5678]\n  --timeout TIMEOUT     Connection timeout in seconds  [default: 30]\n  --log-level           Set logging level\n  --output-format       Output format for diagnostics",
+    "expected": {"intent_tags": [], "side_effect": "unknown"}
+  },
+  {
+    "slug": "pycodestyle",
+    "help_text": "usage: pycodestyle [--version] [-v] [-q] [--first] [--show-source]\n                   [--show-pep8] [--format=FORMAT] [--select=ERRORS]\n                   [--ignore=ERRORS] [--max-line-length=n] [--max-doc-length=n]\n                   [--indent-char=CHAR] [--exclude=PATTERNS] [--filename=PATTERNS]\n                   [--statistics] [--count] [--config=path]\n                   input ...\n\nThe PyPI package formerly known as pep8. Checks Python source code style\nagainst the PEP 8 style guide recommendations.\n\nIt allows you to report style errors and warnings in your Python source code.",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  },
+  {
+    "slug": "vulture",
+    "help_text": "usage: vulture [--exclude PATTERNS] [--ignore-decorators PATTERNS]\n               [--ignore-names PATTERNS] [--make-whitelist] [--min-confidence INT]\n               [--paths-of-dead-code PATTERNS] [--sort-by-size] [--version]\n               [--whitelist FILENAME]\n               [PATH ...]\n\nFind dead Python code.\nVulture analyzes Python source files and reports unused code. It uses the AST\nto find unused names (functions, methods, attributes, variables, imports).\n\nUnused code:\n  --min-confidence INT  Minimum confidence for code to be reported as unused [default: 60]\n  --sort-by-size        Sort unused code by size",
+    "expected": {"intent_tags": ["lint"], "side_effect": "none"}
+  }
+]
