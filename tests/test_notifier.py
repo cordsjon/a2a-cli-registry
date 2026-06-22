@@ -318,24 +318,22 @@ def test_deliver_success_path_commit_failure_does_not_propagate(db, clock, monke
     db.add(d)
     db.commit()
 
-    call_count = {"n": 0}
-    original_commit = db.commit
-
+    # The two setup commits above run BEFORE the monkeypatch is installed, so
+    # deliver()'s success-path commit is the FIRST call against the patched
+    # function — raise on it directly. (deliver() makes exactly one commit on
+    # the success path; there is no pre-transport commit.)
     def _failing_commit():
-        call_count["n"] += 1
-        # First call: the delivery row commit before transport (let pass)
-        # Second call: the success-path commit (raise to simulate failure)
-        if call_count["n"] >= 2:
-            raise OSError("simulated commit failure on success path")
-        return original_commit()
+        raise OSError("simulated commit failure on success path")
 
     monkeypatch.setattr(db, "commit", _failing_commit)
 
     transport = _OKTransport()
-    # Must not raise — bulkhead must swallow the commit failure
+    # Must not raise — bulkhead must swallow the commit failure. Revert the
+    # try/except guard in deliver() and this call raises, failing the test.
     deliver(d, sub, db, transport=transport)
-    # Transport was called (the send happened)
+    # Transport was called (the send happened) and delivered set in-memory
     assert len(transport.calls) == 1
+    assert d.delivered is True
 
 
 # ---------------------------------------------------------------------------
