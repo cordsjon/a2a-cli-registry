@@ -1,23 +1,11 @@
-from core.ops_registry import OPS
+from core.ops_registry import OPS, validate_input as _validate_input_shared
 
 _BY_SKILL = {o.a2a_skill: o for o in OPS}
 
 
 def _validate_input(op, input_dict: dict):
-    """Validate input keys against op.input_schema. Returns error string or None."""
-    allowed = set(op.input_schema.get("properties", {}).keys())
-    required = set(op.input_schema.get("required", []))
-    given = set(input_dict.keys())
-
-    unknown = given - allowed
-    if unknown:
-        return f"unknown input keys: {sorted(unknown)}"
-
-    missing = required - given
-    if missing:
-        return f"missing required input keys: {sorted(missing)}"
-
-    return None
+    """Validate input keys and types against op.input_schema. Returns error string or None."""
+    return _validate_input_shared(op, input_dict)
 
 
 def handle_a2a(session, method: str, params: dict):

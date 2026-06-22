@@ -1,6 +1,7 @@
 # core/cli/main.py
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -65,12 +66,29 @@ def main(argv=None) -> int:
                 populate(session, src, [PythonAdapter()], vocab, _RealClock())
         return 0
 
+    if args.command in ("audit", "lifecycle"):
+        # Still pending — fail loudly BEFORE init_db so we never leave an empty
+        # registry.db behind for a command that did nothing.
+        print(f"{args.command}: not implemented in v1.0 (tracked for a follow-up)",
+              file=sys.stderr)
+        return 2
+
     engine = init_db(args.db)
 
     if args.command == "serve":
         import uvicorn
         from core.server.app import create_app
         from core.store.db import session_factory
+        # Make the running server internally consistent with --host/--port.
+        # Precedence: an explicit A2A_BASE_URL (e.g. a public URL behind a proxy)
+        # always wins; otherwise derive it from --host/--port so BOTH the agent
+        # card (core/server/app.py) AND the MCP allowed-hosts (core/mcp/http.py,
+        # read at create_app time) point at the address we actually bind.
+        # "0.0.0.0" is a bind-all address, not a reachable client address, so the
+        # derived base_url substitutes localhost for it.
+        if "A2A_BASE_URL" not in os.environ:
+            reachable_host = "localhost" if args.host == "0.0.0.0" else args.host
+            os.environ["A2A_BASE_URL"] = f"http://{reachable_host}:{args.port}"
         # Per-request REST sessions + a build-time MCP session, both managed by
         # the app from this factory. The engine outlives the call via init_db.
         app = create_app(session_factory(engine))
@@ -90,10 +108,6 @@ def main(argv=None) -> int:
         return 0
 
     with get_session(engine) as session:
-        if args.command == "graph":
-            print(json.dumps(queries.cli_graph(session)))
-            return 0
-        # audit / lifecycle still pending — fail loudly, do not pretend success
-        print(f"{args.command}: not implemented in v1.0 (tracked for a follow-up)",
-              file=sys.stderr)
-        return 2
+        # Only `graph` reaches here (audit/lifecycle short-circuited above).
+        print(json.dumps(queries.cli_graph(session)))
+        return 0

@@ -43,6 +43,33 @@ def _slug_confidence_rank(caps_for_slug) -> int:
     return max(_CONFIDENCE_RANK.get(c.confidence, 1) for c in caps_for_slug)
 
 
+def _hop_excluded(caps_for_slug, allow_side_effects) -> bool:
+    """Fail-UNSAFE prune decision for a single hop (slug). A hop is excluded if:
+      - its worst side_effect is in {destructive, unknown} and that class is NOT
+        allowed, OR
+      - it carries an INFERRED side_effect with real blast radius (non-"none")
+        that is NOT in allow_side_effects. An inferred side_effect is unverified,
+        so it must fail UNSAFE (spec §8, lines 34/228). An inferred "none" hop
+        has no blast radius and is always allowed (confidence alone never excludes).
+    The operator override is unified on allow_side_effects: opting into a
+    side-effect CLASS accepts that blast radius whether declared or inferred.
+    """
+    se = _slug_side_effect(caps_for_slug)
+    if se == "none":
+        return False
+    excluded = _UNSAFE_DEFAULT - allow_side_effects
+    if se in excluded:
+        return True
+    # writes-fs / network: excluded by default only when INFERRED and not allowed.
+    if se in allow_side_effects:
+        return False
+    # is the (non-none, non-unsafe-default) side_effect carried by an inferred cap?
+    for c in caps_for_slug:
+        if c.side_effect == se and _CONFIDENCE_RANK.get(c.confidence, 1) >= 1:
+            return True
+    return False
+
+
 def _slug_produces(caps_for_slug) -> set[str]:
     return {p for c in caps_for_slug for p in c.output_types.split(",") if p}
 
@@ -54,7 +81,6 @@ def _slug_consumes(caps_for_slug) -> set[str]:
 def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
                max_chain_depth=4, max_candidate_chains=100):
     allow_side_effects = set(allow_side_effects or [])
-    excluded = _UNSAFE_DEFAULT - allow_side_effects
     caps = _cap_index(session)
     adjacency = {}
     for e in session.exec(select(CliEdge)).all():
@@ -72,8 +98,8 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
         while q and len(candidates) < max_candidate_chains:
             path, visited, hops = q.popleft()
             tail = path[-1]
-            # excluded side-effect prunes the path entirely
-            if _slug_side_effect(caps[tail]) in excluded:
+            # fail-UNSAFE prune: destructive/unknown OR inferred-side-effect
+            if _hop_excluded(caps[tail], allow_side_effects):
                 continue
             if _slug_produces(caps[tail]) & goal_out:
                 candidates.append(_finalize(path, caps, hops))

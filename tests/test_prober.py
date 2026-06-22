@@ -1,3 +1,5 @@
+import sys
+import time
 import pytest
 from core.prober.prober import probe_one, probe_fleet, _STALE_TTL_SECONDS
 from core.models import Cli
@@ -19,6 +21,42 @@ def test_probe_unhealthy_on_nonzero_exit():
 def test_probe_unhealthy_on_timeout():
     # sleeps longer than the timeout -> killed -> unhealthy, does not hang
     assert probe_one("sleep 5", timeout=0.5) == "unhealthy"
+
+
+# ---------------------------------------------------------------------------
+# Output cap tests (new — SECURITY.md "output cap" claim)
+# ---------------------------------------------------------------------------
+
+def test_probe_one_caps_runaway_output():
+    """A command that emits far more than max_output_bytes still returns a
+    valid verdict promptly without buffering the full output in memory.
+
+    We use a small cap (1000 bytes) against a command that prints 200 000 bytes
+    so the cap fires almost immediately. Exit 0 -> healthy.
+    The test asserts: correct verdict, completes well under the 10s timeout."""
+    cmd = f"{sys.executable} -c \"print('x'*200000)\""
+    start = time.monotonic()
+    result = probe_one(cmd, timeout=10.0, max_output_bytes=1000)
+    elapsed = time.monotonic() - start
+    assert result == "healthy", f"expected healthy, got {result!r}"
+    assert elapsed < 5.0, f"took {elapsed:.2f}s — possible hang"
+
+
+def test_probe_one_healthy_small_output():
+    """Normal command with small output exits 0 -> healthy."""
+    cmd = f"{sys.executable} -c \"print('ok')\""
+    assert probe_one(cmd) == "healthy"
+
+
+def test_probe_one_timeout_returns_unhealthy():
+    """A hanging command with a short timeout is killed and returns unhealthy
+    promptly — must not wait the full sleep duration."""
+    cmd = f"{sys.executable} -c \"import time; time.sleep(30)\""
+    start = time.monotonic()
+    result = probe_one(cmd, timeout=0.5)
+    elapsed = time.monotonic() - start
+    assert result == "unhealthy", f"expected unhealthy, got {result!r}"
+    assert elapsed < 5.0, f"took {elapsed:.2f}s — kill did not fire"
 
 
 # ---------------------------------------------------------------------------

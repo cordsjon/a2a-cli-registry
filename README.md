@@ -27,7 +27,7 @@ already have**, health-tracks them, and type-chains them:
 ## Quickstart
 
 ```bash
-# Install from source (PyPI publish is pending — see note below)
+# Not yet on PyPI — install from source:
 pip install git+https://github.com/cordsjon/a2a-cli-registry
 # or, from a clone:  pip install -e .
 
@@ -37,7 +37,8 @@ A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streama
 # then point Claude Code / any MCP client at http://localhost:8080/mcp
 ```
 
-> Once published to PyPI: `pip install a2a-cli-registry`.
+> `pip install a2a-cli-registry` will work **once the package is published to PyPI**
+> (not yet released — install from source above for now).
 
 ## What's in v1.0
 - **Operator CLI:** `populate`, `discover`, `graph`, `serve` wired to the engine (`audit`/`lifecycle` are roadmapped — they exit 2 today).

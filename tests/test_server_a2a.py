@@ -114,11 +114,9 @@ def test_a2a_missing_required_input_key_returns_structured_error(app_session_fac
 
 
 def test_a2a_wrong_type_arg_returns_structured_error(app_session_factory, monkeypatch):
-    """Wrong-type arg (int instead of list for goal_inputs) returns {"error": ...}, not 500.
-
-    A string for goal_inputs is tolerated by plan_chain (set() iterates chars), so an
-    integer is used instead — set(42) raises TypeError: 'int' object is not iterable.
-    """
+    """Wrong-type arg (int instead of list for goal_inputs) is now caught by schema
+    type validation BEFORE the handler runs — returns {"error": ...} mentioning
+    the type problem, not a 500."""
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
     app = create_app(app_session_factory)
     client = TestClient(app)
@@ -128,8 +126,61 @@ def test_a2a_wrong_type_arg_returns_structured_error(app_session_factory, monkey
         headers=_AUTH)
     assert resp.status_code == 200
     body = resp.json()
-    assert "error" in body, f"expected error key, got: {body}"
-    assert "500" not in str(resp.status_code)
+    error_msg = body.get("error", "")
+    assert error_msg, f"expected error key, got: {body}"
+    # tightened: must mention the field name and the type problem
+    assert "goal_inputs" in error_msg, f"error should mention field name: {error_msg}"
+    assert "array" in error_msg or "int" in error_msg, (
+        f"error should mention type info: {error_msg}"
+    )
+
+
+def test_a2a_wrong_type_string_field_rejected(app_session_factory, monkeypatch):
+    """A2A: search-cli-catalog with query=123 (int instead of str) returns
+    {"error": ...} mentioning the type problem — NOT a success and NOT an uncaught exception."""
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    client = TestClient(app)
+    resp = client.post("/a2a", json={"method": "SendMessage",
+        "params": {"skill": "search-cli-catalog", "input": {"query": 123}}},
+        headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    error_msg = body.get("error", "")
+    assert error_msg, f"expected error, got success: {body}"
+    assert "query" in error_msg
+    assert "string" in error_msg or "int" in error_msg
+
+
+def test_a2a_correct_type_arg_accepted(app_session_factory, monkeypatch):
+    """A2A: search-cli-catalog with query as a proper string succeeds (no error key)."""
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    client = TestClient(app)
+    resp = client.post("/a2a", json={"method": "SendMessage",
+        "params": {"skill": "search-cli-catalog", "input": {"query": "ripgrep"}}},
+        headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "error" not in body, f"unexpected error: {body}"
+
+
+def test_a2a_array_wrong_type_rejected(app_session_factory, monkeypatch):
+    """A2A: plan-cli-chain with goal_inputs as a string (not array) is rejected.
+    Covers array-vs-string type mismatch since no op has an integer field."""
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    client = TestClient(app)
+    resp = client.post("/a2a", json={"method": "SendMessage",
+        "params": {"skill": "plan-cli-chain",
+                   "input": {"goal_inputs": "notalist", "goal_outputs": ["text"]}}},
+        headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    error_msg = body.get("error", "")
+    assert error_msg, f"expected error for string-as-array, got: {body}"
+    assert "goal_inputs" in error_msg
+    assert "array" in error_msg or "str" in error_msg
 
 
 # ---------------------------------------------------------------------------
