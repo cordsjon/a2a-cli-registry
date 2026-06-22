@@ -3,6 +3,18 @@
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
 [SemVer](https://semver.org/). Pre-1.0: minor versions may break surfaces.
 
+## [Unreleased]
+### Added
+- `probe` command: runs config-driven one-shot health sweep over all enabled CLIs with per-CLI timeout + SIGKILL + output cap; writes `health_status` per CLI; prints JSON summary `{probed, healthy, unhealthy, stale, unknown}`.
+- `overview` command: read-only `rich`-rendered snapshot of the catalog with CLIs (slug/lang/health/description), capabilities (intent/in→out/side_effect/confidence), and call-graph edges; optional `--query` filters by CLI slug/description substring.
+- `rich` runtime dependency for rich terminal output in `overview` command.
+- Health-state model: four canonical lowercase states `healthy`, `unhealthy`, `stale`, `unknown` for agent visibility; `stale` = unprobeable CLI older than `staleness_ttl`; `unknown` = never probed or unprobeable within TTL.
+
+### Changed
+- Health states are now lowercase canonical form (`healthy`, `unhealthy`, `stale`, `unknown`); previously used mixed casing.
+- `[probe]` config table is now **live** (was reserved): keys `probe_timeout`, `max_probe_output_bytes`, `probe_concurrency`, `staleness_ttl` are read at runtime and change behavior immediately.
+- Planner hops now carry per-hop `health_status` annotation for agent observability (no change to ranking logic).
+
 ## [1.0.0] - 2026-06-22
 ### Added
 - Operator CLI wired: `populate`, `discover`, `graph`, `serve` subcommands connected to the engine (`audit`/`lifecycle` roadmapped, exit 2 today).
