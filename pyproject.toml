@@ -47,3 +47,6 @@ packages = ["core"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: cross-process tests that spawn subprocesses (deselect with -m 'not slow')",
+]
