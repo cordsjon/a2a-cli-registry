@@ -42,4 +42,7 @@ def create_app(session):
     def a2a(body: dict):
         return handle_a2a(session, body.get("method"), body.get("params", {}))
 
+    from core.mcp.http import mount_mcp
+    mount_mcp(app, session)
+
     return app

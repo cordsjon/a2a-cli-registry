@@ -5,10 +5,35 @@ exact same set the in-process MCP surface (core.mcp.server) exposes — so the t
 can never drift. Each tool forwards to call_mcp_tool, which validates input
 against the op's input_schema and returns a structured content block.
 """
+import os
+
 from mcp.server.fastmcp import FastMCP
 
 from core.ops_registry import OPS
 from core.mcp.server import call_mcp_tool
+
+
+def _bearer_gate(asgi_app):
+    """Wrap an ASGI app so requests without a valid bearer token get 401.
+
+    Mirrors core.server.app._require_token: expected token from env
+    A2A_BEARER_TOKEN; missing env or wrong/missing token -> 401.
+    """
+    async def _gated(scope, receive, send):
+        if scope["type"] != "http":
+            await asgi_app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        auth = headers.get(b"authorization", b"").decode()
+        expected = os.environ.get("A2A_BEARER_TOKEN")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+        if not expected or token != expected:
+            await send({"type": "http.response.start", "status": 401,
+                        "headers": [(b"content-type", b"text/plain")]})
+            await send({"type": "http.response.body", "body": b"Unauthorized"})
+            return
+        await asgi_app(scope, receive, send)
+    return _gated
 
 
 def mcp_tool_names() -> list[str]:
@@ -35,8 +60,12 @@ def build_mcp_app(session):
 
     *session* is captured by each tool handler. In v1.0 a single session is held
     open for the server's lifetime (see the serve command / mount_mcp).
+
+    streamable_http_path="/" so that when this app is mounted at /mcp by the
+    host FastAPI app, Starlette strips the /mcp prefix and the sub-app correctly
+    handles the resulting "/" path.
     """
-    server = FastMCP("a2a-cli-registry")
+    server = FastMCP("a2a-cli-registry", streamable_http_path="/")
 
     for op in OPS:
         name = op.mcp_tool
@@ -51,5 +80,5 @@ def build_mcp_app(session):
 
 
 def mount_mcp(app, session):
-    """Mount the MCP Streamable-HTTP app at /mcp on the given FastAPI app."""
-    app.mount("/mcp", build_mcp_app(session))
+    """Mount the MCP Streamable-HTTP app at /mcp, gated by bearer auth."""
+    app.mount("/mcp", _bearer_gate(build_mcp_app(session)))
