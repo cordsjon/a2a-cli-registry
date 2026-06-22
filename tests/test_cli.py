@@ -111,6 +111,8 @@ def test_announce_isolates_failing_broker(monkeypatch):
             raise httpx.ConnectError("connection refused")
         return types.SimpleNamespace(status_code=200)
 
+    # SSRF guard must be bypassed so the test reaches httpx.post.
+    monkeypatch.setattr("core.announcer.announcer._is_ssrf_target", lambda url: False)
     monkeypatch.setattr(httpx, "post", fake_post)
     result = announce(
         "http://example.com/agent.json",
@@ -145,6 +147,8 @@ def test_announce_sets_no_follow_redirects(monkeypatch):
         captured.update(kwargs)
         return types.SimpleNamespace(status_code=200)
 
+    # SSRF guard must be bypassed so the test reaches httpx.post.
+    monkeypatch.setattr("core.announcer.announcer._is_ssrf_target", lambda url: False)
     monkeypatch.setattr(httpx, "post", fake_post)
     announce("http://example.com/agent.json", ["http://broker.example.com/register"])
     assert captured.get("follow_redirects") is False
