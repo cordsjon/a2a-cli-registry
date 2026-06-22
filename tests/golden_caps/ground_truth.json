@@ -166,7 +166,7 @@
   },
   {
     "slug": "debug-helper",
-    "help_text": "usage: debugtool [-h] [--attach PID] [--port PORT] [--timeout TIMEOUT]\n                  [--log-level {debug,info,warn,error}]\n                  [--output-format {json,text,csv}]\n\nProcess diagnostic and introspection utility.\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --attach PID          Attach to running process by PID\n  --port PORT           Port for debug server  [default: 5678]\n  --timeout TIMEOUT     Connection timeout in seconds  [default: 30]\n  --log-level           Set logging level\n  --output-format       Output format for diagnostics",
+    "help_text": "usage: debugtool [-h] [--attach PID] [--port PORT] [--timeout TIMEOUT]\n                  [--log-level {debug,info,warn,error}]\n                  [--style {json,text,csv}]\n\nProcess diagnostic and introspection utility.\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --attach PID          Attach to running process by PID\n  --port PORT           Port for debug server  [default: 5678]\n  --timeout TIMEOUT     Connection timeout in seconds  [default: 30]\n  --log-level           Set logging level\n  --style               Output style for diagnostics",
     "expected": {"intent_tags": [], "side_effect": "unknown"}
   },
   {
