@@ -79,6 +79,64 @@ def test_chain_hops_carry_routing_fields(db):
     assert hop1["via_type"] == "text:doc"
 
 
+def _inferred_fleet(db, se="writes-fs"):
+    """Only path file:pdf -> text:goal passes through 'mid', which carries an
+    INFERRED side_effect. Used to prove inferred-side-effect exclusion."""
+    db.add(Cli(slug="src", lang="python"))
+    db.add(Capability(cli_slug="src", intent_tags="g", input_types="file:pdf",
+                      output_types="text:x", side_effect="none", confidence="declared"))
+    db.add(Cli(slug="mid", lang="python"))
+    db.add(Capability(cli_slug="mid", intent_tags="g", input_types="text:x",
+                      output_types="text:goal", side_effect=se, confidence="inferred"))
+    db.add(CliEdge(from_slug="src", to_slug="mid", via_type="text:x"))
+    db.commit()
+
+
+def test_inferred_side_effect_excluded_by_default(db):
+    # the ONLY path to text:goal goes through an inferred writes-fs hop -> excluded
+    _inferred_fleet(db, se="writes-fs")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert all("mid" not in c.slugs for c in chains)
+    assert chains == []   # no alternative path exists
+
+
+def test_inferred_side_effect_included_when_allowed(db):
+    # same goal, operator opts into writes-fs blast-radius class -> chain returned
+    _inferred_fleet(db, se="writes-fs")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"],
+                        allow_side_effects=["writes-fs"])
+    assert any("mid" in c.slugs for c in chains)
+
+
+def test_inferred_network_side_effect_excluded_by_default(db):
+    # network inferred side-effect is also excluded by default
+    _inferred_fleet(db, se="network")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert chains == []
+
+
+def test_inferred_none_side_effect_still_allowed(db):
+    # inferred confidence with NO blast radius (none) is harmless -> NOT excluded
+    _inferred_fleet(db, se="none")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert any("mid" in c.slugs for c in chains)
+
+
+def test_declared_writes_fs_still_allowed_by_default(db):
+    # a DECLARED writes-fs hop must STILL be included by default (only INFERRED
+    # writes-fs/network is newly excluded)
+    db.add(Cli(slug="src", lang="python"))
+    db.add(Capability(cli_slug="src", intent_tags="g", input_types="file:pdf",
+                      output_types="text:x", side_effect="none", confidence="declared"))
+    db.add(Cli(slug="dmid", lang="python"))
+    db.add(Capability(cli_slug="dmid", intent_tags="g", input_types="text:x",
+                      output_types="text:goal", side_effect="writes-fs", confidence="declared"))
+    db.add(CliEdge(from_slug="src", to_slug="dmid", via_type="text:x"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert any("dmid" in c.slugs for c in chains)
+
+
 def test_terminates_on_cyclic_typegraph(db):
     db.add(Cli(slug="a", lang="python")); db.add(Cli(slug="b", lang="python"))
     db.add(Capability(cli_slug="a", input_types="t", output_types="t", intent_tags="x",
