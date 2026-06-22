@@ -28,7 +28,10 @@ def test_goal_to_suggested_chain_and_surface_parity(db, clock, spawn_spy):
     a2a = handle_a2a(db, "SendMessage",
                      {"skill": "search-cli-catalog", "input": {"query": ""}})["result"]
     mcp = call_mcp_tool(db, "search_cli_catalog", {"query": ""})["content"][0]["json"]
-    assert {r["slug"] for r in a2a} == {r["slug"] for r in mcp}   # parity
+    assert {r["slug"] for r in a2a} == {r["slug"] for r in mcp}   # parity: slug sets
+    # deep parity: same fields and values per record, not just the slug set —
+    # catches a future regression where one surface silently strips/adds a field
+    assert {r["slug"]: r for r in a2a} == {r["slug"]: r for r in mcp}
 
     # untrusted text returned inert; no CLI spawned on any path
     desc = queries.describe_cli(db, "summarize")
