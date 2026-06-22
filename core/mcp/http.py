@@ -4,10 +4,17 @@ Tools are rendered from the SHARED op registry (core.ops_registry.OPS) — the
 exact same set the in-process MCP surface (core.mcp.server) exposes — so the two
 can never drift. Each tool forwards to call_mcp_tool, which validates input
 against the op's input_schema and returns a structured content block.
+
+Transport security: DNS-rebinding protection stays ON. Allowed hosts are derived
+from A2A_BASE_URL (default http://localhost:8080) plus localhost variants and
+"testserver" (the synthetic Host header used by FastAPI TestClient). This replaces
+the old host="0.0.0.0" workaround, which disabled DNS-rebinding protection entirely.
 """
 import os
+from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from core.ops_registry import OPS
 from core.mcp.server import call_mcp_tool
@@ -55,6 +62,22 @@ def _make_handler(session, op_name: str):
     return handler
 
 
+def _mcp_transport_security() -> TransportSecuritySettings:
+    """Build TransportSecuritySettings with DNS-rebinding protection ON.
+
+    Allowed hosts are derived from A2A_BASE_URL plus localhost variants and
+    "testserver" (FastAPI TestClient's synthetic Host header).
+    """
+    base = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
+    host = urlparse(base).netloc or "localhost:8080"
+    allowed = [host, "localhost", "127.0.0.1", "localhost:8080", "testserver"]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed,
+        allowed_origins=[f"http://{host}", f"https://{host}", base],
+    )
+
+
 def build_mcp_app(session):
     """Build a Streamable-HTTP ASGI app exposing every registry op as an MCP tool.
 
@@ -65,12 +88,14 @@ def build_mcp_app(session):
     host FastAPI app, Starlette strips the /mcp prefix and the sub-app correctly
     handles the resulting "/" path.
 
-    host="0.0.0.0" disables FastMCP's automatic DNS-rebinding protection (which
-    is only auto-enabled for 127.0.0.1 / localhost / ::1). Without this the test
-    client's synthetic "testserver" Host header would be rejected with 421, and in
-    production the server runs behind a reverse proxy that handles host validation.
+    DNS-rebinding protection is kept ON via transport_security; allowed hosts are
+    derived from A2A_BASE_URL (see _mcp_transport_security).
     """
-    server = FastMCP("a2a-cli-registry", streamable_http_path="/", host="0.0.0.0")
+    server = FastMCP(
+        "a2a-cli-registry",
+        streamable_http_path="/",
+        transport_security=_mcp_transport_security(),
+    )
 
     for op in OPS:
         name = op.mcp_tool
