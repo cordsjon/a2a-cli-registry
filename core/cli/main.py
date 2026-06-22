@@ -39,6 +39,20 @@ def _build_source_and_vocab(config_path: str):
     return cfg, src, vocab
 
 
+def _mass_removal_threshold(cfg: dict) -> float:
+    """Read the populate mass-removal guard from config, falling back to
+    populate()'s own default when [thresholds].mass_removal is absent.
+
+    Keeps config optional: a config without a [thresholds] section still works.
+    """
+    return cfg.get("thresholds", {}).get("mass_removal", _DEFAULT_MASS_REMOVAL)
+
+
+# populate()'s own default; mirrored here so an absent config key behaves
+# identically to calling populate() with no threshold override.
+_DEFAULT_MASS_REMOVAL = 0.30
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(prog="a2a-cli-registry")
@@ -63,7 +77,8 @@ def main(argv=None) -> int:
         if not args.dry_run:
             engine = init_db(args.db)
             with get_session(engine) as session:
-                populate(session, src, [PythonAdapter()], vocab, _RealClock())
+                populate(session, src, [PythonAdapter()], vocab, _RealClock(),
+                         mass_removal_threshold=_mass_removal_threshold(_cfg))
         return 0
 
     if args.command in ("audit", "lifecycle"):
@@ -98,7 +113,8 @@ def main(argv=None) -> int:
     if args.command == "populate":
         _cfg, src, vocab = _build_source_and_vocab(args.config)
         with get_session(engine) as session:
-            result = populate(session, src, [PythonAdapter()], vocab, _RealClock())
+            result = populate(session, src, [PythonAdapter()], vocab, _RealClock(),
+                              mass_removal_threshold=_mass_removal_threshold(_cfg))
             edges = len(queries.cli_graph(session))
         print(json.dumps({
             "added": result["added"],
