@@ -321,6 +321,29 @@ def test_probe_falls_back_to_defaults_when_no_probe_section(tmp_path, monkeypatc
                         "max_output_bytes": 65536, "staleness_ttl": 3600}
 
 
+def test_overview_renders_populated_catalog(tmp_path, capsys):
+    # reuse the populate path to seed a real CLI, then overview it
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}}]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'cli_audit_path = "{fleet}"\n[vocabulary]\nregistered = ["file:pdf","text:doc"]\n[vocabulary.aliases]\n')
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()  # drop populate output
+    rc = main(["overview", "--db", str(db)])
+    assert rc == 0
+    assert "pdf2text" in capsys.readouterr().out
+
+
+def test_overview_empty_db(tmp_path, capsys):
+    rc = main(["overview", "--db", str(tmp_path / "empty.db")])
+    assert rc == 0
+    assert "empty" in capsys.readouterr().out.lower()
+
+
 def test_announce_sets_no_follow_redirects(monkeypatch):
     """follow_redirects=False must be passed to httpx.post."""
     captured = {}

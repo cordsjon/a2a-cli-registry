@@ -76,6 +76,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--query", default="")
     args, _rest = parser.parse_known_args(argv)
 
     if args.command == "discover":
@@ -147,6 +148,17 @@ def main(argv=None) -> int:
                     staleness_ttl=pc["staleness_ttl"],
                 )
         print(json.dumps(summary))
+        return 0
+
+    if args.command == "overview":
+        from core.tui.overview import render_overview
+        with get_session(engine) as session:
+            rows = queries.search_clis(session, args.query)
+            for r in rows:
+                desc = queries.describe_cli(session, r["slug"])
+                r["capabilities"] = desc["capabilities"] if desc else []
+            graph = queries.cli_graph(session)
+        render_overview(rows, graph)
         return 0
 
     with get_session(engine) as session:

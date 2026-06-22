@@ -28,6 +28,18 @@ def test_rich_is_declared_runtime_dependency():
                or d.startswith("rich ") for d in deps)
 
 
+def test_rich_imported_only_in_core_tui():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent / "core"
+    offenders = []
+    for p in root.rglob("*.py"):
+        if "tui" in p.parts:
+            continue
+        if "import rich" in p.read_text() or "from rich" in p.read_text():
+            offenders.append(str(p))
+    assert offenders == [], f"rich imported outside core/tui/: {offenders}"
+
+
 def test_metadata_complete_for_pypi():
     cfg = tomllib.loads(_PYPROJECT.read_text())["project"]
     assert cfg["description"]
