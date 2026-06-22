@@ -16,7 +16,7 @@ def init_db(path: str):
     """
     engine = create_engine(
         f"sqlite:///{path}",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 5.0},
         poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)   # idempotent, transactional per-table
