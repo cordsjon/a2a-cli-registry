@@ -29,6 +29,17 @@ def get_session(engine):
         yield session
 
 
+def session_factory(engine):
+    """Return a zero-arg callable that yields a fresh context-managed Session.
+
+    Used by the HTTP server for per-request sessions (each request gets its own
+    Session on the shared StaticPool connection — proper isolation without a
+    process-lifetime shared Session)."""
+    def _make():
+        return get_session(engine)   # contextmanager -> use as `with _make() as s:`
+    return _make
+
+
 @contextmanager
 def with_file_lock(path: str):
     """Cross-platform advisory lock (portalocker, not fcntl)."""
