@@ -11,7 +11,7 @@ from core.announcer.announcer import announce
 
 def test_load_config_reads_planner_bounds_and_vocab():
     cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
-    assert cfg["planner"]["max_chain_depth"] == 4
+    assert cfg["planner"]["reserved"]["max_chain_depth"] == 4
     assert "file:pdf" in cfg["vocabulary"]["registered"]
     assert cfg["vocabulary"]["aliases"]["pdf"] == "file:pdf"
 
@@ -20,11 +20,15 @@ def test_reference_config_has_no_dead_keys():
     """Guard the config-honesty invariant: keys with no runtime consumer and no
     roadmap must not reappear in the reference config (a config that lies is
     worse than no config)."""
+    import re
     text = (Path(__file__).parent.parent / "examples/reference-fleet/config.toml").read_text()
-    dead = ["port =", "brokers =", "buckets =", "probe_interval", "dead_letter_n",
-            "max_inflight_deliveries", "graph_recompute_max_clis",
-            "precision_recall_floor", "ground_truth_min"]
-    present = [k for k in dead if k in text]
+    # Line-anchored so a future legitimate key (e.g. transport, export) ending in
+    # a dead key's name can't false-trigger the guard.
+    dead = [r"^port\s*=", r"^brokers\s*=", r"^buckets\s*=", r"^probe_interval\b",
+            r"^dead_letter_n\b", r"^max_inflight_deliveries\b",
+            r"^graph_recompute_max_clis\b", r"^precision_recall_floor\b",
+            r"^ground_truth_min\b"]
+    present = [k for k in dead if re.search(k, text, re.MULTILINE)]
     assert present == [], f"dead config keys reintroduced: {present}"
 
 

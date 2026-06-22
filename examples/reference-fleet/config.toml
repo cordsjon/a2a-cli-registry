@@ -20,7 +20,7 @@ probe_concurrency = 8
 staleness_ttl = 3600
 
 # reserved — consumed once a plan/chain command lands; see core/planner/search.py
-[planner]
+[planner.reserved]
 max_chain_depth = 4
 max_candidate_chains = 100
 

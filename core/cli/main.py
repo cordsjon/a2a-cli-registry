@@ -39,6 +39,11 @@ def _build_source_and_vocab(config_path: str):
     return cfg, src, vocab
 
 
+# populate()'s own default; mirrored here so an absent config key behaves
+# identically to calling populate() with no threshold override.
+_DEFAULT_MASS_REMOVAL = 0.30
+
+
 def _mass_removal_threshold(cfg: dict) -> float:
     """Read the populate mass-removal guard from config, falling back to
     populate()'s own default when [thresholds].mass_removal is absent.
@@ -46,11 +51,6 @@ def _mass_removal_threshold(cfg: dict) -> float:
     Keeps config optional: a config without a [thresholds] section still works.
     """
     return cfg.get("thresholds", {}).get("mass_removal", _DEFAULT_MASS_REMOVAL)
-
-
-# populate()'s own default; mirrored here so an absent config key behaves
-# identically to calling populate() with no threshold override.
-_DEFAULT_MASS_REMOVAL = 0.30
 
 
 def main(argv=None) -> int:
