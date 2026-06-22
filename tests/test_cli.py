@@ -16,6 +16,24 @@ def test_load_config_reads_planner_bounds_and_vocab():
     assert cfg["vocabulary"]["aliases"]["pdf"] == "file:pdf"
 
 
+def test_reference_config_has_no_dead_keys():
+    """Guard the config-honesty invariant: keys with no runtime consumer and no
+    roadmap must not reappear in the reference config (a config that lies is
+    worse than no config)."""
+    text = (Path(__file__).parent.parent / "examples/reference-fleet/config.toml").read_text()
+    dead = ["port =", "brokers =", "buckets =", "probe_interval", "dead_letter_n",
+            "max_inflight_deliveries", "graph_recompute_max_clis",
+            "precision_recall_floor", "ground_truth_min"]
+    present = [k for k in dead if k in text]
+    assert present == [], f"dead config keys reintroduced: {present}"
+
+
+def test_reference_config_mass_removal_is_live():
+    """The one wired threshold must be readable at its documented path."""
+    cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
+    assert cfg["thresholds"]["mass_removal"] == 0.30
+
+
 def test_main_graph_command_returns_zero(tmp_path, capsys):
     # graph on an empty db should succeed (exit 0), printing an empty graph
     rc = main(["graph", "--db", str(tmp_path / "r.db")])
