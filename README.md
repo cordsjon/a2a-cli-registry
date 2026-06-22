@@ -40,6 +40,20 @@ A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streama
 > `pip install a2a-cli-registry` will work **once the package is published to PyPI**
 > (not yet released — install from source above for now).
 
+## Configuration
+The config file (`--config`, see `examples/reference-fleet/config.toml`) has two
+zones. **Live** keys are read today and change behavior:
+
+| Key | Effect |
+|---|---|
+| `cli_audit_path` | path to your cli-audit JSON export |
+| `[vocabulary] registered` / `[vocabulary.aliases]` | the registered port vocabulary + aliases |
+| `[thresholds] mass_removal` | `populate` fails closed if ≥ this fraction of CLIs would be removed |
+
+Keys under a **reserved** section are parsed but not yet consumed — the command
+that will use them is named inline in the file (the prober and planner keys await
+their `probe`/`plan` commands). Editing a reserved key has no effect until then.
+
 ## What's in v1.0
 - **Operator CLI:** `populate`, `discover`, `graph`, `serve` wired to the engine (`audit`/`lifecycle` are roadmapped — they exit 2 today).
 - **MCP over Streamable HTTP** at `/mcp`, same bearer auth as A2A.
