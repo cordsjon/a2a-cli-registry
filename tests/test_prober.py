@@ -59,6 +59,27 @@ def test_probe_one_timeout_returns_unhealthy():
     assert elapsed < 5.0, f"took {elapsed:.2f}s — kill did not fire"
 
 
+@pytest.mark.skipif(__import__("os").name != "posix",
+                    reason="process-group kill is POSIX-only")
+def test_probe_one_timeout_kills_child_process_tree(tmp_path):
+    """F2 (Codex): a probe whose command spawns a child must kill the WHOLE
+    tree on timeout, not just the direct PID. The command backgrounds a child
+    that writes a sentinel after 3s; the parent is killed at 0.5s. With a
+    process-group kill the orphaned child dies before it can write the file."""
+    sentinel = tmp_path / "child-survived.txt"
+    # Parent sleeps 30s (will time out); it first spawns a detached child that
+    # waits 3s then touches the sentinel. shlex.split needs a real argv, so run
+    # the whole thing via `sh -c`.
+    child = f"import time,pathlib; time.sleep(3); pathlib.Path(r'{sentinel}').write_text('x')"
+    cmd = (f"sh -c '{sys.executable} -c \"{child}\" & "
+           f"{sys.executable} -c \"import time; time.sleep(30)\"'")
+    result = probe_one(cmd, timeout=0.5)
+    assert result == "unhealthy"
+    # Wait past the child's 3s delay; if the group kill worked the child is gone.
+    time.sleep(4.0)
+    assert not sentinel.exists(), "child survived timeout — process tree not killed"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

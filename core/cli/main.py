@@ -15,8 +15,31 @@ from core.prober.prober import probe_fleet
 from core.catalog import queries
 from core.discovery.cli_audit_source import CliAuditSource
 from core.adapters.python_adapter import PythonAdapter
+from core.adapters.stub_adapter import StubAdapter
 from core.vocabulary import VocabularyRegistry
 from core.populate import populate
+
+
+def _adapters():
+    """The language adapters every mutating command dispatches through.
+
+    PythonAdapter infers from --help; StubAdapter supplies declared-only
+    health_cmd for go/node/shell. Both populate AND probe must use the same
+    set so a CLI that populate accepts is also one probe can health-check —
+    otherwise non-Python CLIs silently stay 'unknown' after a probe sweep.
+    """
+    return [PythonAdapter(), StubAdapter()]
+
+
+def _db_lock_path(db_path: str) -> str:
+    """Sidecar lock file serializing mutating commands on one registry DB.
+
+    A separate <db>.lock file (not the DB file itself) keeps the advisory lock
+    independent of SQLite's own file handling, and lets the lock be held BEFORE
+    init_db so two first-run commands cannot race schema creation, and a probe
+    sweep cannot interleave with a populate's delete/insert.
+    """
+    return db_path + ".lock"
 
 
 def load_config(path: str) -> dict:
@@ -87,10 +110,11 @@ def main(argv=None) -> int:
         for r in records:
             print(r.slug)
         if not args.dry_run:
-            engine = init_db(args.db)
-            with get_session(engine) as session:
-                populate(session, src, [PythonAdapter()], vocab, _RealClock(),
-                         mass_removal_threshold=_mass_removal_threshold(_cfg))
+            with with_file_lock(_db_lock_path(args.db)):
+                engine = init_db(args.db)
+                with get_session(engine) as session:
+                    populate(session, src, _adapters(), vocab, _RealClock(),
+                             mass_removal_threshold=_mass_removal_threshold(_cfg))
         return 0
 
     if args.command in ("audit", "lifecycle"):
@@ -124,10 +148,11 @@ def main(argv=None) -> int:
 
     if args.command == "populate":
         _cfg, src, vocab = _build_source_and_vocab(args.config)
-        with get_session(engine) as session:
-            result = populate(session, src, [PythonAdapter()], vocab, _RealClock(),
-                              mass_removal_threshold=_mass_removal_threshold(_cfg))
-            edges = len(queries.cli_graph(session))
+        with with_file_lock(_db_lock_path(args.db)):
+            with get_session(engine) as session:
+                result = populate(session, src, _adapters(), vocab, _RealClock(),
+                                  mass_removal_threshold=_mass_removal_threshold(_cfg))
+                edges = len(queries.cli_graph(session))
         print(json.dumps({
             "added": result["added"],
             "removed": result["removed"],
@@ -138,10 +163,12 @@ def main(argv=None) -> int:
     if args.command == "probe":
         cfg = load_config(args.config)
         pc = _probe_config(cfg)
-        with with_file_lock(args.db):
+        # Same sidecar lock as populate: serialize the sweep against a
+        # concurrent populate's delete/insert so probe never commits stale rows.
+        with with_file_lock(_db_lock_path(args.db)):
             with get_session(engine) as session:
                 summary = probe_fleet(
-                    session, [PythonAdapter()], _RealClock(),
+                    session, _adapters(), _RealClock(),
                     concurrency=pc["probe_concurrency"],
                     probe_timeout=pc["probe_timeout"],
                     max_output_bytes=pc["max_probe_output_bytes"],
@@ -158,6 +185,11 @@ def main(argv=None) -> int:
                 desc = queries.describe_cli(session, r["slug"])
                 r["capabilities"] = desc["capabilities"] if desc else []
             graph = queries.cli_graph(session)
+        # When --query filters the CLI set, restrict edges to those between
+        # shown CLIs — otherwise the edge table references slugs absent from
+        # the CLI table above. No query -> all rows shown -> all edges shown.
+        shown = {r["slug"] for r in rows}
+        graph = [e for e in graph if e["from"] in shown and e["to"] in shown]
         render_overview(rows, graph)
         return 0
 

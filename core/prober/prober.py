@@ -1,11 +1,29 @@
 # core/prober/prober.py
+import os
 import shlex
+import signal
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlmodel import select
 from core.models import Cli
 from core.discovery.base import CliRecord
+
+# A probed health command may itself spawn children. start_new_session puts the
+# child in its own process group so a timeout can kill the WHOLE tree (killpg),
+# not just the direct PID — otherwise a forked grandchild outlives the probe.
+_POSIX = os.name == "posix"
+
+
+def _kill_tree(proc) -> None:
+    """Kill the probe process and, on POSIX, its whole process group."""
+    if _POSIX:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+            return
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    proc.kill()
 
 _STALE_TTL_SECONDS = 3600
 
@@ -32,7 +50,11 @@ def _drain_bounded(pipe, max_bytes: int) -> None:
         # blocked on a full pipe write (avoids the write-block deadlock).
         while pipe.read1(4096):  # type: ignore[attr-defined]
             pass
-    except OSError:
+    except (OSError, ValueError):
+        # OSError: pipe closed under us. ValueError: "I/O operation on closed
+        # file" when the main thread closes proc.stdout on the timeout path
+        # while this thread is mid-read1 — benign, the child is already being
+        # killed. Either way there is nothing left to drain.
         pass
 
 
@@ -53,6 +75,7 @@ def probe_one(cmd: str, timeout: float = 10.0,
             shlex.split(cmd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=_POSIX,  # own process group so killpg reaches children
         )
     except (OSError, ValueError):
         return "unhealthy"
@@ -73,7 +96,7 @@ def probe_one(cmd: str, timeout: float = 10.0,
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            _kill_tree(proc)
             proc.wait()
             timed_out = True
     finally:

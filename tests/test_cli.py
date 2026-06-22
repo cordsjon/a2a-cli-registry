@@ -344,6 +344,73 @@ def test_overview_empty_db(tmp_path, capsys):
     assert "empty" in capsys.readouterr().out.lower()
 
 
+# --- Codex audit fixes (F1, F3, F4) ---
+
+def test_probe_health_checks_non_python_shell_cli(tmp_path, capsys):
+    """F1: a non-Python (shell) enabled CLI must be probed, not left 'unknown'.
+
+    StubAdapter supplies a health_cmd (`<path> --help`) for go/node/shell, so
+    probe must wire StubAdapter alongside PythonAdapter. /bin/echo --help exits
+    0, so the CLI lands 'healthy' — proving it was actually probed.
+    """
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "sh-tool", "lang": "shell", "path": "/bin/echo"},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        '[vocabulary]\nregistered = []\n[vocabulary.aliases]\n'
+    )
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()
+    assert main(["probe", "--db", str(db), "--config", str(cfg)]) == 0
+    summary = _json.loads(capsys.readouterr().out)
+    # The shell CLI was probed (not counted as unknown/stale).
+    assert summary["probed"] >= 1
+    assert summary["unknown"] == 0
+
+
+def test_probe_creates_sidecar_lock_file(tmp_path, capsys):
+    """F3: probe serializes via a <db>.lock sidecar, not the DB file itself."""
+    cfg = _write_fleet_and_cfg(tmp_path)
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()
+    assert main(["probe", "--db", str(db), "--config", str(cfg)]) == 0
+    assert (tmp_path / "r.db.lock").exists()
+
+
+def test_overview_query_hides_edges_to_filtered_clis(tmp_path, capsys):
+    """F4: --query must drop edges whose endpoints are filtered out, so the
+    edge table never references a slug absent from the CLI table."""
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}},
+        {"slug": "summarize", "lang": "python", "path": "/x/summarize",
+         "capability": {"intent_tags": ["summarize"], "input_types": ["text:doc"],
+                        "output_types": ["text:summary"], "side_effect": "none"}},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        '[vocabulary]\nregistered = ["file:pdf","text:doc","text:summary"]\n'
+        '[vocabulary.aliases]\n'
+    )
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()
+    # Filter to only pdf2text; the pdf2text->summarize edge must NOT render
+    # (summarize is filtered out of the CLI table).
+    assert main(["overview", "--db", str(db), "--query", "pdf2text"]) == 0
+    out = capsys.readouterr().out
+    assert "pdf2text" in out
+    assert "summarize" not in out
+
+
 def test_announce_sets_no_follow_redirects(monkeypatch):
     """follow_redirects=False must be passed to httpx.post."""
     captured = {}
