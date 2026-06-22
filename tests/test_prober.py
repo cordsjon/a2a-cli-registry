@@ -108,7 +108,7 @@ class _RaisingAdapter:
         return None
 
 
-def _seed_cli(session, slug, lang="true", health_checked_at=None, health_status="UNKNOWN"):
+def _seed_cli(session, slug, lang="true", health_checked_at=None, health_status="unknown"):
     cli = Cli(slug=slug, lang=lang, health_checked_at=health_checked_at,
               health_status=health_status)
     session.add(cli)
@@ -148,8 +148,8 @@ def test_probe_fleet_isolation_one_failure_does_not_abort(db, clock):
     assert good.health_checked_at == clock.now()
 
     bad = db.get(Cli, "bad-cli")
-    # _RaisingAdapter.health_cmd raises, so bad-cli falls into no_cmd -> UNKNOWN
-    assert bad.health_status == "UNKNOWN"
+    # _RaisingAdapter.health_cmd raises, so bad-cli falls into no_cmd -> unknown
+    assert bad.health_status == "unknown"
 
     assert summary["healthy"] == 1
 
@@ -165,7 +165,7 @@ def test_probe_fleet_marks_stale_past_ttl(db, clock):
 
     db.expire_all()
     cli = db.get(Cli, "stale-cli")
-    assert cli.health_status == "STALE"
+    assert cli.health_status == "stale"
     assert summary["stale"] == 1
 
 
@@ -179,5 +179,69 @@ def test_probe_fleet_unknown_if_no_adapter_and_within_ttl(db, clock):
 
     db.expire_all()
     cli = db.get(Cli, "fresh-no-adapter")
-    assert cli.health_status == "UNKNOWN"
+    assert cli.health_status == "unknown"
     assert summary["unknown"] == 1
+
+
+def test_probe_fleet_custom_staleness_ttl_marks_stale(db, clock):
+    """A custom (small) staleness_ttl marks STALE a CLI that would NOT be stale
+    under the default — proves the param drives the cutoff, not the constant."""
+    # 90s old: stale under ttl=60, NOT stale under the default 3600
+    old_ts = clock.now() - 90
+    _seed_cli(db, "edge", lang="unknown-lang",
+              health_checked_at=old_ts, health_status="healthy")
+    probe_fleet(db, [_TrueAdapter()], clock, staleness_ttl=60)
+    db.expire_all()
+    assert db.get(Cli, "edge").health_status == "stale"
+
+
+def test_probe_fleet_default_ttl_does_not_mark_recent_stale(db, clock):
+    """The SAME 90s-old CLI stays 'unknown' under the default TTL."""
+    old_ts = clock.now() - 90
+    _seed_cli(db, "edge2", lang="unknown-lang",
+              health_checked_at=old_ts, health_status="healthy")
+    probe_fleet(db, [_TrueAdapter()], clock)  # default staleness_ttl
+    db.expire_all()
+    assert db.get(Cli, "edge2").health_status == "unknown"
+
+
+def test_probe_fleet_forwards_timeout_and_max_output(db, clock, monkeypatch):
+    """probe_timeout + max_output_bytes are forwarded into probe_one."""
+    captured = {}
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+        captured["timeout"] = timeout
+        captured["max_output_bytes"] = max_output_bytes
+        return "healthy"
+    monkeypatch.setattr("core.prober.prober.probe_one", fake_probe_one)
+    _seed_cli(db, "x", lang="true")
+    probe_fleet(db, [_TrueAdapter()], clock, probe_timeout=3.0, max_output_bytes=1234)
+    assert captured == {"timeout": 3.0, "max_output_bytes": 1234}
+
+
+def test_probe_fleet_concurrency_sets_max_workers(db, clock, monkeypatch):
+    """probe_concurrency sets ThreadPoolExecutor(max_workers=...)."""
+    captured = {}
+    import core.prober.prober as prober_mod
+    RealPool = prober_mod.ThreadPoolExecutor
+    def spy_pool(max_workers=None, **kw):
+        captured["max_workers"] = max_workers
+        return RealPool(max_workers=max_workers, **kw)
+    monkeypatch.setattr(prober_mod, "ThreadPoolExecutor", spy_pool)
+    _seed_cli(db, "y", lang="true")
+    probe_fleet(db, [_TrueAdapter()], clock, concurrency=3)
+    assert captured["max_workers"] == 3
+
+
+def test_probe_fleet_skips_disabled_cli(db, clock, monkeypatch):
+    """A CLI with enabled=False is never spawned (probe_one not called for it)."""
+    spawned = []
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+        spawned.append(cmd)
+        return "healthy"
+    monkeypatch.setattr("core.prober.prober.probe_one", fake_probe_one)
+    cli = _seed_cli(db, "off", lang="true")
+    cli.enabled = False
+    db.add(cli); db.commit()
+    summary = probe_fleet(db, [_TrueAdapter()], clock)
+    assert spawned == []                 # never spawned
+    assert summary["probed"] == 0

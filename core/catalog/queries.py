@@ -34,7 +34,7 @@ def describe_cli(session, slug: str, include_launch_spec: bool = False):
 def cli_health(session, slug: str):
     c = session.get(Cli, slug)
     if c is None:
-        return {"slug": slug, "health_status": "UNKNOWN"}
+        return {"slug": slug, "health_status": "unknown"}
     return {"slug": slug, "health_status": c.health_status,
             "checked_at": c.health_checked_at}
 
