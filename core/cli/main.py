@@ -10,7 +10,8 @@ try:
 except ModuleNotFoundError:          # pragma: no cover
     import tomli as _toml
 
-from core.store.db import init_db, get_session
+from core.store.db import init_db, get_session, with_file_lock
+from core.prober.prober import probe_fleet
 from core.catalog import queries
 from core.discovery.cli_audit_source import CliAuditSource
 from core.adapters.python_adapter import PythonAdapter
@@ -53,12 +54,22 @@ def _mass_removal_threshold(cfg: dict) -> float:
     return cfg.get("thresholds", {}).get("mass_removal", _DEFAULT_MASS_REMOVAL)
 
 
+_PROBE_DEFAULTS = {"probe_timeout": 10.0, "max_probe_output_bytes": 65536,
+                   "probe_concurrency": 8, "staleness_ttl": 3600}
+
+
+def _probe_config(cfg: dict) -> dict:
+    """Read the [probe] table, falling back to code defaults per key."""
+    p = cfg.get("probe", {})
+    return {k: p.get(k, d) for k, d in _PROBE_DEFAULTS.items()}
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(prog="a2a-cli-registry")
     parser.add_argument(
         "command",
-        choices=["audit", "discover", "populate", "lifecycle", "serve", "graph"],
+        choices=["audit", "discover", "populate", "lifecycle", "serve", "graph", "probe", "overview"],
     )
     parser.add_argument("--db", default="registry.db")
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
@@ -121,6 +132,21 @@ def main(argv=None) -> int:
             "removed": result["removed"],
             "edges": edges,
         }))
+        return 0
+
+    if args.command == "probe":
+        cfg = load_config(args.config)
+        pc = _probe_config(cfg)
+        with with_file_lock(args.db):
+            with get_session(engine) as session:
+                summary = probe_fleet(
+                    session, [PythonAdapter()], _RealClock(),
+                    concurrency=pc["probe_concurrency"],
+                    probe_timeout=pc["probe_timeout"],
+                    max_output_bytes=pc["max_probe_output_bytes"],
+                    staleness_ttl=pc["staleness_ttl"],
+                )
+        print(json.dumps(summary))
         return 0
 
     with get_session(engine) as session:

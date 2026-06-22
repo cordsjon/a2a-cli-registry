@@ -283,6 +283,44 @@ def test_audit_does_not_create_db(tmp_path, capsys):
     assert not db.exists()
 
 
+# ---------------------------------------------------------------------------
+# probe command — config-driven, file-locked health sweep
+# ---------------------------------------------------------------------------
+
+def _capture_probe_fleet(monkeypatch):
+    captured = {}
+    def fake_probe_fleet(session, adapters, clock, concurrency=8,
+                         probe_timeout=10.0, max_output_bytes=65536,
+                         staleness_ttl=3600):
+        captured.update(concurrency=concurrency, probe_timeout=probe_timeout,
+                        max_output_bytes=max_output_bytes, staleness_ttl=staleness_ttl)
+        return {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0}
+    monkeypatch.setattr("core.cli.main.probe_fleet", fake_probe_fleet)
+    return captured
+
+
+def test_probe_passes_config_values(tmp_path, monkeypatch, capsys):
+    captured = _capture_probe_fleet(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path, extra=(
+        "[probe]\nprobe_timeout = 3\nmax_probe_output_bytes = 222\n"
+        "probe_concurrency = 2\nstaleness_ttl = 99\n"))
+    rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured == {"concurrency": 2, "probe_timeout": 3,
+                        "max_output_bytes": 222, "staleness_ttl": 99}
+    out = _json.loads(capsys.readouterr().out)
+    assert out["probed"] == 0
+
+
+def test_probe_falls_back_to_defaults_when_no_probe_section(tmp_path, monkeypatch):
+    captured = _capture_probe_fleet(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path)  # no [probe]
+    rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured == {"concurrency": 8, "probe_timeout": 10.0,
+                        "max_output_bytes": 65536, "staleness_ttl": 3600}
+
+
 def test_announce_sets_no_follow_redirects(monkeypatch):
     """follow_redirects=False must be passed to httpx.post."""
     captured = {}
