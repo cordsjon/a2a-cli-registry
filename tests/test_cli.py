@@ -20,6 +20,16 @@ def test_main_graph_command_returns_zero(tmp_path, capsys):
     assert rc == 0
 
 
+def test_unimplemented_subcommand_fails_loudly(tmp_path, capsys):
+    """Unimplemented subcommands (populate, audit, discover, lifecycle) must return 2
+    and must NOT print 'ok' (which would falsely imply success)."""
+    rc = main(["populate", "--db", str(tmp_path / "r.db")])
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "ok" not in captured.out
+    assert "not implemented" in captured.err
+
+
 # ---------------------------------------------------------------------------
 # announce — network-free tests (monkeypatched httpx.post)
 # ---------------------------------------------------------------------------

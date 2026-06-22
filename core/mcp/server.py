@@ -45,6 +45,9 @@ def call_mcp_tool(session, name: str, arguments: dict) -> dict:
     if err:
         return _error_block(err)
 
-    payload = op.handler(session, **arguments)
+    try:
+        payload = op.handler(session, **arguments)
+    except (TypeError, ValueError) as exc:
+        return _error_block(f"invalid input: {exc}")
     # structured JSON content block — capability model appears INSIDE as data
     return {"content": [{"type": "json", "json": payload}]}

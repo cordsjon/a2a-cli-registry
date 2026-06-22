@@ -111,3 +111,22 @@ def test_a2a_missing_required_input_key_returns_structured_error(db, monkeypatch
     body = resp.json()
     assert "error" in body
     assert "missing required input keys" in body["error"]
+
+
+def test_a2a_wrong_type_arg_returns_structured_error(db, monkeypatch):
+    """Wrong-type arg (int instead of list for goal_inputs) returns {"error": ...}, not 500.
+
+    A string for goal_inputs is tolerated by plan_chain (set() iterates chars), so an
+    integer is used instead — set(42) raises TypeError: 'int' object is not iterable.
+    """
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(db)
+    client = TestClient(app)
+    resp = client.post("/a2a", json={"method": "SendMessage",
+        "params": {"skill": "plan-cli-chain",
+                   "input": {"goal_inputs": 42, "goal_outputs": ["text"]}}},
+        headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "error" in body, f"expected error key, got: {body}"
+    assert "500" not in str(resp.status_code)

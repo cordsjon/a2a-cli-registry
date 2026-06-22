@@ -29,7 +29,10 @@ def handle_a2a(session, method: str, params: dict):
         err = _validate_input(op, input_dict)
         if err:
             return {"error": err}
-        result = op.handler(session, **input_dict)
+        try:
+            result = op.handler(session, **input_dict)
+        except (TypeError, ValueError) as exc:
+            return {"error": f"invalid input: {exc}"}
         return {"result": result}            # data only; never executes a CLI
     if method == "GetTask":
         return {"status": "completed"}

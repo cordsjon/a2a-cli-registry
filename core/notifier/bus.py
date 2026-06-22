@@ -201,7 +201,10 @@ def deliver(
         session.commit()
         return
 
-    # Successful send: commit is inside the success branch so a commit failure
-    # here cannot be confused with a transport failure (attempts stays untouched).
-    session.add(delivery)
-    session.commit()
+    # Successful send: persist delivered=True.  Wrap in try so a commit failure
+    # does not propagate to callers (bulkhead contract).
+    try:
+        session.add(delivery)
+        session.commit()
+    except Exception:  # noqa: BLE001 — bulkhead: commit failure must not propagate
+        pass

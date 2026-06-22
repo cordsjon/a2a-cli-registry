@@ -295,6 +295,50 @@ def test_ssrf_allows_public_address(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# FIX 3: success-path commit failure must not propagate (bulkhead contract)
+# ---------------------------------------------------------------------------
+
+def test_deliver_success_path_commit_failure_does_not_propagate(db, clock, monkeypatch):
+    """If session.commit() raises on the success path, deliver() must NOT propagate
+    the exception to the caller (bulkhead contract from docstring)."""
+    sub = Subscriber(url="http://example.com/hook", hmac_secret="sec", seq=1)
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+
+    d = Delivery(
+        subscriber_id=sub.id,
+        event_id="e_commit_fail",
+        event_type="new_cli",
+        payload='{"event_id":"e_commit_fail"}',
+        attempts=0,
+        delivered=False,
+        dead_lettered=False,
+    )
+    db.add(d)
+    db.commit()
+
+    call_count = {"n": 0}
+    original_commit = db.commit
+
+    def _failing_commit():
+        call_count["n"] += 1
+        # First call: the delivery row commit before transport (let pass)
+        # Second call: the success-path commit (raise to simulate failure)
+        if call_count["n"] >= 2:
+            raise OSError("simulated commit failure on success path")
+        return original_commit()
+
+    monkeypatch.setattr(db, "commit", _failing_commit)
+
+    transport = _OKTransport()
+    # Must not raise — bulkhead must swallow the commit failure
+    deliver(d, sub, db, transport=transport)
+    # Transport was called (the send happened)
+    assert len(transport.calls) == 1
+
+
+# ---------------------------------------------------------------------------
 # seq atomic-increment correctness
 # ---------------------------------------------------------------------------
 

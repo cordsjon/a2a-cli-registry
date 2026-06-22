@@ -29,6 +29,6 @@ def main(argv=None) -> int:
         if args.command == "graph":
             print(json.dumps(queries.cli_graph(session)))
             return 0
-        # other commands wired in their own tasks; default success
-        print(f"{args.command}: ok")
-        return 0
+        # other commands not yet wired — fail loudly so operators aren't misled
+        print(f"{args.command}: not implemented in v1 (use the library API — see README)", file=sys.stderr)
+        return 2

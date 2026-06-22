@@ -37,6 +37,19 @@ def test_unknown_argument_returns_structured_error(db):
     assert "injected_key" in block["json"]["error"]
 
 
+def test_mcp_wrong_type_arg_returns_structured_error(db):
+    """Wrong-type arg (int instead of list for goal_inputs) returns structured error block.
+
+    A string for goal_inputs is tolerated by plan_chain (set() iterates chars), so an
+    integer is used instead — set(42) raises TypeError: 'int' object is not iterable.
+    """
+    out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": 42, "goal_outputs": ["text"]})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    assert "error" in block["json"], f"expected error key, got: {block['json']}"
+
+
 def test_describe_via_mcp_omits_launch_spec(db):
     """MCP describe_cli path must not expose launch_spec to unauthenticated callers."""
     db.add(Cli(
