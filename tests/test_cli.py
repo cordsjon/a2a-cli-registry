@@ -1,3 +1,4 @@
+import json as _json
 import types
 
 import httpx
@@ -21,13 +22,74 @@ def test_main_graph_command_returns_zero(tmp_path, capsys):
 
 
 def test_unimplemented_subcommand_fails_loudly(tmp_path, capsys):
-    """Unimplemented subcommands (populate, audit, discover, lifecycle) must return 2
+    """Unimplemented subcommands (audit, lifecycle) must return 2
     and must NOT print 'ok' (which would falsely imply success)."""
-    rc = main(["populate", "--db", str(tmp_path / "r.db")])
+    rc = main(["audit", "--db", str(tmp_path / "r.db")])
     assert rc == 2
     captured = capsys.readouterr()
     assert "ok" not in captured.out
     assert "not implemented" in captured.err
+
+
+def test_populate_command_writes_and_summarizes(tmp_path, capsys):
+    # minimal cli-audit fixture
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}},
+        {"slug": "summarize", "lang": "python", "path": "/x/summarize",
+         "capability": {"intent_tags": ["summarize"], "input_types": ["text:doc"],
+                        "output_types": ["text:summary"], "side_effect": "none"}},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        '[vocabulary]\nregistered = ["file:pdf", "text:doc", "text:summary"]\n'
+        '[vocabulary.aliases]\n'
+    )
+    rc = main(["populate", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    out = _json.loads(capsys.readouterr().out)
+    assert out["added"] == 2
+    assert out["edges"] >= 1   # pdf2text -> summarize via text:doc
+
+
+def test_discover_dry_run_lists_without_writing(tmp_path, capsys):
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text"},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'cli_audit_path = "{fleet}"\n[vocabulary]\nregistered = []\n[vocabulary.aliases]\n')
+    db = tmp_path / "r.db"
+    rc = main(["discover", "--db", str(db), "--config", str(cfg), "--dry-run"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "pdf2text" in out
+
+
+def test_discover_without_dry_run_writes_db(tmp_path, capsys):
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        '[vocabulary]\nregistered = ["file:pdf", "text:doc"]\n[vocabulary.aliases]\n'
+    )
+    db = tmp_path / "r.db"
+    rc = main(["discover", "--db", str(db), "--config", str(cfg)])
+    assert rc == 0
+    from core.store.db import init_db, get_session
+    from core.catalog import queries
+    engine = init_db(str(db))
+    with get_session(engine) as session:
+        rows = queries.search_clis(session)
+    assert any(r["slug"] == "pdf2text" for r in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +117,24 @@ def test_announce_isolates_failing_broker(monkeypatch):
         ["http://broker-a.example.com/register", "http://broker-b.example.com/register"],
     )
     assert result == [False, True]
+
+
+def test_serve_builds_app_and_invokes_uvicorn(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_run(app, host, port, **kw):
+        captured["app"] = app
+        captured["host"] = host
+        captured["port"] = port
+
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    rc = main(["serve", "--db", str(tmp_path / "r.db"),
+               "--host", "127.0.0.1", "--port", "9999"])
+    assert rc == 0
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 9999
+    assert captured["app"] is not None     # the FastAPI app was built
 
 
 def test_announce_sets_no_follow_redirects(monkeypatch):
