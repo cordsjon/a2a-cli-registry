@@ -69,6 +69,29 @@ def test_discover_dry_run_lists_without_writing(tmp_path, capsys):
     assert "pdf2text" in out
 
 
+def test_discover_without_dry_run_writes_db(tmp_path, capsys):
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        '[vocabulary]\nregistered = ["file:pdf", "text:doc"]\n[vocabulary.aliases]\n'
+    )
+    db = tmp_path / "r.db"
+    rc = main(["discover", "--db", str(db), "--config", str(cfg)])
+    assert rc == 0
+    from core.store.db import init_db, get_session
+    from core.catalog import queries
+    engine = init_db(str(db))
+    with get_session(engine) as session:
+        rows = queries.search_clis(session)
+    assert any(r["slug"] == "pdf2text" for r in rows)
+
+
 # ---------------------------------------------------------------------------
 # announce — network-free tests (monkeypatched httpx.post)
 # ---------------------------------------------------------------------------
