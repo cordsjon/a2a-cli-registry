@@ -11,9 +11,31 @@ from core.announcer.announcer import announce
 
 def test_load_config_reads_planner_bounds_and_vocab():
     cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
-    assert cfg["planner"]["max_chain_depth"] == 4
+    assert cfg["planner"]["reserved"]["max_chain_depth"] == 4
     assert "file:pdf" in cfg["vocabulary"]["registered"]
     assert cfg["vocabulary"]["aliases"]["pdf"] == "file:pdf"
+
+
+def test_reference_config_has_no_dead_keys():
+    """Guard the config-honesty invariant: keys with no runtime consumer and no
+    roadmap must not reappear in the reference config (a config that lies is
+    worse than no config)."""
+    import re
+    text = (Path(__file__).parent.parent / "examples/reference-fleet/config.toml").read_text()
+    # Line-anchored so a future legitimate key (e.g. transport, export) ending in
+    # a dead key's name can't false-trigger the guard.
+    dead = [r"^port\s*=", r"^brokers\s*=", r"^buckets\s*=", r"^probe_interval\b",
+            r"^dead_letter_n\b", r"^max_inflight_deliveries\b",
+            r"^graph_recompute_max_clis\b", r"^precision_recall_floor\b",
+            r"^ground_truth_min\b"]
+    present = [k for k in dead if re.search(k, text, re.MULTILINE)]
+    assert present == [], f"dead config keys reintroduced: {present}"
+
+
+def test_reference_config_mass_removal_is_live():
+    """The one wired threshold must be readable at its documented path."""
+    cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
+    assert cfg["thresholds"]["mass_removal"] == 0.30
 
 
 def test_main_graph_command_returns_zero(tmp_path, capsys):
@@ -91,6 +113,66 @@ def test_discover_without_dry_run_writes_db(tmp_path, capsys):
     with get_session(engine) as session:
         rows = queries.search_clis(session)
     assert any(r["slug"] == "pdf2text" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# mass_removal config wiring — the value an operator sets must reach populate()
+# ---------------------------------------------------------------------------
+
+def _capture_mass_removal(monkeypatch):
+    """Monkeypatch core.cli.main.populate to capture mass_removal_threshold.
+    Returns the captured dict; populate is stubbed to a no-op summary."""
+    captured = {}
+
+    def fake_populate(session, source, adapters, vocab, clock,
+                      mass_removal_threshold=0.30):
+        captured["threshold"] = mass_removal_threshold
+        return {"added": 0, "removed": 0}
+
+    monkeypatch.setattr("core.cli.main.populate", fake_populate)
+    return captured
+
+
+def _write_fleet_and_cfg(tmp_path, extra=""):
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text"},
+    ]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'cli_audit_path = "{fleet}"\n'
+        f'{extra}'
+        '[vocabulary]\nregistered = []\n[vocabulary.aliases]\n'
+    )
+    return cfg
+
+
+def test_populate_passes_config_mass_removal(tmp_path, monkeypatch):
+    """populate command threads [thresholds].mass_removal into populate()."""
+    captured = _capture_mass_removal(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path, extra="[thresholds]\nmass_removal = 0.01\n")
+    rc = main(["populate", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured["threshold"] == 0.01
+
+
+def test_discover_passes_config_mass_removal(tmp_path, monkeypatch):
+    """discover (non-dry-run) also threads the config mass_removal into populate()."""
+    captured = _capture_mass_removal(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path, extra="[thresholds]\nmass_removal = 0.05\n")
+    rc = main(["discover", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured["threshold"] == 0.05
+
+
+def test_mass_removal_falls_back_to_default_when_absent(tmp_path, monkeypatch):
+    """A config WITHOUT a [thresholds] section still runs populate, using the
+    default 0.30 — config stays optional."""
+    captured = _capture_mass_removal(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path)  # no [thresholds]
+    rc = main(["populate", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured["threshold"] == 0.30
 
 
 # ---------------------------------------------------------------------------

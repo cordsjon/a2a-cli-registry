@@ -1,30 +1,33 @@
-port = 8080
+# Reference fleet config for a2a-cli-registry.
+#
+# Live keys are read by the current CLI and change runtime behavior.
+# Keys under a "reserved" section are parsed-but-not-yet-consumed — the command
+# that will use them is named inline. They are kept (not deleted) because they
+# document the intended tuning surface; until that command lands, editing them
+# has no effect.
+
+# --- live ---
 cli_audit_path = "./cli-audit/latest.json"   # path to your cli-audit JSON export
-brokers = []
-buckets = ["convert", "extract", "publish"]
 
 [thresholds]
-probe_interval = 300
+mass_removal = 0.30        # live: populate refuses if >= this fraction of CLIs would be removed
+
+# reserved — consumed once a probe/health command lands; see core/prober/prober.py
+[thresholds.reserved_prober]
 probe_timeout = 10
-dead_letter_n = 5
-staleness_ttl = 3600
-mass_removal = 0.30
 max_probe_output_bytes = 65536
 probe_concurrency = 8
-max_inflight_deliveries = 16
+staleness_ttl = 3600
 
-[planner]
+# reserved — consumed once a plan/chain command lands; see core/planner/search.py
+[planner.reserved]
 max_chain_depth = 4
 max_candidate_chains = 100
-graph_recompute_max_clis = 500
 
+# --- live ---
 [vocabulary]
 registered = ["file:pdf", "text:doc", "text:summary", "text", "url", "json:invoice"]
 
 [vocabulary.aliases]
 pdf = "file:pdf"
 PDF = "file:pdf"
-
-[inference]
-precision_recall_floor = 0.6
-ground_truth_min = 30
