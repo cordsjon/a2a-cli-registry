@@ -1,4 +1,3 @@
-import pytest
 from core.adapters.base import LanguageAdapter
 from core.adapters.python_adapter import PythonAdapter
 from core.adapters.stub_adapter import StubAdapter
@@ -16,15 +15,20 @@ def test_python_adapter_launch_spec_uses_module_invocation():
     assert spec["entrypoint"] == "pdf2text"
 
 
-def test_python_adapter_infer_returns_none_in_v1():
-    # v1: infer_python_capability is a deliberate no-op stub; it returns None.
-    assert PythonAdapter().infer_capability(_rec("python")) is None
+def test_python_adapter_infers_none_without_signal():
+    rec = _rec("python")
+    rec.description = "a generic tool with no capability signal whatsoever"
+    assert PythonAdapter().infer_capability(rec) is None
 
 
-@pytest.mark.xfail(reason="v1 inferer is a no-op stub; real inference deferred — when added, inferred caps MUST carry confidence='inferred'", strict=False)
-def test_python_adapter_inferred_capability_is_flagged():
-    cap = PythonAdapter().infer_capability(_rec("python"))
-    assert cap is not None and cap.confidence == "inferred"
+def test_python_adapter_infers_from_help_text_with_signal():
+    # a help text containing a known signal ("format ... in place") now infers
+    rec = _rec("python")
+    rec.description = "The uncompromising code formatter; reformats files in place."
+    cap = PythonAdapter().infer_capability(rec)
+    assert cap is not None
+    assert cap.confidence == "inferred"
+    assert "format" in cap.intent_tags
 
 
 def test_stub_adapter_requires_declared_never_infers():
