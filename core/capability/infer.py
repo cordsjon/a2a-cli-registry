@@ -74,8 +74,6 @@ _INTENT_SIGNALS: list[tuple[str, tuple[str, str]]] = [
     ("text extractor",          ("extract", "none")),
     ("extracts text",           ("extract", "none")),
     ("reading, writing and editing meta", ("extract", "none")),  # exiftool
-    ("convert\npdftotext",      ("extract", "none")),  # pdftotext keyword collision guard (unused but safe)
-    # pdftotext: no obvious keyword → rely on slug or broader signal below
     ("pdftotext",               ("extract", "none")),
     # --- build ---
     ("generate documentation",  ("build",   "writes-fs")),
