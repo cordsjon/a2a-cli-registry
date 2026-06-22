@@ -1,4 +1,5 @@
 import json as _json
+import os
 import types
 
 import httpx
@@ -137,6 +138,51 @@ def test_serve_builds_app_and_invokes_uvicorn(tmp_path, monkeypatch):
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 9999
     assert captured["app"] is not None     # the FastAPI app was built
+
+
+def test_serve_derives_base_url_from_host_port(tmp_path, monkeypatch):
+    """When A2A_BASE_URL is unset, serve derives it from --host/--port so the
+    agent card AND MCP allowed-hosts match the address we actually bind."""
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.delenv("A2A_BASE_URL", raising=False)
+    rc = main(["serve", "--db", str(tmp_path / "r.db"),
+               "--host", "127.0.0.1", "--port", "9999"])
+    assert rc == 0
+    assert os.environ["A2A_BASE_URL"] == "http://127.0.0.1:9999"
+
+
+def test_serve_respects_preset_base_url(tmp_path, monkeypatch):
+    """An explicit A2A_BASE_URL (operator override) must NOT be overwritten."""
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setenv("A2A_BASE_URL", "https://registry.example.com")
+    rc = main(["serve", "--db", str(tmp_path / "r.db"),
+               "--host", "127.0.0.1", "--port", "9999"])
+    assert rc == 0
+    assert os.environ["A2A_BASE_URL"] == "https://registry.example.com"
+
+
+def test_serve_bind_all_host_derives_localhost(tmp_path, monkeypatch):
+    """--host 0.0.0.0 is bind-all, not a reachable client address: the derived
+    base_url substitutes localhost so the card/allowed-hosts stay usable."""
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.delenv("A2A_BASE_URL", raising=False)
+    rc = main(["serve", "--db", str(tmp_path / "r.db"),
+               "--host", "0.0.0.0", "--port", "9999"])
+    assert rc == 0
+    assert os.environ["A2A_BASE_URL"] == "http://localhost:9999"
+
+
+def test_audit_does_not_create_db(tmp_path, capsys):
+    """`audit` is unimplemented and must short-circuit BEFORE init_db, so it
+    leaves no empty registry.db behind."""
+    db = tmp_path / "r.db"
+    rc = main(["audit", "--db", str(db)])
+    assert rc == 2
+    assert "not implemented" in capsys.readouterr().err
+    assert not db.exists()
 
 
 def test_announce_sets_no_follow_redirects(monkeypatch):
