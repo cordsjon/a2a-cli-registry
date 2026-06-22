@@ -130,3 +130,44 @@ def test_a2a_wrong_type_arg_returns_structured_error(app_session_factory, monkey
     body = resp.json()
     assert "error" in body, f"expected error key, got: {body}"
     assert "500" not in str(resp.status_code)
+
+
+# ---------------------------------------------------------------------------
+# Per-request session isolation tests
+# ---------------------------------------------------------------------------
+
+def test_session_factory_yields_independent_sessions(tmp_path):
+    """session_factory() yields a FRESH Session on every call — not the same object.
+
+    The app_session_factory fixture uses nullcontext(db) so every 'per-request'
+    call gets the SAME shared session (intentional for data-sharing in unit tests).
+    This test verifies the REAL factory behaviour: each call produces a distinct,
+    independent Session object, proving the per-request isolation contract.
+    """
+    from core.store.db import init_db, session_factory
+    engine = init_db(str(tmp_path / "iso.db"))
+    factory = session_factory(engine)
+    with factory() as a:
+        with factory() as b:
+            assert a is not b           # each call yields a FRESH Session
+    # a fresh call after the first two are closed is also independent
+    with factory() as c:
+        assert c is not a
+
+
+def test_two_requests_real_factory_no_session_reuse_error(tmp_path, monkeypatch):
+    """Two sequential HTTP requests through a real init_db-backed app both return 200.
+
+    Uses a real session_factory (not nullcontext) and TestClient as a context manager
+    so the MCP lifespan open/close runs cleanly, exercising the full per-request path.
+    A 'session bound to different thread' or rolled-back-transaction error would surface
+    as a 500 here if the same Session object were reused across requests.
+    """
+    monkeypatch.setenv("A2A_BEARER_TOKEN", "tok")
+    from core.store.db import init_db, session_factory
+    engine = init_db(str(tmp_path / "req.db"))
+    app = create_app(session_factory(engine))
+    h = {"Authorization": "Bearer tok"}
+    with TestClient(app, raise_server_exceptions=False) as c:
+        assert c.get("/clis", headers=h).status_code == 200
+        assert c.get("/clis", headers=h).status_code == 200

@@ -39,6 +39,13 @@ def create_app(session_factory, *, mcp_session=None):
     mcp_sess_cm = None
     if mcp_session is None:
         mcp_sess_cm = session_factory()
+        # CONTRACT: this session is opened eagerly here and MUST be closed by the
+        # lifespan's finally block below.  Callers must therefore run the app under
+        # a lifespan-aware server (uvicorn) or use TestClient as a context manager
+        # (`with TestClient(app) as c:`).  Building the app without running the
+        # lifespan (e.g. plain `TestClient(app)` without entering it as a context
+        # manager) will leave this one MCP session open — a harmless leak in tests
+        # that use nullcontext, but a real resource leak against a real engine.
         mcp_session = mcp_sess_cm.__enter__()
 
     # Build the MCP sub-app before constructing FastAPI so its lifespan context
