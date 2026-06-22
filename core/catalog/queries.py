@@ -46,5 +46,17 @@ def cli_graph(session):
 
 def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
     chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [])
-    return [{"slugs": ch.slugs, "length": ch.length,
-             "side_effect_count": ch.side_effect_count, "hops": ch.hops} for ch in chains]
+    health_by_slug = {}
+
+    def _health(slug):
+        if slug not in health_by_slug:
+            c = session.get(Cli, slug)
+            health_by_slug[slug] = c.health_status if c else "unknown"
+        return health_by_slug[slug]
+
+    out = []
+    for ch in chains:
+        hops = [{**hop, "health_status": _health(hop["slug"])} for hop in ch.hops]
+        out.append({"slugs": ch.slugs, "length": ch.length,
+                    "side_effect_count": ch.side_effect_count, "hops": hops})
+    return out
