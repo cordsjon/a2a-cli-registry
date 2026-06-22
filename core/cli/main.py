@@ -52,17 +52,20 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=8080)
     args, _rest = parser.parse_known_args(argv)
 
-    engine = init_db(args.db)
-
     if args.command == "discover":
+        # A pure --dry-run discover only LISTS; it must not create registry.db.
+        # Defer init_db until we actually write.
         _cfg, src, vocab = _build_source_and_vocab(args.config)
         records = src.discover()
         for r in records:
             print(r.slug)
         if not args.dry_run:
+            engine = init_db(args.db)
             with get_session(engine) as session:
                 populate(session, src, [PythonAdapter()], vocab, _RealClock())
         return 0
+
+    engine = init_db(args.db)
 
     if args.command == "serve":
         import uvicorn

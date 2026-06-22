@@ -10,14 +10,39 @@ from A2A_BASE_URL (default http://localhost:8080) plus localhost variants and
 "testserver" (the synthetic Host header used by FastAPI TestClient). This replaces
 the old host="0.0.0.0" workaround, which disabled DNS-rebinding protection entirely.
 """
+import inspect
 import os
+import warnings
+from typing import Any
 from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from core.ops_registry import OPS
 from core.mcp.server import call_mcp_tool
+
+
+class _Unset:
+    """Sentinel for 'argument not supplied by the client'.
+
+    Distinct from None so an explicit None can never be confused with omission.
+    Kept out of the advertised inputSchema (its non-serializable default is
+    suppressed below), so the schema stays clean.
+    """
+    def __repr__(self) -> str:  # pragma: no cover - cosmetic
+        return "<unset>"
+
+
+_MISSING = _Unset()
+
+# JSON-schema "type" -> Python annotation, so FastMCP's func_metadata introspects
+# a real per-op signature (top-level params) instead of a single 'arguments' blob.
+_TYPE_MAP = {
+    "string": str, "array": list, "object": dict,
+    "integer": int, "number": float, "boolean": bool,
+}
 
 
 def _bearer_gate(asgi_app):
@@ -48,17 +73,50 @@ def mcp_tool_names() -> list[str]:
     return [op.mcp_tool for op in OPS]
 
 
-def _make_handler(session, op_name: str):
-    """Return a handler function bound to op_name and session.
+def _make_handler(session, op):
+    """Return an MCP tool handler bound to *op* and *session*.
 
-    Uses a factory so each closure captures its own op_name — not the loop
-    variable. FastMCP rejects parameter names starting with '_', so we use a
-    factory function rather than a default-arg trick.
+    The handler advertises the op's REAL top-level parameters (derived from
+    op.input_schema) so a normal MCP client can call e.g.
+    `search_cli_catalog {"query":"x"}` with TOP-LEVEL keys — matching the
+    in-process call_mcp_tool surface (core/mcp/server.py).
+
+    Why not `def handler(arguments: dict)` or `def handler(**arguments)`:
+    mcp 1.28.0's func_metadata introspects the signature. A single
+    `arguments: dict` param makes FastMCP advertise
+    {"required":["arguments"],...} — forcing clients to NEST under
+    {"arguments":{...}}. `**arguments` is advertised by func_metadata as a
+    single required STRING param named 'arguments' — also uncallable with
+    top-level keys. So we build an explicit signature from input_schema.
+
+    Optional params get the _MISSING sentinel as default; omitted ones are
+    stripped before forwarding, so call_mcp_tool receives ONLY the keys the
+    client actually sent — identical to the prior pass-through behavior.
+    NB: mcp 1.28.0 func_metadata rejects param names starting with '_', so the
+    parameters are the op's real schema keys (none start with '_').
     """
-    def handler(arguments: dict):
-        # call_mcp_tool already validates + wraps in a content block.
-        return call_mcp_tool(session, op_name, arguments)
+    op_name = op.mcp_tool
+    schema = op.input_schema
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
 
+    def handler(**arguments):
+        clean = {k: v for k, v in arguments.items() if v is not _MISSING}
+        # call_mcp_tool re-validates clean against the op's real input_schema.
+        return call_mcp_tool(session, op_name, clean)
+
+    params = []
+    for pname, pschema in props.items():
+        annotation = _TYPE_MAP.get(pschema.get("type"), Any)
+        if pname in required:
+            params.append(inspect.Parameter(
+                pname, inspect.Parameter.KEYWORD_ONLY, annotation=annotation))
+        else:
+            params.append(inspect.Parameter(
+                pname, inspect.Parameter.KEYWORD_ONLY,
+                annotation=annotation, default=_MISSING))
+    handler.__signature__ = inspect.Signature(params)
+    handler.__annotations__ = {p.name: p.annotation for p in params}
     return handler
 
 
@@ -102,12 +160,17 @@ def build_mcp_app(session):
 
     for op in OPS:
         name = op.mcp_tool
-        handler = _make_handler(session, name)
+        handler = _make_handler(session, op)
 
-        # Register a generic dispatcher tool. FastMCP introspects the handler
-        # signature to build the inputSchema — a single 'arguments: dict' param
-        # is acceptable for v1.0; real validation happens inside call_mcp_tool.
-        server.add_tool(handler, name=name, description=f"Registry op: {name}")
+        # The handler carries an explicit per-op signature (built from
+        # input_schema) so FastMCP advertises the op's REAL top-level params —
+        # callable as `tool {"query":"x"}`, NOT `{"arguments":{...}}`.
+        # Suppress only the cosmetic PydanticJsonSchemaWarning about the
+        # non-serializable _MISSING default (it is intentionally excluded from
+        # the advertised schema, keeping inputSchema clean).
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", PydanticJsonSchemaWarning)
+            server.add_tool(handler, name=name, description=f"Registry op: {name}")
 
     return server.streamable_http_app()
 

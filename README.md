@@ -27,14 +27,17 @@ already have**, health-tracks them, and type-chains them:
 ## Quickstart
 
 ```bash
-pip install a2a-cli-registry
+# Install from source (PyPI publish is pending — see note below)
+pip install git+https://github.com/cordsjon/a2a-cli-registry
+# or, from a clone:  pip install -e .
+
 a2a-cli-registry populate --config your-config.toml   # discover + index your fleet
 a2a-cli-registry graph                                # see the computed call-graph
 A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streamable HTTP at /mcp)
 # then point Claude Code / any MCP client at http://localhost:8080/mcp
 ```
 
-> Install from source while awaiting PyPI publication: `pip install -e .`
+> Once published to PyPI: `pip install a2a-cli-registry`.
 
 ## What's in v1.0
 - **Operator CLI:** `populate`, `discover`, `graph`, `serve` wired to the engine (`audit`/`lifecycle` are roadmapped — they exit 2 today).
