@@ -70,10 +70,11 @@ def main(argv=None) -> int:
     if args.command == "serve":
         import uvicorn
         from core.server.app import create_app
-        # Session held open for the server's lifetime (create_app captures it).
-        with get_session(engine) as session:
-            app = create_app(session)
-            uvicorn.run(app, host=args.host, port=args.port)
+        from core.store.db import session_factory
+        # Per-request REST sessions + a build-time MCP session, both managed by
+        # the app from this factory. The engine outlives the call via init_db.
+        app = create_app(session_factory(engine))
+        uvicorn.run(app, host=args.host, port=args.port)
         return 0
 
     if args.command == "populate":

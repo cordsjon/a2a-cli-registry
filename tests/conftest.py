@@ -39,6 +39,18 @@ def db():
 
 
 @pytest.fixture
+def app_session_factory(db):
+    """A session factory for create_app that reuses the test's in-memory `db`
+    session. Returns a nullcontext around the same Session so the data the test
+    populated stays visible across per-request sessions (it's the SAME session)."""
+    import contextlib
+
+    def _factory():
+        return contextlib.nullcontext(db)
+    return _factory
+
+
+@pytest.fixture
 def spawn_spy(monkeypatch):
     """Asserts NO managed-CLI subprocess is spawned. The describe+plan-only guard."""
     calls = []

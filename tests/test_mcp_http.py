@@ -41,18 +41,18 @@ def test_mcp_http_app_is_asgi_and_exposes_registry_tools():
     assert set(mcp_tool_names()) == {t["name"] for t in build_mcp_tools()}
 
 
-def test_mcp_endpoint_requires_auth(db, monkeypatch):
+def test_mcp_endpoint_requires_auth(app_session_factory, monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
-    app = create_app(db)
+    app = create_app(app_session_factory)
     client = TestClient(app, raise_server_exceptions=False)
     # No auth header -> rejected (401/403). MCP Streamable-HTTP uses POST.
     resp = client.post("/mcp", json={})
     assert resp.status_code in (401, 403)
 
 
-def test_mcp_endpoint_mounted_and_authed_reachable(db, monkeypatch):
+def test_mcp_endpoint_mounted_and_authed_reachable(app_session_factory, monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
-    app = create_app(db)
+    app = create_app(app_session_factory)
     # TestClient MUST be used as a context manager so the parent FastAPI lifespan
     # fires, which starts the MCP StreamableHTTPSessionManager.  Without it the
     # session manager is uninitialized and every real MCP call returns 500.
@@ -83,7 +83,7 @@ def test_mcp_endpoint_mounted_and_authed_reachable(db, monkeypatch):
     assert resp.status_code != 500          # session manager was started via lifespan
 
 
-def test_mcp_tools_call_accepts_top_level_args(db, monkeypatch):
+def test_mcp_tools_call_accepts_top_level_args(app_session_factory, monkeypatch):
     """A real tools/call round-trip with TOP-LEVEL args must SUCCEED.
 
     Regression guard for the headline bug: when the handler was
@@ -94,7 +94,7 @@ def test_mcp_tools_call_accepts_top_level_args(db, monkeypatch):
     top-level params. Streamable-HTTP replies are SSE, parsed via _parse_sse.
     """
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
-    app = create_app(db)
+    app = create_app(app_session_factory)
     with TestClient(app, raise_server_exceptions=False) as client:
         # 1) initialize handshake -> grab the session id
         init = client.post("/mcp/", headers=_mcp_headers(), json={
