@@ -119,6 +119,24 @@ def test_announce_isolates_failing_broker(monkeypatch):
     assert result == [False, True]
 
 
+def test_serve_builds_app_and_invokes_uvicorn(tmp_path, monkeypatch):
+    captured = {}
+
+    def _fake_run(app, host, port, **kw):
+        captured["app"] = app
+        captured["host"] = host
+        captured["port"] = port
+
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    rc = main(["serve", "--db", str(tmp_path / "r.db"),
+               "--host", "127.0.0.1", "--port", "9999"])
+    assert rc == 0
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 9999
+    assert captured["app"] is not None     # the FastAPI app was built
+
+
 def test_announce_sets_no_follow_redirects(monkeypatch):
     """follow_redirects=False must be passed to httpx.post."""
     captured = {}

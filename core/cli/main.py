@@ -55,14 +55,26 @@ def main(argv=None) -> int:
     engine = init_db(args.db)
 
     if args.command == "discover":
-        _cfg, src, _vocab = _build_source_and_vocab(args.config)
+        _cfg, src, vocab = _build_source_and_vocab(args.config)
         records = src.discover()
         for r in records:
             print(r.slug)
         if not args.dry_run:
             with get_session(engine) as session:
-                _cfg2, src2, vocab = _build_source_and_vocab(args.config)
-                populate(session, src2, [PythonAdapter()], vocab, _RealClock())
+                populate(session, src, [PythonAdapter()], vocab, _RealClock())
+        return 0
+
+    if args.command == "serve":
+        import uvicorn
+        from core.server.app import create_app
+        # Session held open for the server's lifetime (create_app captures it).
+        session_cm = get_session(engine)
+        session = session_cm.__enter__()
+        try:
+            app = create_app(session)
+            uvicorn.run(app, host=args.host, port=args.port)
+        finally:
+            session_cm.__exit__(None, None, None)
         return 0
 
     if args.command == "populate":
