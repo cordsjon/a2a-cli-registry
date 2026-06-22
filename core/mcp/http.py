@@ -105,6 +105,13 @@ def _make_handler(session, op):
         # call_mcp_tool re-validates clean against the op's real input_schema.
         return call_mcp_tool(session, op_name, clean)
 
+    # Name the handler after the op so FastMCP's func_metadata titles the
+    # advertised inputSchema "<op_name>Arguments" instead of the generic
+    # "handlerArguments", and so each registered handler has a distinct
+    # __name__ (no cross-op collision in logging/introspection).
+    handler.__name__ = op_name
+    handler.__qualname__ = op_name
+
     params = []
     for pname, pschema in props.items():
         annotation = _TYPE_MAP.get(pschema.get("type"), Any)
