@@ -2,6 +2,15 @@ import pytest
 from sqlmodel import SQLModel, Session, create_engine
 from sqlalchemy.pool import StaticPool
 
+# Eagerly import the MCP HTTP module chain at collection time so the MCP SDK's
+# win32 utilities module (which has a module-level `subprocess.Popen[bytes]`
+# annotation) evaluates against the REAL subprocess.Popen class and caches.
+# Otherwise, when spawn_spy monkeypatches subprocess.Popen to a function, a
+# later lazy import of that win32 module evaluates `<function>[bytes]` and raises
+# TypeError. Importing here (before any test patches Popen) keeps test_server_a2a
+# passing in isolation. See Task 4 (MCP mount) for context.
+import core.mcp.http  # noqa: F401  (import for its import-time side effect)
+
 
 @pytest.fixture
 def clock():
