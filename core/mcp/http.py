@@ -70,11 +70,14 @@ def _mcp_transport_security() -> TransportSecuritySettings:
     """
     base = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
     host = urlparse(base).netloc or "localhost:8080"
-    allowed = [host, "localhost", "127.0.0.1", "localhost:8080", "testserver"]
+    # host already equals "localhost:8080" when A2A_BASE_URL is the default,
+    # so no hardcoded duplicate — stale over-allowance on non-default ports removed.
+    allowed = [host, "localhost", "127.0.0.1", "testserver"]
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=allowed,
-        allowed_origins=[f"http://{host}", f"https://{host}", base],
+        # base's origin is already captured by f"http://{host}" / f"https://{host}".
+        allowed_origins=[f"http://{host}", f"https://{host}"],
     )
 
 
@@ -109,6 +112,11 @@ def build_mcp_app(session):
     return server.streamable_http_app()
 
 
-def mount_mcp(app, session):
-    """Mount the MCP Streamable-HTTP app at /mcp, gated by bearer auth."""
-    app.mount("/mcp", _bearer_gate(build_mcp_app(session)))
+def mount_mcp(app, mcp_app):
+    """Mount a pre-built MCP app at /mcp behind bearer auth.
+
+    The CALLER (create_app) must wire mcp_app.router.lifespan_context into the
+    parent FastAPI lifespan before calling this — otherwise the session manager
+    never starts and every MCP call 500s.
+    """
+    app.mount("/mcp", _bearer_gate(mcp_app))

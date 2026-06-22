@@ -16,7 +16,7 @@ def _require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
 
 
 def create_app(session):
-    from core.mcp.http import build_mcp_app, _bearer_gate
+    from core.mcp.http import build_mcp_app, mount_mcp
 
     # Build the MCP sub-app before constructing FastAPI so its lifespan context
     # can be wired into the parent app.  FastMCP's StreamableHTTPSessionManager
@@ -58,6 +58,6 @@ def create_app(session):
     def a2a(body: dict):
         return handle_a2a(session, body.get("method"), body.get("params", {}))
 
-    app.mount("/mcp", _bearer_gate(mcp_app))
+    mount_mcp(app, mcp_app)
 
     return app
