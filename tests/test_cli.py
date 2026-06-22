@@ -38,6 +38,22 @@ def test_reference_config_mass_removal_is_live():
     assert cfg["thresholds"]["mass_removal"] == 0.30
 
 
+def test_reference_config_probe_section_is_live():
+    """The probe configuration keys must be readable from a live [probe] table."""
+    cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
+    assert cfg["probe"]["max_probe_output_bytes"] == 65536
+    assert cfg["probe"]["probe_timeout"] == 10
+    assert cfg["probe"]["probe_concurrency"] == 8
+    assert cfg["probe"]["staleness_ttl"] == 3600
+
+
+def test_reference_config_reserved_prober_section_removed():
+    """The reserved_prober section must be removed and replaced with live [probe]."""
+    text = (Path(__file__).parent.parent / "examples/reference-fleet/config.toml").read_text()
+    assert "reserved_prober" not in text          # renamed to [probe]
+    assert "[planner.reserved]" in text           # planner stays reserved
+
+
 def test_main_graph_command_returns_zero(tmp_path, capsys):
     # graph on an empty db should succeed (exit 0), printing an empty graph
     rc = main(["graph", "--db", str(tmp_path / "r.db")])
