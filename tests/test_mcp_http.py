@@ -28,10 +28,31 @@ def test_mcp_endpoint_requires_auth(db, monkeypatch):
 def test_mcp_endpoint_mounted_and_authed_reachable(db, monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
     app = create_app(db)
-    client = TestClient(app, raise_server_exceptions=False)
-    # With a valid token the route exists (not 404) — exact MCP handshake body
-    # is exercised by the SDK; here we assert the mount + auth gate, not 404/401.
-    resp = client.post("/mcp", headers={"Authorization": f"Bearer {_TOKEN}"},
-                       json={"jsonrpc": "2.0", "method": "ping", "id": 1})
-    assert resp.status_code != 404      # mounted
-    assert resp.status_code != 401      # authed through the gate
+    # TestClient MUST be used as a context manager so the parent FastAPI lifespan
+    # fires, which starts the MCP StreamableHTTPSessionManager.  Without it the
+    # session manager is uninitialized and every real MCP call returns 500.
+    with TestClient(app, raise_server_exceptions=False) as client:
+        # Minimal valid MCP Streamable-HTTP initialize request.  The initialize
+        # method is the standard MCP handshake entry point; it proves the session
+        # manager actually started (a missing lifespan yields 500, not 200).
+        resp = client.post(
+            "/mcp/",
+            headers={
+                "Authorization": f"Bearer {_TOKEN}",
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "id": 1,
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "0.0.1"},
+                },
+            },
+        )
+    assert resp.status_code != 404          # mounted
+    assert resp.status_code != 401          # authed through the gate
+    assert resp.status_code != 500          # session manager was started via lifespan

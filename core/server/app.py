@@ -1,3 +1,4 @@
+import contextlib
 import os
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -15,7 +16,22 @@ def _require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
 
 
 def create_app(session):
-    app = FastAPI()
+    from core.mcp.http import build_mcp_app, _bearer_gate
+
+    # Build the MCP sub-app before constructing FastAPI so its lifespan context
+    # can be wired into the parent app.  FastMCP's StreamableHTTPSessionManager
+    # must be started via session_manager.run() (exposed as the sub-app's
+    # router.lifespan_context) before any request reaches the handler — mounting
+    # the sub-app alone is not enough because FastAPI never propagates a mounted
+    # child's lifespan.
+    mcp_app = build_mcp_app(session)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with mcp_app.router.lifespan_context(mcp_app):
+            yield
+
+    app = FastAPI(lifespan=lifespan)
 
     @app.get("/.well-known/agent-card.json")
     def card():
@@ -42,7 +58,6 @@ def create_app(session):
     def a2a(body: dict):
         return handle_a2a(session, body.get("method"), body.get("params", {}))
 
-    from core.mcp.http import mount_mcp
-    mount_mcp(app, session)
+    app.mount("/mcp", _bearer_gate(mcp_app))
 
     return app

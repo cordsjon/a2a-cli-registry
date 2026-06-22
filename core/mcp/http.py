@@ -64,8 +64,13 @@ def build_mcp_app(session):
     streamable_http_path="/" so that when this app is mounted at /mcp by the
     host FastAPI app, Starlette strips the /mcp prefix and the sub-app correctly
     handles the resulting "/" path.
+
+    host="0.0.0.0" disables FastMCP's automatic DNS-rebinding protection (which
+    is only auto-enabled for 127.0.0.1 / localhost / ::1). Without this the test
+    client's synthetic "testserver" Host header would be rejected with 421, and in
+    production the server runs behind a reverse proxy that handles host validation.
     """
-    server = FastMCP("a2a-cli-registry", streamable_http_path="/")
+    server = FastMCP("a2a-cli-registry", streamable_http_path="/", host="0.0.0.0")
 
     for op in OPS:
         name = op.mcp_tool
