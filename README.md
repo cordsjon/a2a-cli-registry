@@ -68,7 +68,7 @@ When a CLI is probed or previously probed, its health is recorded in one of four
 | `stale` | Unprobeable CLI (no `health_cmd`) older than `staleness_ttl` | Treat as uncertain; no health signal available |
 | `unknown` | Never probed OR unprobeable and within `staleness_ttl` | Run `probe` to establish health |
 
-Note: `stale` and `unknown` apply only to *unprobeable* CLIs (those with no `health_cmd` declared). `healthy` and `unhealthy` come from actual probes.
+Note: `stale` applies only to unprobeable CLIs (no `health_cmd`). `unknown` applies to any CLI not yet probed, plus unprobeable CLIs whose last record is within `staleness_ttl`. `healthy` and `unhealthy` come from actual probes.
 
 ## What's in v1.1
 - **Operator CLI:** `populate`, `discover`, `probe`, `overview`, `graph`, `serve` wired to the engine.
