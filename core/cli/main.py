@@ -68,13 +68,9 @@ def main(argv=None) -> int:
         import uvicorn
         from core.server.app import create_app
         # Session held open for the server's lifetime (create_app captures it).
-        session_cm = get_session(engine)
-        session = session_cm.__enter__()
-        try:
+        with get_session(engine) as session:
             app = create_app(session)
             uvicorn.run(app, host=args.host, port=args.port)
-        finally:
-            session_cm.__exit__(None, None, None)
         return 0
 
     if args.command == "populate":
@@ -93,7 +89,7 @@ def main(argv=None) -> int:
         if args.command == "graph":
             print(json.dumps(queries.cli_graph(session)))
             return 0
-        # audit / lifecycle / serve still pending — fail loudly, do not pretend success
+        # audit / lifecycle still pending — fail loudly, do not pretend success
         print(f"{args.command}: not implemented in v1.0 (tracked for a follow-up)",
               file=sys.stderr)
         return 2
