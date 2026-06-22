@@ -3,6 +3,16 @@ from sqlmodel import select
 from core.models import Cli, Capability, CliEdge
 from core.planner.search import plan_chain as _plan
 
+_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown"}
+
+
+def _norm_health(v):
+    """Canonicalize a stored health_status to the lowercase set, defaulting
+    unrecognized/None values to 'unknown'. Defends consumers against legacy
+    uppercase rows that predate the lowercase normalization."""
+    s = (v or "unknown").lower()
+    return s if s in _CANON_HEALTH else "unknown"
+
 
 def _caps(session, slug):
     rows = session.exec(select(Capability).where(Capability.cli_slug == slug)).all()
@@ -16,7 +26,7 @@ def search_clis(session, query: str = ""):
     rows = session.exec(select(Cli)).all()
     q = query.lower()
     return [{"slug": c.slug, "lang": c.lang, "description": c.description,
-             "health_status": c.health_status}
+             "health_status": _norm_health(c.health_status)}
             for c in rows if q in (c.slug + " " + c.description).lower()]
 
 
@@ -25,7 +35,7 @@ def describe_cli(session, slug: str, include_launch_spec: bool = False):
     if c is None:
         return None
     out = {"slug": c.slug, "lang": c.lang, "description": c.description,
-           "health_status": c.health_status, "capabilities": _caps(session, slug)}
+           "health_status": _norm_health(c.health_status), "capabilities": _caps(session, slug)}
     if include_launch_spec:
         out["launch_spec"] = c.launch_spec
     return out
@@ -34,8 +44,8 @@ def describe_cli(session, slug: str, include_launch_spec: bool = False):
 def cli_health(session, slug: str):
     c = session.get(Cli, slug)
     if c is None:
-        return {"slug": slug, "health_status": "UNKNOWN"}
-    return {"slug": slug, "health_status": c.health_status,
+        return {"slug": slug, "health_status": "unknown"}
+    return {"slug": slug, "health_status": _norm_health(c.health_status),
             "checked_at": c.health_checked_at}
 
 
@@ -46,5 +56,17 @@ def cli_graph(session):
 
 def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
     chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [])
-    return [{"slugs": ch.slugs, "length": ch.length,
-             "side_effect_count": ch.side_effect_count, "hops": ch.hops} for ch in chains]
+    health_by_slug = {}
+
+    def _health(slug):
+        if slug not in health_by_slug:
+            c = session.get(Cli, slug)
+            health_by_slug[slug] = _norm_health(c.health_status) if c else "unknown"
+        return health_by_slug[slug]
+
+    out = []
+    for ch in chains:
+        hops = [{**hop, "health_status": _health(hop["slug"])} for hop in ch.hops]
+        out.append({"slugs": ch.slugs, "length": ch.length,
+                    "side_effect_count": ch.side_effect_count, "hops": hops})
+    return out

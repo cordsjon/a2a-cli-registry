@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 
 def test_cli_capability_edge_roundtrip(db):
     cli = Cli(slug="pdf2text", lang="python", launch_spec='{"kind":"python_module","entrypoint":"pdf2text"}',
-              description="pdf to text", health_status="UNKNOWN", enabled=True, a2a_invokable=False)
+              description="pdf to text", health_status="unknown", enabled=True, a2a_invokable=False)
     cap = Capability(cli_slug="pdf2text", intent_tags="convert,extract",
                      input_types="file:pdf", output_types="text",
                      side_effect="none", confidence="declared")

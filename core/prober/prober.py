@@ -110,13 +110,17 @@ def _find_adapter(cli: Cli, adapters):
     return None, None
 
 
-def probe_fleet(session, adapters, clock, concurrency: int = 8) -> dict:
+def probe_fleet(session, adapters, clock, concurrency: int = 8,
+                probe_timeout: float = 10.0,
+                max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
+                staleness_ttl: int = _STALE_TTL_SECONDS) -> dict:
     """Probe all CLIs in the session using bounded concurrency.
 
     - Finds the health command for each CLI via its adapter.
     - Calls probe_one for CLIs with a command (thread pool, I/O-bound).
-    - Marks CLIs with no probeable command as UNKNOWN; if their
-      health_checked_at is older than _STALE_TTL_SECONDS, marks STALE.
+    - Skips CLIs with enabled=False.
+    - Marks CLIs with no probeable command as unknown; if their
+      health_checked_at is older than staleness_ttl, marks stale.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
     - Returns a summary dict with counts by final state.
 
@@ -127,6 +131,7 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8) -> dict:
     """
     now = clock.now()
     clis = session.exec(select(Cli)).all()
+    clis = [c for c in clis if c.enabled]
 
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
     to_probe: list[tuple[Cli, str]] = []   # (cli, cmd)
@@ -151,7 +156,7 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8) -> dict:
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         future_to_slug = {
-            pool.submit(probe_one, cmd): cli.slug
+            pool.submit(probe_one, cmd, probe_timeout, max_output_bytes): cli.slug
             for cli, cmd in to_probe
         }
         for future in as_completed(future_to_slug):
@@ -175,12 +180,12 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8) -> dict:
 
     for cli in no_cmd:
         checked = cli.health_checked_at
-        if checked is not None and (now - checked) > _STALE_TTL_SECONDS:
-            cli.health_status = "STALE"
+        if checked is not None and (now - checked) > staleness_ttl:
+            cli.health_status = "stale"
             session.add(cli)
             counts["stale"] += 1
         else:
-            cli.health_status = "UNKNOWN"
+            cli.health_status = "unknown"
             session.add(cli)
             counts["unknown"] += 1
 

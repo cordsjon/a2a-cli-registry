@@ -12,12 +12,12 @@ cli_audit_path = "./cli-audit/latest.json"   # path to your cli-audit JSON expor
 [thresholds]
 mass_removal = 0.30        # live: populate refuses if >= this fraction of CLIs would be removed
 
-# reserved — consumed once a probe/health command lands; see core/prober/prober.py
-[thresholds.reserved_prober]
-probe_timeout = 10
-max_probe_output_bytes = 65536
-probe_concurrency = 8
-staleness_ttl = 3600
+# --- live ---
+[probe]
+probe_timeout = 10            # per-CLI health-probe wall-time budget (seconds)
+max_probe_output_bytes = 65536  # cap on captured probe output (bytes)
+probe_concurrency = 8        # parallel probes
+staleness_ttl = 3600         # unprobeable CLI older than this reads 'stale' (seconds)
 
 # reserved — consumed once a plan/chain command lands; see core/planner/search.py
 [planner.reserved]

@@ -38,6 +38,22 @@ def test_reference_config_mass_removal_is_live():
     assert cfg["thresholds"]["mass_removal"] == 0.30
 
 
+def test_reference_config_probe_section_is_live():
+    """The probe configuration keys must be readable from a live [probe] table."""
+    cfg = load_config(str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml"))
+    assert cfg["probe"]["max_probe_output_bytes"] == 65536
+    assert cfg["probe"]["probe_timeout"] == 10
+    assert cfg["probe"]["probe_concurrency"] == 8
+    assert cfg["probe"]["staleness_ttl"] == 3600
+
+
+def test_reference_config_reserved_prober_section_removed():
+    """The reserved_prober section must be removed and replaced with live [probe]."""
+    text = (Path(__file__).parent.parent / "examples/reference-fleet/config.toml").read_text()
+    assert "reserved_prober" not in text          # renamed to [probe]
+    assert "[planner.reserved]" in text           # planner stays reserved
+
+
 def test_main_graph_command_returns_zero(tmp_path, capsys):
     # graph on an empty db should succeed (exit 0), printing an empty graph
     rc = main(["graph", "--db", str(tmp_path / "r.db")])
@@ -265,6 +281,67 @@ def test_audit_does_not_create_db(tmp_path, capsys):
     assert rc == 2
     assert "not implemented" in capsys.readouterr().err
     assert not db.exists()
+
+
+# ---------------------------------------------------------------------------
+# probe command — config-driven, file-locked health sweep
+# ---------------------------------------------------------------------------
+
+def _capture_probe_fleet(monkeypatch):
+    captured = {}
+    def fake_probe_fleet(session, adapters, clock, concurrency=8,
+                         probe_timeout=10.0, max_output_bytes=65536,
+                         staleness_ttl=3600):
+        captured.update(concurrency=concurrency, probe_timeout=probe_timeout,
+                        max_output_bytes=max_output_bytes, staleness_ttl=staleness_ttl)
+        return {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0}
+    monkeypatch.setattr("core.cli.main.probe_fleet", fake_probe_fleet)
+    return captured
+
+
+def test_probe_passes_config_values(tmp_path, monkeypatch, capsys):
+    captured = _capture_probe_fleet(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path, extra=(
+        "[probe]\nprobe_timeout = 3\nmax_probe_output_bytes = 222\n"
+        "probe_concurrency = 2\nstaleness_ttl = 99\n"))
+    rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured == {"concurrency": 2, "probe_timeout": 3,
+                        "max_output_bytes": 222, "staleness_ttl": 99}
+    out = _json.loads(capsys.readouterr().out)
+    assert out["probed"] == 0
+
+
+def test_probe_falls_back_to_defaults_when_no_probe_section(tmp_path, monkeypatch):
+    captured = _capture_probe_fleet(monkeypatch)
+    cfg = _write_fleet_and_cfg(tmp_path)  # no [probe]
+    rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
+    assert rc == 0
+    assert captured == {"concurrency": 8, "probe_timeout": 10.0,
+                        "max_output_bytes": 65536, "staleness_ttl": 3600}
+
+
+def test_overview_renders_populated_catalog(tmp_path, capsys):
+    # reuse the populate path to seed a real CLI, then overview it
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}}]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'cli_audit_path = "{fleet}"\n[vocabulary]\nregistered = ["file:pdf","text:doc"]\n[vocabulary.aliases]\n')
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()  # drop populate output
+    rc = main(["overview", "--db", str(db)])
+    assert rc == 0
+    assert "pdf2text" in capsys.readouterr().out
+
+
+def test_overview_empty_db(tmp_path, capsys):
+    rc = main(["overview", "--db", str(tmp_path / "empty.db")])
+    assert rc == 0
+    assert "empty" in capsys.readouterr().out.lower()
 
 
 def test_announce_sets_no_follow_redirects(monkeypatch):
