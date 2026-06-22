@@ -16,6 +16,7 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
+from sqlalchemy import update
 from sqlmodel import select
 from core.models import Subscriber, Delivery
 
@@ -32,7 +33,9 @@ _PRIVATE_PREFIXES = (
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),      # routes to loopback on Linux
     ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fe80::/10"),       # link-local IPv6
     ipaddress.ip_network("fc00::/7"),
 )
 
@@ -51,11 +54,20 @@ def sign(secret: str, body: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 def _is_ssrf_target(url: str) -> bool:
-    """Return True if *url* resolves to a private/loopback address."""
+    """Return True if *url* resolves to any private/loopback address.
+
+    Uses getaddrinfo (not gethostbyname) so IPv6 results are also checked.
+    Fail-closed: any resolution error returns True (block).
+    """
     try:
         host = urlparse(url).hostname or ""
-        addr = ipaddress.ip_address(socket.gethostbyname(host))
-        return any(addr in net for net in _PRIVATE_PREFIXES)
+        results = socket.getaddrinfo(host, None)
+        for _family, _type, _proto, _canonname, sockaddr in results:
+            # sockaddr is (address, port) for IPv4, (address, port, flow, scope) for IPv6
+            addr = ipaddress.ip_address(sockaddr[0])
+            if any(addr in net for net in _PRIVATE_PREFIXES):
+                return True
+        return False
     except Exception:
         # Resolution failure -> treat as blocked (fail-safe).
         return True
@@ -81,7 +93,13 @@ def enqueue_event(
     subs = session.exec(select(Subscriber).where(Subscriber.enabled == True)).all()  # noqa: E712
     deliveries: list[Delivery] = []
     for sub in subs:
-        sub.seq += 1
+        # Atomic SQL-level increment avoids Python read-modify-write race when
+        # two concurrent enqueue_event calls run against the same subscriber.
+        session.exec(
+            update(Subscriber).where(Subscriber.id == sub.id).values(seq=Subscriber.seq + 1)
+        )
+        session.commit()          # flush so the refreshed value is visible
+        session.refresh(sub)      # sub.seq now holds the committed incremented value
         body = json.dumps({
             "schema_version": SCHEMA_VERSION,
             "event_id": event_id,
@@ -98,7 +116,6 @@ def enqueue_event(
             delivered=False,
             dead_lettered=False,
         )
-        session.add(sub)
         session.add(d)
         deliveries.append(d)
     session.commit()
@@ -120,7 +137,10 @@ class _HttpxTransport:
         if _is_ssrf_target(url):
             raise ValueError(f"SSRF guard blocked delivery to {url!r}")
         import httpx  # noqa: PLC0415
-        return httpx.post(url, content=content, headers=headers, timeout=timeout)
+        return httpx.post(
+            url, content=content, headers=headers, timeout=timeout,
+            follow_redirects=False,
+        )
 
 
 _DEFAULT_TRANSPORT = _HttpxTransport()
@@ -173,6 +193,11 @@ def deliver(
         delivery.attempts += 1
         if delivery.attempts >= DEAD_LETTER_THRESHOLD:
             delivery.dead_lettered = True
-    finally:
         session.add(delivery)
         session.commit()
+        return
+
+    # Successful send: commit is inside the success branch so a commit failure
+    # here cannot be confused with a transport failure (attempts stays untouched).
+    session.add(delivery)
+    session.commit()

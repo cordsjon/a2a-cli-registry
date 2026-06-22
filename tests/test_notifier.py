@@ -1,12 +1,13 @@
 import hmac
 import hashlib
 import json
+import socket
 
 import pytest
 from sqlmodel import select
 
 from core.models import Subscriber, Delivery
-from core.notifier.bus import sign, enqueue_event, deliver, DEAD_LETTER_THRESHOLD
+from core.notifier.bus import sign, enqueue_event, deliver, DEAD_LETTER_THRESHOLD, _is_ssrf_target
 
 
 # ---------------------------------------------------------------------------
@@ -254,3 +255,68 @@ def test_deliver_one_failure_does_not_affect_other_subscriber(db, clock):
     db.refresh(d_b)
     assert d_a.delivered is False
     assert d_b.delivered is True
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard — network-free tests using monkeypatched getaddrinfo
+# ---------------------------------------------------------------------------
+
+def _make_getaddrinfo(ip: str):
+    """Return a getaddrinfo stub that resolves any host to *ip*."""
+    import socket as _socket
+    family = _socket.AF_INET6 if ":" in ip else _socket.AF_INET
+    def _stub(host, port, *args, **kwargs):  # noqa: ANN202
+        return [(family, _socket.SOCK_STREAM, 6, "", (ip, 0))]
+    return _stub
+
+
+def test_ssrf_blocks_zero_address(monkeypatch):
+    """0.0.0.0 is in 0.0.0.0/8 and must be blocked."""
+    monkeypatch.setattr(socket, "getaddrinfo", _make_getaddrinfo("0.0.0.0"))
+    assert _is_ssrf_target("http://anything.example.com/hook") is True
+
+
+def test_ssrf_blocks_loopback_via_hostname(monkeypatch):
+    """A hostname resolving to 127.0.0.1 must be blocked (no real DNS)."""
+    monkeypatch.setattr(socket, "getaddrinfo", _make_getaddrinfo("127.0.0.1"))
+    assert _is_ssrf_target("http://internal.corp/hook") is True
+
+
+def test_ssrf_blocks_ipv6_loopback(monkeypatch):
+    """A hostname resolving to ::1 must be blocked."""
+    monkeypatch.setattr(socket, "getaddrinfo", _make_getaddrinfo("::1"))
+    assert _is_ssrf_target("http://internal.corp/hook") is True
+
+
+def test_ssrf_allows_public_address(monkeypatch):
+    """A hostname resolving to a public routable IP must NOT be blocked."""
+    monkeypatch.setattr(socket, "getaddrinfo", _make_getaddrinfo("93.184.216.34"))
+    assert _is_ssrf_target("http://example.com/hook") is False
+
+
+# ---------------------------------------------------------------------------
+# seq atomic-increment correctness
+# ---------------------------------------------------------------------------
+
+def test_enqueue_seq_per_subscriber_independence(db, clock):
+    """Confirm atomic increment yields correct independent values per subscriber.
+
+    Sub A starts at seq=0, sub B at seq=4.
+    After one enqueue_event: A→1, B→5.
+    This is the primary regression check for the SQL-level atomic increment.
+    """
+    db.add(Subscriber(url="http://a", hmac_secret="s1", seq=0))
+    db.add(Subscriber(url="http://b", hmac_secret="s2", seq=4))
+    db.commit()
+
+    deliveries = enqueue_event(db, "test_event", {"k": "v"}, clock, event_id="seq-test")
+    assert len(deliveries) == 2
+
+    subs = db.exec(select(Subscriber)).all()
+    seq_map = {s.url: s.seq for s in subs}
+    assert seq_map["http://a"] == 1
+    assert seq_map["http://b"] == 5
+
+    # The seq embedded in the delivery payload must match the subscriber's committed seq.
+    payload_seqs = sorted(json.loads(d.payload)["seq"] for d in deliveries)
+    assert payload_seqs == [1, 5]
