@@ -38,16 +38,55 @@ def test_unknown_argument_returns_structured_error(db):
 
 
 def test_mcp_wrong_type_arg_returns_structured_error(db):
-    """Wrong-type arg (int instead of list for goal_inputs) returns structured error block.
-
-    A string for goal_inputs is tolerated by plan_chain (set() iterates chars), so an
-    integer is used instead — set(42) raises TypeError: 'int' object is not iterable.
-    """
+    """Wrong-type arg (int instead of list for goal_inputs) is now caught by schema
+    type validation BEFORE the handler runs — returns a structured error block
+    mentioning the type problem."""
     out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": 42, "goal_outputs": ["text"]})
     assert "content" in out
     block = out["content"][0]
     assert block["type"] == "json"
-    assert "error" in block["json"], f"expected error key, got: {block['json']}"
+    error_msg = block["json"].get("error", "")
+    assert error_msg, f"expected error key, got: {block['json']}"
+    # tightened: must mention the field name and the type problem
+    assert "goal_inputs" in error_msg, f"error should mention field name: {error_msg}"
+    assert "array" in error_msg or "int" in error_msg, (
+        f"error should mention type info: {error_msg}"
+    )
+
+
+def test_wrong_type_arg_rejected(db):
+    """search_cli_catalog with query=123 (int instead of str) is rejected by schema
+    validation and returns a structured error — NOT a success and NOT an uncaught exception."""
+    out = call_mcp_tool(db, "search_cli_catalog", {"query": 123})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    error_msg = block["json"].get("error", "")
+    assert error_msg, f"expected error, got success: {block['json']}"
+    assert "query" in error_msg
+    assert "string" in error_msg or "int" in error_msg
+
+
+def test_correct_type_arg_accepted(db):
+    """search_cli_catalog with query as a proper string succeeds (no error key)."""
+    out = call_mcp_tool(db, "search_cli_catalog", {"query": "ripgrep"})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    assert "error" not in block["json"], f"unexpected error: {block['json']}"
+
+
+def test_array_wrong_type_rejected(db):
+    """plan_cli_chain with goal_inputs as a string (not array) is rejected.
+    Covers array-vs-string type mismatch since no op has an integer field."""
+    out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": "notalist", "goal_outputs": ["text"]})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    error_msg = block["json"].get("error", "")
+    assert error_msg, f"expected error for string-as-array, got: {block['json']}"
+    assert "goal_inputs" in error_msg
+    assert "array" in error_msg or "str" in error_msg
 
 
 def test_describe_via_mcp_omits_launch_spec(db):
