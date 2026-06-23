@@ -15,6 +15,30 @@ def test_python_adapter_launch_spec_uses_module_invocation():
     assert spec["entrypoint"] == "pdf2text"
 
 
+def test_python_adapter_health_cmd_uses_path_for_script_file():
+    """A loose .py script must be probed as `python <path> --help` — the only
+    invocation that works for path-based CLIs (the cli-audit fleet shape)."""
+    rec = _rec("python", "verify-potx")
+    rec.path = "/Users/me/projects/scripts/verify_potx.py"
+    cmd = PythonAdapter().health_cmd(rec)
+    assert cmd == "python /Users/me/projects/scripts/verify_potx.py --help"
+
+
+def test_python_adapter_health_cmd_falls_back_to_module_without_script_path():
+    """No .py script path -> module invocation (US-80) is preserved."""
+    rec = _rec("python", "black")
+    rec.path = ""
+    assert PythonAdapter().health_cmd(rec) == "python -m black --help"
+
+
+def test_python_adapter_health_cmd_quotes_spaced_path():
+    """Paths with spaces are shell-quoted so shlex.split reconstructs one arg."""
+    rec = _rec("python", "x")
+    rec.path = "/Users/me/My Projects/tool.py"
+    cmd = PythonAdapter().health_cmd(rec)
+    assert "'/Users/me/My Projects/tool.py'" in cmd
+
+
 def test_python_adapter_infers_none_without_signal():
     rec = _rec("python")
     rec.description = "a generic tool with no capability signal whatsoever"

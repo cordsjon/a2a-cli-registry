@@ -14,12 +14,39 @@ def _norm_health(v):
     return s if s in _CANON_HEALTH else "unknown"
 
 
+def _cap_row(c):
+    return {"intent_tags": c.intent_tags.split(",") if c.intent_tags else [],
+            "input_types": c.input_types.split(",") if c.input_types else [],
+            "output_types": c.output_types.split(",") if c.output_types else [],
+            "side_effect": c.side_effect, "confidence": c.confidence}
+
+
 def _caps(session, slug):
     rows = session.exec(select(Capability).where(Capability.cli_slug == slug)).all()
-    return [{"intent_tags": c.intent_tags.split(",") if c.intent_tags else [],
-             "input_types": c.input_types.split(",") if c.input_types else [],
-             "output_types": c.output_types.split(",") if c.output_types else [],
-             "side_effect": c.side_effect, "confidence": c.confidence} for c in rows]
+    return [_cap_row(c) for c in rows]
+
+
+def overview_rows(session):
+    clis = session.exec(select(Cli)).all()
+    caps = session.exec(select(Capability)).all()
+    edges = session.exec(select(CliEdge)).all()
+
+    caps_by_slug = {}
+    for cap in caps:
+        caps_by_slug.setdefault(cap.cli_slug, []).append(_cap_row(cap))
+
+    return {
+        "clis": [
+            {"slug": c.slug, "lang": c.lang, "project": c.project,
+             "description": c.description, "health_status": _norm_health(c.health_status)}
+            for c in clis
+        ],
+        "caps_by_slug": caps_by_slug,
+        "edges": [
+            {"from": e.from_slug, "to": e.to_slug, "via_type": e.via_type}
+            for e in edges
+        ],
+    }
 
 
 def search_clis(session, query: str = ""):

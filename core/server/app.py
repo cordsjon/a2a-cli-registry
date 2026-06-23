@@ -1,10 +1,13 @@
 import contextlib
 import os
 from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from core.cardgen.card import build_agent_card
 from core.server.a2a import handle_a2a
 from core.catalog import queries
+from core.web.overview_view import build_overview_model
+from core.web import render as overview_render
 
 _bearer = HTTPBearer(auto_error=True)
 
@@ -75,6 +78,12 @@ def create_app(session_factory, *, mcp_session=None):
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/overview", response_class=HTMLResponse)
+    def overview(session=Depends(_request_session)):
+        rows = queries.overview_rows(session)
+        model = build_overview_model(rows)
+        return HTMLResponse(overview_render.render_overview_html(model))
 
     @app.get("/clis", dependencies=[Depends(_require_token)])
     def list_clis(query: str = "", session=Depends(_request_session)):

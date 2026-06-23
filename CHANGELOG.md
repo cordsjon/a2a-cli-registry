@@ -4,6 +4,9 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
 [SemVer](https://semver.org/). Pre-1.0: minor versions may break surfaces.
 
 ## [Unreleased]
+### Added
+- `GET /overview` serves an open, read-only Swagger-style HTML catalog view with fleet health totals, project buckets, client-side filtering, expandable CLI cards, capabilities, and incident edges. The page does not render `launch_spec`.
+
 ### Security
 - Planner now enforces fail-UNSAFE on **inferred** side-effects: a hop whose
   non-`none` `side_effect` came from inference is excluded from planned chains by
