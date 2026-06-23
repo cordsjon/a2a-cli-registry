@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>a2a-cli-registry overview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --line: #d9dde3;
+      --text: #1c2530;
+      --muted: #5e6978;
+      --healthy: #197a43;
+      --unhealthy: #b42318;
+      --stale: #7a5c00;
+      --unknown: #55606d;
+      --accent: #0f5f8c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .pill, .health {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      padding: 4px 9px;
+      white-space: nowrap;
+    }
+    .health.healthy { color: var(--healthy); }
+    .health.unhealthy { color: var(--unhealthy); }
+    .health.stale { color: var(--stale); }
+    .health.unknown { color: var(--unknown); }
+    .filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 16px 0;
+    }
+    .filter input {
+      flex: 1 1 280px;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+      background: var(--panel);
+    }
+    .shown-count { color: var(--muted); }
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      padding: 20px;
+      color: var(--muted);
+    }
+    details.bucket {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      margin: 12px 0;
+      overflow: clip;
+    }
+    details.bucket > summary {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #edf4f8;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+    .cards {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+    details.cli-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+    }
+    details.cli-card > summary {
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+    }
+    .slug {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 700;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .lang, .count {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .card-body {
+      border-top: 1px solid var(--line);
+      padding: 12px;
+    }
+    .description {
+      margin: 0 0 10px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    h2 {
+      margin: 14px 0 6px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: var(--accent);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-top: 1px solid var(--line);
+      padding: 7px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    @media (max-width: 640px) {
+      main { width: min(100% - 20px, 1180px); padding-top: 16px; }
+      details.cli-card > summary { grid-template-columns: minmax(0, 1fr); }
+      .health, .lang { justify-self: start; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>a2a-cli-registry overview</h1>
+      <div class="summary" aria-label="Fleet health summary">
+        <span class="pill">Total {{ model.summary.total }}</span>
+        <span class="health healthy">● healthy {{ model.summary.healthy }}</span>
+        <span class="health unhealthy">▲ unhealthy {{ model.summary.unhealthy }}</span>
+        <span class="health stale">◆ stale {{ model.summary.stale }}</span>
+        <span class="health unknown">○ unknown {{ model.summary.unknown }}</span>
+        <span class="pill">Version {{ model.summary.version }}</span>
+      </div>
+    </header>
+
+    <div class="filter">
+      <input id="cli-filter" type="search" placeholder="Filter by slug or description" aria-label="Filter CLIs by slug or description">
+      <span id="shown-count" class="shown-count">{{ model.summary.total }} of {{ model.summary.total }} shown</span>
+    </div>
+
+    {% if not model.buckets %}
+      <p class="empty">Registry empty - run <code>populate</code> to add CLIs.</p>
+    {% endif %}
+
+    {% for bucket in model.buckets %}
+      <details class="bucket" open>
+        <summary>
+          <span>{{ bucket.name }}</span>
+          <span class="count">{{ bucket.count }} CLIs</span>
+        </summary>
+        <div class="cards">
+          {% for cli in bucket.clis %}
+            <details class="cli-card" data-slug="{{ cli.slug }}" data-desc="{{ cli.description }}">
+              <summary>
+                <span class="slug">{{ cli.slug }}</span>
+                <span class="lang">{{ cli.lang }}</span>
+                <span class="health {{ cli.health_status }}">{% if cli.health_status == "healthy" %}●{% elif cli.health_status == "unhealthy" %}▲{% elif cli.health_status == "stale" %}◆{% else %}○{% endif %} {{ cli.health_status }}</span>
+              </summary>
+              <div class="card-body">
+                <p class="description">{{ cli.description }}</p>
+
+                {% if cli.capabilities %}
+                  <h2>Capabilities</h2>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Intent</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Side effect</th>
+                        <th>Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for cap in cli.capabilities %}
+                        <tr>
+                          <td>{{ cap.intent_tags | join(", ") }}</td>
+                          <td>{{ cap.input_types | join(", ") }}</td>
+                          <td>{{ cap.output_types | join(", ") }}</td>
+                          <td>{{ cap.side_effect }}</td>
+                          <td>{{ cap.confidence }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% endif %}
+
+                {% if cli.edges %}
+                  <h2>Incident edges</h2>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Via</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for edge in cli.edges %}
+                        <tr>
+                          <td>{{ edge["from"] }}</td>
+                          <td>{{ edge["to"] }}</td>
+                          <td>{{ edge.via_type }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% endif %}
+              </div>
+            </details>
+          {% endfor %}
+        </div>
+      </details>
+    {% endfor %}
+  </main>
+  <script>
+    const input = document.getElementById("cli-filter");
+    const count = document.getElementById("shown-count");
+    const cards = Array.from(document.querySelectorAll(".cli-card"));
+    function applyFilter() {
+      const q = input.value.trim().toLowerCase();
+      let shown = 0;
+      cards.forEach((card) => {
+        const haystack = `${card.dataset.slug} ${card.dataset.desc}`.toLowerCase();
+        const match = haystack.includes(q);
+        card.style.display = match ? "" : "none";
+        if (match) shown += 1;
+      });
+      count.textContent = `${shown} of ${cards.length} shown`;
+    }
+    input.addEventListener("input", applyFilter);
+  </script>
+</body>
+</html>

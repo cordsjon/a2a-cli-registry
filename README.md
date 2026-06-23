@@ -4,7 +4,7 @@
 > see which are healthy, and get a **suggested chain of tools** to reach a goal.
 > Served over both **MCP** and **A2A**. Describe + plan only (no remote execution).
 
-**Status:** v1.1. Language-agnostic *by design*
+**Status:** v1.2. Language-agnostic *by design*
 (Go/Node/shell adapters are stubs — non-Python tools work today by *declaring*
 their capabilities). Targets **A2A v1.0** and **`mcp==1.28.0`** (exact
 pinned versions in the design spec + `SECURITY.md`). Apache-2.0.
@@ -36,7 +36,7 @@ a2a-cli-registry probe                                # run health sweep, write 
 a2a-cli-registry overview                             # read-only rich view of catalog, CLIs, capabilities, health
 a2a-cli-registry graph                                # see the computed call-graph
 A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streamable HTTP at /mcp)
-# then point Claude Code / any MCP client at http://localhost:8080/mcp
+# then browse http://localhost:8080/overview or point Claude Code / any MCP client at http://localhost:8080/mcp
 ```
 
 > `pip install a2a-cli-registry` will work **once the package is published to PyPI**
@@ -69,6 +69,9 @@ When a CLI is probed or previously probed, its health is recorded in one of four
 | `unknown` | Never probed OR unprobeable and within `staleness_ttl` | Run `probe` to establish health |
 
 Note: `stale` applies only to unprobeable CLIs (no `health_cmd`). `unknown` applies to any CLI not yet probed, plus unprobeable CLIs whose last record is within `staleness_ttl`. `healthy` and `unhealthy` come from actual probes.
+
+## What's in v1.2
+- **Web overview:** `GET /overview` serves an open, read-only Swagger-style HTML view with fleet totals, project buckets, filtering, health badges, capabilities, and incident edges. It does not render `launch_spec`.
 
 ## What's in v1.1
 - **Operator CLI:** `populate`, `discover`, `probe`, `overview`, `graph`, `serve` wired to the engine.

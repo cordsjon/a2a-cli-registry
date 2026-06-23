@@ -1,6 +1,6 @@
 [project]
 name = "a2a-cli-registry"
-version = "1.1.0"
+version = "1.2.0"
 description = "Capability-typed registry for your local CLI fleet — discover, health-check, and get suggested tool-chains over MCP and A2A."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ dependencies = [
   "portalocker>=2.10,<3.0",
   "mcp==1.28.0",         # PIN EXACT — has Streamable HTTP (1.2.0 did not); §6.2
   "rich>=13,<15",
+  "jinja2>=3.1,<4",
   "tomli>=2.0; python_version < '3.11'",
 ]
 
@@ -43,6 +44,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["core"]
+include = [
+  "core/web/templates/*.html",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
