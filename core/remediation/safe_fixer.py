@@ -1,9 +1,12 @@
-"""The one mutating path — STUBBED in the MVP. apply() raises NotImplementedError.
+"""The one mutating path — ARMED. apply() installs eligible packages into an
+isolated per-target venv and re-probes before flipping health.
 
 Honest threat model (spec §3.4): a venv isolates PACKAGES, not EXECUTION. pip can
 run arbitrary build code. Containment is the SUM of the §3.4 constraints, opt-in
-and allowlist-gated. Only the eligibility predicate and refusal paths are live
-this session — no install runs."""
+and allowlist-gated: wheel-only install (--only-binary=:all:, no setup.py run),
+realpath-resolved venv inside demo/, scrubbed allowlist env, killpg wall-clock
+timeout, and a re-probe whose only DB write is the single health_status/fixed_by
+flip. Eligibility (class AND confidence AND mapped dist) gates every entry."""
 import os
 import subprocess
 
@@ -92,7 +95,71 @@ class SafeFixer:
             return (proc.returncode if proc.returncode is not None else -1, True)
         return (proc.returncode, False)
 
-    def apply(self, proposals) -> list:
-        raise NotImplementedError(
-            "SafeFixer.apply is stubbed in the MVP; run remediate without "
-            "--apply-safe for proposals")
+    def apply(self, proposals, *, session, health_cmd_for) -> list:
+        """Install + re-probe each eligible proposal. Atomic per CLI: a failure
+        records a FixResult and writes NOTHING for that CLI (spec §3.4).
+
+        session: SQLModel session for the single health_status/fixed_by flip.
+        health_cmd_for: callable slug -> health command string for the re-probe.
+        """
+        from core.remediation.proposal import FixResult
+        from core.models import Cli
+        results = []
+        for p in proposals:
+            if not self.is_eligible(p):
+                results.append(FixResult(p.slug, p.target, "refused", "ineligible"))
+                continue
+            try:
+                venv_dir = self._venv_dir(p.target)
+            except ValueError as exc:
+                results.append(FixResult(p.slug, p.target, "refused", str(exc)))
+                continue
+            if not self.venv_path_ok(venv_dir):
+                results.append(FixResult(p.slug, p.target, "refused", "venv path escapes demo/"))
+                continue
+
+            rc, timed_out = self._install_one(p.target, venv_dir)
+            if timed_out:
+                results.append(FixResult(p.slug, p.target, "timeout", "install timed out"))
+                continue
+            if rc != 0:
+                results.append(FixResult(p.slug, p.target, "install-failed", f"pip rc={rc}"))
+                continue
+
+            status = self._reprobe_one(p.slug, health_cmd_for(p.slug), venv_dir)
+            if status != "healthy":
+                results.append(FixResult(p.slug, p.target, "reprobe-failed", "still unhealthy"))
+                continue
+
+            # SUCCESS: the ONLY DB write — flip this one CLI. (spec §3.4)
+            row = session.get(Cli, p.slug)
+            if row is not None:
+                row.health_status = "healthy"
+                row.fixed_by = "remediation"
+                session.add(row)
+                session.commit()
+            results.append(FixResult(p.slug, p.target, "fixed", "re-probe passed"))
+        return results
+
+    def _install_one(self, target, venv_dir) -> tuple:
+        """Create the venv, wheel-only install `target`. Returns (rc, timed_out).
+        --only-binary=:all: forbids source builds (no setup.py execution)."""
+        import sys
+        rc, t = self._run_contained([sys.executable, "-m", "venv", venv_dir], timeout=120.0)
+        if rc != 0 or t:
+            return (rc or 1, t)
+        pip = os.path.join(venv_dir, "bin", "pip")
+        return self._run_contained(
+            [pip, "install", "--only-binary=:all:", "--no-input",
+             "--timeout", "60", target],
+            timeout=180.0)
+
+    def _reprobe_one(self, slug, health_cmd, venv_dir) -> str:
+        """Re-probe the CLI's health command in the isolated env. The venv's
+        bin is prepended to PATH so the freshly-installed package is importable.
+        Returns 'healthy' | 'unhealthy'."""
+        import shlex
+        env = self._isolated_env()
+        env["PATH"] = os.path.join(venv_dir, "bin") + os.pathsep + env.get("PATH", "")
+        rc, t = self._run_contained(shlex.split(health_cmd), timeout=10.0, env=env)
+        return "healthy" if (rc == 0 and not t) else "unhealthy"

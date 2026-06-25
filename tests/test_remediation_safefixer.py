@@ -12,12 +12,6 @@ def _p(fc, target, conf=Confidence.DECLARED_BY_REGEX, fk=FixKind.AUTO_SAFE):
         target=target, confidence=conf, evidence="e")
 
 
-def test_apply_raises_not_implemented(tmp_path):
-    fixer = SafeFixer(demo_dir=str(tmp_path))
-    with pytest.raises(NotImplementedError):
-        fixer.apply([_p(FailureClass.PIP_3RD_PARTY, "numpy")])
-
-
 def test_eligible_for_mapped_pip_third_party(tmp_path):
     fixer = SafeFixer(demo_dir=str(tmp_path))
     assert fixer.is_eligible(_p(FailureClass.PIP_3RD_PARTY, "numpy")) is True
@@ -152,3 +146,87 @@ def test_venv_dir_rejects_path_traversal_target(tmp_path):
     # a malicious/garbage target must not escape demo/ via .. or /
     with pytest.raises(ValueError):
         fixer._venv_dir("../../etc")
+
+
+# --- Task 7: live apply() orchestration (install/re-probe mocked) ---
+from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.pool import StaticPool
+
+
+class _FakeFixer(SafeFixer):
+    """SafeFixer with the two I/O methods stubbed so apply()'s orchestration
+    (eligibility re-check, atomic-per-CLI, single DB write) is tested without
+    real pip."""
+    def __init__(self, demo_dir, install_rc, reprobe_rc):
+        super().__init__(demo_dir=demo_dir)
+        self._install_rc = install_rc      # (rc, timed_out)
+        self._reprobe_rc = reprobe_rc      # 'healthy' | 'unhealthy'
+        self.installed = []
+
+    def _install_one(self, target, venv_dir):
+        self.installed.append(target)
+        return self._install_rc
+
+    def _reprobe_one(self, slug, health_cmd, venv_dir):
+        return self._reprobe_rc
+
+
+def _eligible_proposal(slug="numpy-cli", target="numpy"):
+    # RemediationProposal is a frozen dataclass (not a namedtuple) — construct
+    # directly; there is no _replace().
+    return RemediationProposal(schema_version=SCHEMA_VERSION, slug=slug,
+        failure_class=FailureClass.PIP_3RD_PARTY, fix_kind=FixKind.AUTO_SAFE,
+        target=target, confidence=Confidence.DECLARED_BY_REGEX, evidence="e")
+
+
+def _mem_session():
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                        poolclass=StaticPool)
+    SQLModel.metadata.create_all(eng)
+    return Session(eng)
+
+
+def test_apply_fixes_on_install_and_reprobe_success(tmp_path):
+    with _mem_session() as s:
+        s.add(Cli(slug="numpy-cli", lang="python", health_status="unhealthy",
+                  health_cmd="true")); s.commit()
+        fixer = _FakeFixer(str(tmp_path), install_rc=(0, False), reprobe_rc="healthy")
+        results = fixer.apply([_eligible_proposal()], session=s,
+                              health_cmd_for=lambda slug: "true")
+        row = s.get(Cli, "numpy-cli")
+        assert row.health_status == "healthy"
+        assert row.fixed_by == "remediation"
+    assert results[0].outcome == "fixed"
+
+
+def test_apply_leaves_unhealthy_on_install_failure(tmp_path):
+    with _mem_session() as s:
+        s.add(Cli(slug="numpy-cli", lang="python", health_status="unhealthy")); s.commit()
+        fixer = _FakeFixer(str(tmp_path), install_rc=(1, False), reprobe_rc="healthy")
+        results = fixer.apply([_eligible_proposal()], session=s,
+                              health_cmd_for=lambda slug: "true")
+        row = s.get(Cli, "numpy-cli")
+        assert row.health_status == "unhealthy"   # untouched
+        assert row.fixed_by is None
+    assert results[0].outcome == "install-failed"
+
+
+def test_apply_records_reprobe_failed(tmp_path):
+    with _mem_session() as s:
+        s.add(Cli(slug="numpy-cli", lang="python", health_status="unhealthy")); s.commit()
+        fixer = _FakeFixer(str(tmp_path), install_rc=(0, False), reprobe_rc="unhealthy")
+        results = fixer.apply([_eligible_proposal()], session=s,
+                              health_cmd_for=lambda slug: "true")
+        assert s.get(Cli, "numpy-cli").health_status == "unhealthy"
+    assert results[0].outcome == "reprobe-failed"
+
+
+def test_apply_refuses_ineligible_without_install(tmp_path):
+    fixer = _FakeFixer(str(tmp_path), install_rc=(0, False), reprobe_rc="healthy")
+    # pip-unknown is ineligible — apply must refuse and never call install
+    bad = RemediationProposal(schema_version=SCHEMA_VERSION, slug="x",
+        failure_class=FailureClass.PIP_UNKNOWN, fix_kind=FixKind.PROPOSE_ONLY,
+        target="romsorter", confidence=Confidence.DECLARED_BY_REGEX, evidence="e")
+    results = fixer.apply([bad], session=None, health_cmd_for=lambda slug: "true")
+    assert results[0].outcome == "refused"
+    assert fixer.installed == []
