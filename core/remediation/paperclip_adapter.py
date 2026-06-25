@@ -75,10 +75,10 @@ class PaperclipAdapter:
         return clusters
 
     def _yaml(self, title, members):
-        body = "\\n".join(f"- {p.slug}: {p.evidence}" for p in members)
+        body = "\n".join(f"- {p.slug}: {p.evidence}" for p in members)
         lines = [
             "- title: " + json.dumps(title),
-            "  body: " + json.dumps(f"session={self.session_id}\\n{body}"),
+            "  body: " + json.dumps(f"session={self.session_id}\n{body}"),
         ]
         return "\n".join(lines) + "\n"
 

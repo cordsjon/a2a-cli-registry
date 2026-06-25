@@ -88,3 +88,5 @@ def test_missing_paperclip_warns_and_skips(capsys):
     refs = PaperclipAdapter(client, session_id="s1").file(props, dry_run=False)
     assert refs == []
     assert client.created == []
+    captured = capsys.readouterr()
+    assert "paperclip.sh not found" in captured.err
