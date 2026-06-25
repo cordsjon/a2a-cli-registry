@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -93,7 +94,8 @@ def main(argv=None) -> int:
     parser.add_argument(
         "command",
         choices=["audit", "discover", "populate", "lifecycle", "serve",
-                 "graph", "probe", "overview", "okf-produce", "okf-ingest"],
+                 "graph", "probe", "overview", "okf-produce", "okf-ingest",
+                 "remediate"],
     )
     parser.add_argument("--db", default="registry.db")
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
@@ -110,6 +112,12 @@ def main(argv=None) -> int:
                         help="[okf-produce] output directory for the bundle")
     parser.add_argument("--bundle", default="./bundle",
                         help="[okf-ingest] input bundle directory to read from")
+    parser.add_argument("--file", action="store_true",
+                        help="[remediate] actually file Paperclip issues (default: dry-run)")
+    parser.add_argument("--apply-safe", action="store_true",
+                        help="[remediate] arm SafeFixer (MVP: errors, NotImplementedError)")
+    parser.add_argument("--max-llm-calls", type=int, default=0,
+                        help="[remediate] Hermes diagnosis batch cap (default 0 = skip Hermes)")
     args, _rest = parser.parse_known_args(argv)
 
     if args.command == "discover":
@@ -155,6 +163,61 @@ def main(argv=None) -> int:
         print(f"okf-ingest: updated {result['updated']}, skipped {result['skipped']}, "
               f"failed {result['failed']}", file=sys.stderr)
         return 1 if result["failed"] else 0
+
+    if args.command == "remediate":
+        import uuid
+        from core.remediation.run import run_remediate
+        from core.remediation.hermes_adapter import HermesAdapter
+        # remediate-specific --out default: --out still defaults to ./bundle
+        # (okf-produce's default), so substitute ./proposals.json when unset.
+        out_path = "./proposals.json" if args.out == "./bundle" else args.out
+        # DB-read failure -> exit 2 BEFORE writing any proposals.json (spec §6).
+        try:
+            engine = init_db(args.db)
+            with get_session(engine) as session:
+                from core.remediation.run import read_unhealthy
+                read_unhealthy(session)  # force a read; surfaces a corrupt/unreadable DB
+        except Exception as exc:   # narrow: DB open/read is the only thing here
+            print(f"remediate: cannot read DB: {exc}", file=sys.stderr)
+            return 2
+        sid = str(uuid.uuid4())
+        generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        hermes = HermesAdapter() if args.max_llm_calls > 0 else None
+        # SafeFixer is stubbed MVP-wide; pass an instance so run.py can set
+        # apply_safe_requested=True and the CLI can return exit 3 correctly.
+        safe_fixer = None
+        if args.apply_safe:
+            from core.remediation.safe_fixer import SafeFixer
+            safe_fixer = SafeFixer(demo_dir=".")
+        summary = None
+        try:
+            with get_session(engine) as session:
+                summary = run_remediate(
+                    session, out_path=out_path, do_file=args.file,
+                    apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
+                    session_id=sid, generated_at=generated_at, hermes=hermes,
+                    safe_fixer=safe_fixer)
+        except OSError as exc:
+            # proposals.json write failure (disk/permission): summary lost, but
+            # surface clearly and exit 4 (spec §6).
+            print(f"remediate: failed to write proposals: {exc}", file=sys.stderr)
+            return 4
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            # paperclip.sh failed during --file filing. proposals.json was already
+            # written (write happens before filing), so the deterministic findings
+            # survive; report and exit 0.
+            print(f"remediate: warning: Paperclip filing error: {exc}", file=sys.stderr)
+            print(f"remediate: wrote {out_path}; issues_filed=0 (filing failed)",
+                  file=sys.stderr)
+            return 0
+        print(json.dumps(summary["counts"]))
+        print(f"remediate: wrote {out_path}; issues_filed={summary['issues_filed']}",
+              file=sys.stderr)
+        if summary["apply_safe_requested"]:
+            print("remediate: --apply-safe not yet implemented; ran proposal-only. "
+                  "Re-run without --apply-safe for proposals.", file=sys.stderr)
+            return 3
+        return 0
 
     engine = init_db(args.db)
 
