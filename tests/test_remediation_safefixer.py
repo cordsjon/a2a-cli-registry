@@ -158,6 +158,30 @@ def test_venv_dir_rejects_path_traversal_target(tmp_path):
         fixer._venv_dir("../../etc")
 
 
+def test_install_one_clean_rebuilds_stale_venv(tmp_path):
+    # A prior run killpg'd mid-install can leave a PARTIAL venv at the stable
+    # path. _install_one must wipe it before re-creating, so a half-installed
+    # state can't survive into the next run's re-probe (false-healthy hazard).
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    venv_dir = fixer._venv_dir("numpy")
+    os.makedirs(venv_dir, exist_ok=True)
+    stale = os.path.join(venv_dir, "STALE_PARTIAL_MARKER")
+    with open(stale, "w") as fh:
+        fh.write("leftover from a killed install")
+
+    calls = []
+
+    def _fake_run(argv, *, timeout, env=None):
+        # record the venv-create call; do NOT actually build a venv
+        calls.append(argv)
+        return (0, False)
+
+    fixer._run_contained = _fake_run
+    fixer._install_one("numpy", venv_dir)
+    # the stale marker (and the partial venv) must be gone before re-create
+    assert not os.path.exists(stale)
+
+
 # --- Task 7: live apply() orchestration (install/re-probe mocked) ---
 from sqlmodel import Session, SQLModel, create_engine
 from sqlalchemy.pool import StaticPool

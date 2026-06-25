@@ -8,6 +8,7 @@ realpath-resolved venv inside demo/, scrubbed allowlist env, killpg wall-clock
 timeout, and a re-probe whose only DB write is the single health_status/fixed_by
 flip. Eligibility (class AND confidence AND mapped dist) gates every entry."""
 import os
+import shutil
 import subprocess
 
 from core.prober.prober import _kill_tree, _POSIX
@@ -160,6 +161,11 @@ class SafeFixer:
         """Create the venv, wheel-only install `target`. Returns (rc, timed_out).
         --only-binary=:all: forbids source builds (no setup.py execution)."""
         import sys
+        # Wipe any partial venv left by a prior killpg'd install before
+        # re-creating — `python -m venv` over an existing dir is an upgrade, not
+        # a clean rebuild, so a half-installed state could otherwise survive and
+        # let the re-probe pass on incomplete packages (false healthy).
+        shutil.rmtree(venv_dir, ignore_errors=True)
         rc, t = self._run_contained([sys.executable, "-m", "venv", venv_dir], timeout=120.0)
         if rc != 0 or t:
             return (rc or 1, t)
