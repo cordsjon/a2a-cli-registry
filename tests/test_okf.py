@@ -113,3 +113,41 @@ def test_frontmatter_list_item_with_comma_roundtrips():
           "tags": ["a, b", "c"]}
     text = dump_frontmatter(fm)
     assert parse_frontmatter(text)["tags"] == ["a, b", "c"]
+
+
+from core.okf.serialize import produce_bundle
+
+
+def test_produce_is_byte_identical_on_rerun(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    snap1 = {p.relative_to(out).as_posix(): p.read_bytes()
+             for p in out.rglob("*.md")}
+    produce_bundle(s, str(out), force=True)
+    snap2 = {p.relative_to(out).as_posix(): p.read_bytes()
+             for p in out.rglob("*.md")}
+    assert snap1 == snap2  # determinism
+
+
+def test_produce_emits_edges_both_ways_and_no_launch_spec(tmp_path):
+    s = _session(); _seed(s)
+    # add a launch_spec that must NOT leak
+    s.get(__import__("core.models", fromlist=["Cli"]).Cli, "pdf2text").launch_spec = '{"secret":1}'
+    s.commit()
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    pdf = (out / "clis" / "docs" / "pdf2text.md").read_text()
+    assert "secret" not in pdf and "launch_spec" not in pdf
+    assert "edges:" in pdf                       # frontmatter edges
+    assert "(../text/summarize.md" in pdf        # body link to summarize
+    assert 'via text' in pdf                     # via_type in link title
+
+
+def test_produce_refuses_nonempty_non_bundle_dir(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    out.mkdir()
+    (out / "junk.txt").write_text("not a bundle")
+    with pytest.raises(FileExistsError):
+        produce_bundle(s, str(out))
