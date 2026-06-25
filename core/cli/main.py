@@ -92,7 +92,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="a2a-cli-registry")
     parser.add_argument(
         "command",
-        choices=["audit", "discover", "populate", "lifecycle", "serve", "graph", "probe", "overview"],
+        choices=["audit", "discover", "populate", "lifecycle", "serve",
+                 "graph", "probe", "overview", "okf-produce", "okf-ingest"],
     )
     parser.add_argument("--db", default="registry.db")
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
@@ -100,6 +101,8 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--query", default="")
+    parser.add_argument("--out", default="./bundle")
+    parser.add_argument("--bundle", default="./bundle")
     args, _rest = parser.parse_known_args(argv)
 
     if args.command == "discover":
@@ -125,6 +128,23 @@ def main(argv=None) -> int:
         return 2
 
     engine = init_db(args.db)
+
+    if args.command == "okf-produce":
+        from core.okf import produce_bundle
+        with get_session(engine) as session:
+            result = produce_bundle(session, args.out)
+        print(f"okf-produce: wrote {result['concepts']} concept(s) to {args.out}",
+              file=sys.stderr)
+        return 0
+
+    if args.command == "okf-ingest":
+        from core.okf import ingest_bundle
+        with with_file_lock(_db_lock_path(args.db)):
+            with get_session(engine) as session:
+                result = ingest_bundle(session, args.bundle)
+        print(f"okf-ingest: updated {result['updated']}, skipped {result['skipped']}, "
+              f"failed {result['failed']}", file=sys.stderr)
+        return 1 if result["failed"] else 0
 
     if args.command == "serve":
         import uvicorn

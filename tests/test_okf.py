@@ -213,3 +213,18 @@ def test_ingest_malformed_counts_failed(tmp_path):
     (out / "clis" / "docs" / "broken.md").write_text("no frontmatter at all")
     res = ingest_bundle(s, str(out))
     assert res["failed"] >= 1
+
+
+def test_cli_okf_produce_then_ingest(tmp_path):
+    from core.cli.main import main
+    db = tmp_path / "registry.db"
+    # seed via a real engine at that db path
+    from core.store.db import init_db, get_session
+    eng = init_db(str(db))
+    with get_session(eng) as s:
+        _seed(s)
+    out = tmp_path / "bundle"
+    rc = main(["okf-produce", "--db", str(db), "--out", str(out)])
+    assert rc == 0 and (out / "index.md").exists()
+    rc = main(["okf-ingest", "--db", str(db), "--bundle", str(out)])
+    assert rc == 0
