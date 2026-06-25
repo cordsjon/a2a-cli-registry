@@ -5,6 +5,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
 
 ## [Unreleased]
 ### Added
+- `okf-produce` exports the catalog as an Open Knowledge Format (OKF) bundle
+  (Markdown + YAML), consumable by okf-viz / okf-mcp / OKFy and any OKF-aware
+  agent. Deterministic (byte-stable re-produce). Typed ports + side-effects ride
+  as OKF producer extensions; the call-graph survives as an explicit `edges:`
+  frontmatter list AND agreeing body Markdown links. `launch_spec` is never emitted.
+- `okf-ingest` round-trips LLM/human-enriched descriptions from an OKF bundle
+  back into the catalog (descriptions only; structure stays connector-owned).
 - `GET /overview` serves an open, read-only Swagger-style HTML catalog view with fleet health totals, project buckets, client-side filtering, expandable CLI cards, capabilities, and incident edges. The page does not render `launch_spec`.
 
 ### Security
