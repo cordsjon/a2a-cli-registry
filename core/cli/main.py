@@ -180,11 +180,6 @@ def main(argv=None) -> int:
         except Exception as exc:   # narrow: DB open/read is the only thing here
             print(f"remediate: cannot read DB: {exc}", file=sys.stderr)
             return 2
-        # Close the create_all column gap: an existing DB predates Cli.fixed_by,
-        # which create_all never adds to a table that already exists (the armed
-        # SafeFixer writes fixed_by on a successful fix).
-        from core.store.migrations import ensure_fixed_by_column
-        ensure_fixed_by_column(args.db)
         sid = str(uuid.uuid4())
         generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         hermes = HermesAdapter() if args.max_llm_calls > 0 else None
@@ -194,14 +189,29 @@ def main(argv=None) -> int:
         if args.apply_safe:
             from core.remediation.safe_fixer import SafeFixer
             safe_fixer = SafeFixer(demo_dir="demo")
+        # The armed path MUTATES the DB (the health_status/fixed_by flip + the
+        # ALTER migration). Hold the same sidecar file-lock every other write
+        # command uses (discover/produce/populate/probe) so a concurrent probe
+        # can't clobber the flip and two armed runs can't race the ALTER. The
+        # read-only default (no --apply-safe) never writes the DB, so it stays
+        # lock-free.
+        from contextlib import nullcontext
+        write_lock = (with_file_lock(_db_lock_path(args.db))
+                      if args.apply_safe else nullcontext())
         summary = None
         try:
-            with get_session(engine) as session:
-                summary = run_remediate(
-                    session, out_path=out_path, do_file=args.file,
-                    apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
-                    session_id=sid, generated_at=generated_at, hermes=hermes,
-                    safe_fixer=safe_fixer, adapters=_adapters())
+            with write_lock:
+                # Close the create_all column gap inside the lock: an existing DB
+                # predates Cli.fixed_by, which create_all never adds to an
+                # already-existing table (the armed SafeFixer writes fixed_by).
+                from core.store.migrations import ensure_fixed_by_column
+                ensure_fixed_by_column(args.db)
+                with get_session(engine) as session:
+                    summary = run_remediate(
+                        session, out_path=out_path, do_file=args.file,
+                        apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
+                        session_id=sid, generated_at=generated_at, hermes=hermes,
+                        safe_fixer=safe_fixer, adapters=_adapters())
         except OSError as exc:
             # proposals.json write failure (disk/permission): summary lost, but
             # surface clearly and exit 4 (spec §6).
