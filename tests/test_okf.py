@@ -35,7 +35,14 @@ def test_export_rows_sorted_and_shaped():
     pdf = rows[0]
     assert pdf["path"] == "/bin/p2t" and pdf["updated_at"] == 20.0
     assert pdf["capability"]["intent_tags"] == ["convert", "document"]  # sorted
+    assert pdf["capability"]["input_types"] == ["file:pdf"]
+    assert pdf["capability"]["output_types"] == ["text"]
     assert pdf["edges"] == [{"to": "summarize", "via": "text"}]
+    summ = rows[1]
+    assert summ["slug"] == "summarize"
+    assert summ["path"] == "/bin/sum" and summ["updated_at"] == 10.0
+    assert summ["capability"]["intent_tags"] == ["summarize"]
+    assert summ["edges"] == []
 
 
 def test_export_rows_rejects_multiple_capabilities():

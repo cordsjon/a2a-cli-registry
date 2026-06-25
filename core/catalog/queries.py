@@ -120,7 +120,7 @@ def export_rows(session):
         )
         out.append({
             "slug": c.slug, "lang": c.lang, "project": c.project, "path": c.path,
-            "updated_at": c.updated_at, "description": c.description or "",
+            "updated_at": c.updated_at, "description": c.description or "",  # normalise NULL -> "" for OKF consumers
             "health_status": _norm_health(c.health_status),
             "capability": capability, "edges": edges,
         })
