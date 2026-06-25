@@ -48,18 +48,23 @@ def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
         refined_by_slug = {p.slug: p for p in refined}
         proposals = [refined_by_slug.get(p.slug, p) for p in proposals]
 
-    # step 4: SafeFixer (MVP: NotImplementedError caught; read-only work preserved).
+    # step 4: SafeFixer — when armed, run the live install+re-probe pipeline.
+    # Route through the full eligibility gate (class AND confidence AND mapped
+    # target), not class alone — an LLM-inferred pip-3rd-party must not reach
+    # apply() when SafeFixer is armed (spec §3.4).
+    fix_results = []
     apply_safe_requested = False
     if apply_safe and safe_fixer is not None:
         apply_safe_requested = True
-        try:
-            # Route through the full eligibility gate (class AND confidence AND
-            # mapped target), not class alone — an LLM-inferred pip-3rd-party must
-            # not reach apply() when SafeFixer is armed (spec §3.4). Inert in the
-            # MVP (apply() raises), but keeps the auto-safe gate coherent.
-            safe_fixer.apply([p for p in proposals if safe_fixer.is_eligible(p)])
-        except NotImplementedError:
-            pass  # MVP: proposals.json + filing still happen below
+        eligible = [p for p in proposals if safe_fixer.is_eligible(p)]
+        by_slug = {r.slug: r for r in rows}
+
+        def _health_cmd_for(slug):
+            r = by_slug.get(slug)
+            return r.health_cmd if (r and r.health_cmd) else "false"
+
+        fix_results = safe_fixer.apply(eligible, session=session,
+                                       health_cmd_for=_health_cmd_for)
 
     # step 5: write the envelope atomically BEFORE filing (proposals.json is the
     # reconciliation source of truth if filing later crashes).
@@ -80,4 +85,6 @@ def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
         "out_path": out_path,
         "issues_filed": len(issues),
         "apply_safe_requested": apply_safe_requested,
+        "fixes_applied": sum(1 for r in fix_results if r.outcome == "fixed"),
+        "fix_results": [r.to_dict() for r in fix_results],
     }

@@ -180,15 +180,20 @@ def main(argv=None) -> int:
         except Exception as exc:   # narrow: DB open/read is the only thing here
             print(f"remediate: cannot read DB: {exc}", file=sys.stderr)
             return 2
+        # Close the create_all column gap: an existing DB predates Cli.fixed_by,
+        # which create_all never adds to a table that already exists (the armed
+        # SafeFixer writes fixed_by on a successful fix).
+        from core.store.migrations import ensure_fixed_by_column
+        ensure_fixed_by_column(args.db)
         sid = str(uuid.uuid4())
         generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         hermes = HermesAdapter() if args.max_llm_calls > 0 else None
-        # SafeFixer is stubbed MVP-wide; pass an instance so run.py can set
-        # apply_safe_requested=True and the CLI can return exit 3 correctly.
+        # SafeFixer is ARMED: when --apply-safe is set it runs real wheel-only
+        # installs into an isolated demo/ venv and re-probes (spec §3.4).
         safe_fixer = None
         if args.apply_safe:
             from core.remediation.safe_fixer import SafeFixer
-            safe_fixer = SafeFixer(demo_dir=".")
+            safe_fixer = SafeFixer(demo_dir="demo")
         summary = None
         try:
             with get_session(engine) as session:
@@ -214,9 +219,8 @@ def main(argv=None) -> int:
         print(f"remediate: wrote {out_path}; issues_filed={summary['issues_filed']}",
               file=sys.stderr)
         if summary["apply_safe_requested"]:
-            print("remediate: --apply-safe not yet implemented; ran proposal-only. "
-                  "Re-run without --apply-safe for proposals.", file=sys.stderr)
-            return 3
+            print(f"remediate: --apply-safe applied {summary['fixes_applied']} fix(es)",
+                  file=sys.stderr)
         return 0
 
     engine = init_db(args.db)
