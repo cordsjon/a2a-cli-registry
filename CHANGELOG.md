@@ -4,6 +4,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
 [SemVer](https://semver.org/). Pre-1.0: minor versions may break surfaces.
 
 ## [Unreleased]
+### Fixed
+- OKF root `index.md` is now spec-conformant: `okf_version` lives inside a `---`
+  frontmatter block (OKF spec §4) and entries are Markdown links with
+  descriptions (`* [slug](path) - desc`, §6) for progressive-disclosure
+  consumers like okf-viz. Previously `okf_version` was a bare body line and
+  entries were plain text.
+
 ### Added
 - `okf-produce` exports the catalog as an Open Knowledge Format (OKF) bundle
   (Markdown + YAML), consumable by okf-viz / okf-mcp / OKFy and any OKF-aware

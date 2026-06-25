@@ -16,9 +16,9 @@ def test_entry_point_callable_resolves():
     assert callable(main)
 
 
-def test_version_is_1_3_0():
+def test_version_is_1_3_1():
     cfg = tomllib.loads(_PYPROJECT.read_text())
-    assert cfg["project"]["version"] == "1.3.0"
+    assert cfg["project"]["version"] == "1.3.1"
 
 
 def test_rich_is_declared_runtime_dependency():
