@@ -258,6 +258,50 @@ def test_e2e_multiline_description_roundtrips_through_ingest(tmp_path):
     assert s.get(_Cli, "pdf2text").description == "Line one.\n\nLine two."
 
 
+def test_produce_stable_under_shuffled_db_insertion_order(tmp_path):
+    # Determinism must not depend on DB row insertion/iteration order.
+    from core.okf.serialize import produce_bundle
+    s1 = _session()
+    s1.add(Cli(slug="b", lang="python", project="p", path="/b", updated_at=1.0, description="B", health_status="healthy"))
+    s1.add(Cli(slug="a", lang="python", project="p", path="/a", updated_at=2.0, description="A", health_status="healthy"))
+    s1.commit()
+    out1 = tmp_path / "b1"; produce_bundle(s1, str(out1))
+    s2 = _session()
+    s2.add(Cli(slug="a", lang="python", project="p", path="/a", updated_at=2.0, description="A", health_status="healthy"))
+    s2.add(Cli(slug="b", lang="python", project="p", path="/b", updated_at=1.0, description="B", health_status="healthy"))
+    s2.commit()
+    out2 = tmp_path / "b2"; produce_bundle(s2, str(out2))
+    snap1 = {p.relative_to(out1).as_posix(): p.read_bytes() for p in out1.rglob("*.md")}
+    snap2 = {p.relative_to(out2).as_posix(): p.read_bytes() for p in out2.rglob("*.md")}
+    assert snap1 == snap2
+
+
+def test_index_and_log_have_no_walltime(tmp_path):
+    # log.md / index.md must derive from Cli.updated_at, never wall-clock,
+    # so a no-change re-produce is byte-identical.
+    from core.okf.serialize import produce_bundle
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    idx1 = (out / "index.md").read_bytes(); log1 = (out / "log.md").read_bytes()
+    produce_bundle(s, str(out), force=True)
+    assert (out / "index.md").read_bytes() == idx1
+    assert (out / "log.md").read_bytes() == log1
+
+
+def test_index_is_conformant_frontmatter_and_links(tmp_path):
+    # Spec §6: root index.md carries okf_version in --- frontmatter, entries are md links.
+    from core.okf.serialize import produce_bundle
+    from core.okf.frontmatter import split_doc
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    text = (out / "index.md").read_text()
+    fm, body = split_doc(text)                 # must parse as ---fm---body
+    assert fm.get("okf_version") == "0.1"
+    assert "[pdf2text](" in body               # entries are markdown links
+
+
 def test_cli_okf_produce_then_ingest(tmp_path):
     from core.cli.main import main
     db = tmp_path / "registry.db"

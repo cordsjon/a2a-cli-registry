@@ -133,10 +133,16 @@ def _render_body(row, cap, rows) -> str:
 
 
 def _render_index(rows) -> str:
-    lines = [f"okf_version: {OKF_VERSION}", "", "# Bundle Index", ""]
+    body_lines = ["# Bundle Index", ""]
     for r in rows:
-        lines.append(f"- {_concept_id(r)}")
-    return "\n".join(lines) + "\n"
+        url = _concept_id(r) + ".md"
+        desc = r.get("description") or ""
+        if desc:
+            body_lines.append(f"* [{r['slug']}]({url}) - {desc}")
+        else:
+            body_lines.append(f"* [{r['slug']}]({url})")
+    body = "\n".join(body_lines) + "\n"
+    return join_doc({"okf_version": OKF_VERSION}, body)
 
 
 def _render_log(max_updated) -> str:
