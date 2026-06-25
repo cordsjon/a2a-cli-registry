@@ -41,6 +41,69 @@ def test_success_refines_to_llm_inferred():
     assert props[0].fix_kind == FixKind.PROPOSE_ONLY
 
 
+def test_markdown_fenced_json_is_parsed_not_degraded():
+    """deepseek-v4-flash wraps its JSON array in a ```json fence (verified
+    against the live endpoint). The adapter must strip the fence and parse,
+    NOT degrade the batch to parse-failure."""
+    a = HermesAdapter(now=_fixed_now)
+    fenced = (
+        "```json\n"
+        '[\n  {\n    "slug": "app",\n    "failure_class": "pip-3rd-party",\n'
+        '    "target": "streamlit",\n    "evidence": "streamlit not installed"\n  }\n]\n'
+        "```"
+    )
+
+    def fake_post(payload):
+        return {"choices": [{"message": {"content": fenced}}]}
+    a._post = fake_post
+    props, recs = a.diagnose([Row("app")], max_calls=5)
+    assert recs == [], "a fenced-but-valid response must not degrade"
+    assert props[0].failure_class == FailureClass.PIP_3RD_PARTY
+    assert props[0].target == "streamlit"
+    assert props[0].confidence == Confidence.LLM_INFERRED
+
+
+def test_bare_fence_without_lang_is_parsed():
+    """A plain ``` fence (no 'json' language tag) is also stripped."""
+    a = HermesAdapter(now=_fixed_now)
+    fenced = '```\n[{"slug": "app", "failure_class": "wrong-cwd", "target": "app"}]\n```'
+
+    def fake_post(payload):
+        return {"choices": [{"message": {"content": fenced}}]}
+    a._post = fake_post
+    props, recs = a.diagnose([Row("app")], max_calls=5)
+    assert recs == []
+    assert props[0].failure_class == FailureClass.WRONG_CWD
+
+
+def test_prose_wrapped_json_array_is_extracted():
+    """If the model prefixes prose, the first [...] array is still extracted."""
+    a = HermesAdapter(now=_fixed_now)
+    content = ('Here is my analysis:\n'
+               '[{"slug": "app", "failure_class": "env-missing", "target": "API_KEY"}]\n'
+               'Let me know if you need more.')
+
+    def fake_post(payload):
+        return {"choices": [{"message": {"content": content}}]}
+    a._post = fake_post
+    props, recs = a.diagnose([Row("app")], max_calls=5)
+    assert recs == []
+    assert props[0].failure_class == FailureClass.ENV_MISSING
+    assert props[0].target == "API_KEY"
+
+
+def test_truly_unparseable_content_still_degrades():
+    """Genuinely non-JSON (no array anywhere) must still degrade to parse."""
+    a = HermesAdapter(now=_fixed_now)
+
+    def fake_post(payload):
+        return {"choices": [{"message": {"content": "I cannot help with that."}}]}
+    a._post = fake_post
+    props, recs = a.diagnose([Row("app")], max_calls=5)
+    assert props[0].failure_class == FailureClass.UNKNOWN
+    assert recs and recs[0].reason == "parse"
+
+
 def test_partial_llm_response_yields_unknown_for_missing_slug():
     """LLM returns a response for only one of two input slugs.
     The omitted slug must still appear as UNKNOWN — no silent truncation."""

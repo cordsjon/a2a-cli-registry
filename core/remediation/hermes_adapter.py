@@ -78,20 +78,50 @@ class HermesAdapter:
             for r in batch)
         return {
             "model": self.model,
+            # Ask the provider for JSON mode where supported. _extract_json is the
+            # real safety net (deepseek still fences despite this), so a provider
+            # that ignores response_format degrades gracefully, not loudly.
+            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content":
                  "You diagnose why a Python CLI failed to run. For each slug "
-                 "return strict JSON array of {slug, failure_class, target, "
-                 "evidence}. failure_class in: pip-3rd-party, pip-unknown, "
-                 "wrong-cwd, code-bug, env-missing, unknown."},
+                 "return ONLY a raw JSON array (no markdown fences, no prose) of "
+                 "{slug, failure_class, target, evidence}. failure_class in: "
+                 "pip-3rd-party, pip-unknown, wrong-cwd, code-bug, env-missing, "
+                 "unknown."},
                 {"role": "user", "content": msg},
             ],
             "_batch_slugs": [r.slug for r in batch],  # test hook; stripped before POST
         }
 
+    @staticmethod
+    def _extract_json(content: str):
+        """Tolerantly recover the JSON array from an LLM response.
+
+        deepseek-v4-flash (and most chat models) wrap the array in a ```json
+        fence and may prepend prose, so a bare json.loads(content) fails on the
+        backticks. Strategy, in order: (1) strip a leading/trailing markdown
+        fence; (2) try json.loads on the whole thing; (3) fall back to the first
+        '['..last ']' slice. Raises json.JSONDecodeError if nothing parses, so
+        the batch still degrades to a parse-failure for genuinely broken output."""
+        text = (content or "").strip()
+        if text.startswith("```"):
+            # drop the opening fence line (``` or ```json) and the closing ```
+            text = text.split("\n", 1)[1] if "\n" in text else ""
+            if text.rstrip().endswith("```"):
+                text = text.rstrip()[:-3]
+            text = text.strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            start, end = text.find("["), text.rfind("]")
+            if start != -1 and end != -1 and end > start:
+                return json.loads(text[start:end + 1])  # may raise -> parse failure
+            raise
+
     def _parse(self, resp, batch):
         content = resp["choices"][0]["message"]["content"]
-        items = json.loads(content)  # raises on non-JSON -> caught as parse failure
+        items = self._extract_json(content)  # raises on non-JSON -> caught as parse failure
         by_slug = {it["slug"]: it for it in items if "slug" in it}
         out = []
         for r in batch:
