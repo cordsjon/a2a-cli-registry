@@ -226,5 +226,19 @@ def test_cli_okf_produce_then_ingest(tmp_path):
     out = tmp_path / "bundle"
     rc = main(["okf-produce", "--db", str(db), "--out", str(out)])
     assert rc == 0 and (out / "index.md").exists()
+
+    # Simulate enrichment: edit the pdf2text concept description in the bundle.
+    p = out / "clis" / "docs" / "pdf2text.md"
+    p.write_text(p.read_text().replace('description: "d1"', 'description: "CLI-ENRICHED"'))
+
     rc = main(["okf-ingest", "--db", str(db), "--bundle", str(out)])
     assert rc == 0
+
+    # Verify the DB actually reflects the enrichment (not just exit code 0).
+    from core.models import Cli as _Cli
+    eng2 = init_db(str(db))
+    with get_session(eng2) as s:
+        cli = s.get(_Cli, "pdf2text")
+    assert cli.description == "CLI-ENRICHED", (
+        f"expected 'CLI-ENRICHED' but got {cli.description!r}"
+    )
