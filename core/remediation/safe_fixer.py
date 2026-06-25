@@ -5,7 +5,9 @@ run arbitrary build code. Containment is the SUM of the §3.4 constraints, opt-i
 and allowlist-gated. Only the eligibility predicate and refusal paths are live
 this session — no install runs."""
 import os
+import subprocess
 
+from core.prober.prober import _kill_tree, _POSIX
 from core.remediation.proposal import FailureClass, Confidence
 from core.remediation.classify import IMPORT_TO_PACKAGE
 
@@ -50,6 +52,34 @@ class SafeFixer:
         env["XDG_CONFIG_HOME"] = os.path.join(sandbox, "xdg-config")
         env["PYTHONNOUSERSITE"] = "1"
         return env
+
+    def _run_contained(self, argv: list, *, timeout: float, env=None) -> tuple:
+        """Run argv in the scrubbed env, own process group, wall-clock killpg.
+
+        Returns (returncode, timed_out). Reuses the prober's _kill_tree so the
+        whole process tree dies on timeout (a pip build subprocess can fork).
+        Output is discarded — health is decided by exit code, same as the
+        prober. cwd is demo_dir so any stray file write lands in the sandbox.
+        env overrides the default scrubbed env (the re-probe prepends the
+        venv bin to PATH); when None the standard _isolated_env() is used."""
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=self.demo_dir,
+                env=env if env is not None else self._isolated_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=_POSIX,
+            )
+        except (OSError, ValueError):
+            return (1, False)
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            proc.wait()
+            return (proc.returncode if proc.returncode is not None else -1, True)
+        return (proc.returncode, False)
 
     def apply(self, proposals) -> list:
         raise NotImplementedError(

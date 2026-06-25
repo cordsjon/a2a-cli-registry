@@ -114,3 +114,26 @@ def test_isolated_env_redirects_into_demo_and_scrubs(tmp_path, monkeypatch):
     assert "OPENAI_API_KEY" not in env
     # PATH is preserved (need to find pip/python) but not arbitrary project vars
     assert "PATH" in env
+
+
+# --- Task 5: _run_contained killpg-timeout subprocess primitive ---
+import sys
+
+
+def test_run_contained_returns_zero_on_success(tmp_path):
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    rc, timed_out = fixer._run_contained([sys.executable, "-c", "pass"], timeout=10.0)
+    assert rc == 0 and timed_out is False
+
+
+def test_run_contained_nonzero_exit(tmp_path):
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    rc, timed_out = fixer._run_contained([sys.executable, "-c", "import sys; sys.exit(7)"], timeout=10.0)
+    assert rc == 7 and timed_out is False
+
+
+def test_run_contained_kills_on_timeout(tmp_path):
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    rc, timed_out = fixer._run_contained(
+        [sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+    assert timed_out is True
