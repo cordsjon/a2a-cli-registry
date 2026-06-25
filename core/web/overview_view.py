@@ -59,12 +59,19 @@ def build_overview_model(rows) -> dict:
         state = _norm_health(cli.get("health_status"))
         summary[state] += 1
         slug = cli["slug"]
+        desc = cli.get("description") or ""
+        # A description on an unhealthy CLI is the probe/audit failure note (e.g.
+        # "ModuleNotFoundError: numpy"), not a summary of what the tool does. Flag
+        # it so the UI can render it as a subtle status line rather than a
+        # description. Healthy CLIs carry their real --help one-liner.
+        desc_is_error = bool(desc) and state == "unhealthy"
         card = {
             "slug": slug,
             "lang": cli.get("lang") or "",
             "health_status": state,
             "health_glyph": _HEALTH_GLYPHS[state],
-            "description": cli.get("description") or "",
+            "description": desc,
+            "desc_is_error": desc_is_error,
             "capabilities": caps_by_slug.get(slug, []),
             "edges": [
                 edge for edge in edges

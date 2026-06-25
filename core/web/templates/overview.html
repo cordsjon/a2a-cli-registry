@@ -124,11 +124,31 @@
       align-items: center;
       padding: 11px 12px;
     }
+    .slug-block {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
     .slug {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-weight: 700;
       min-width: 0;
       overflow-wrap: anywhere;
+    }
+    .desc-inline {
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .desc-inline.desc-error {
+      color: var(--unhealthy);
+      font-style: italic;
+      opacity: 0.85;
     }
     .lang, .count {
       color: var(--muted);
@@ -202,7 +222,10 @@
           {% for cli in bucket.clis %}
             <details class="cli-card" data-slug="{{ cli.slug }}" data-desc="{{ cli.description }}">
               <summary>
-                <span class="slug">{{ cli.slug }}</span>
+                <span class="slug-block">
+                  <span class="slug">{{ cli.slug }}</span>
+                  {% if cli.description %}<span class="desc-inline{% if cli.desc_is_error %} desc-error{% endif %}"{% if cli.desc_is_error %} title="probe failure"{% endif %}>{{ cli.description }}</span>{% endif %}
+                </span>
                 <span class="lang">{{ cli.lang }}</span>
                 <span class="health {{ cli.health_status }}">{% if cli.health_status == "healthy" %}●{% elif cli.health_status == "unhealthy" %}▲{% elif cli.health_status == "stale" %}◆{% else %}○{% endif %} {{ cli.health_status }}</span>
               </summary>
