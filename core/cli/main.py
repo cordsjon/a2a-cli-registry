@@ -201,7 +201,7 @@ def main(argv=None) -> int:
                     session, out_path=out_path, do_file=args.file,
                     apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
                     session_id=sid, generated_at=generated_at, hermes=hermes,
-                    safe_fixer=safe_fixer)
+                    safe_fixer=safe_fixer, adapters=_adapters())
         except OSError as exc:
             # proposals.json write failure (disk/permission): summary lost, but
             # surface clearly and exit 4 (spec §6).

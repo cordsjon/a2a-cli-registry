@@ -34,7 +34,7 @@ def read_unhealthy(session) -> list:
 
 def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
                   session_id, generated_at, hermes=None, paperclip=None,
-                  safe_fixer=None) -> dict:
+                  safe_fixer=None, adapters=None) -> dict:
     rows = read_unhealthy(session)
     proposals = classify_fleet(rows)              # step 2: deterministic
     failure_records = []
@@ -58,10 +58,24 @@ def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
         apply_safe_requested = True
         eligible = [p for p in proposals if safe_fixer.is_eligible(p)]
         by_slug = {r.slug: r for r in rows}
+        # cli.health_cmd is NOT persisted by any production path (the prober
+        # derives it from the adapter at probe time and discards it). So we
+        # reconstruct the re-probe command the same way — via the adapters —
+        # rather than reading the always-null column. A row with no matching
+        # adapter (or an adapter that yields no command) returns None, which
+        # apply() treats as a clean refusal (NOT a "false" re-probe that would
+        # mislabel every fix reprobe-failed).
+        from core.prober.prober import _find_adapter
+        _ads = adapters or []
 
         def _health_cmd_for(slug):
             r = by_slug.get(slug)
-            return r.health_cmd if (r and r.health_cmd) else "false"
+            if r is None:
+                return None
+            if r.health_cmd:
+                return r.health_cmd
+            adapter, rec = _find_adapter(r, _ads)
+            return adapter.health_cmd(rec) if adapter else None
 
         fix_results = safe_fixer.apply(eligible, session=session,
                                        health_cmd_for=_health_cmd_for)

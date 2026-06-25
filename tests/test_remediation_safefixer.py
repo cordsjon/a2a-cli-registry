@@ -230,3 +230,15 @@ def test_apply_refuses_ineligible_without_install(tmp_path):
     results = fixer.apply([bad], session=None, health_cmd_for=lambda slug: "true")
     assert results[0].outcome == "refused"
     assert fixer.installed == []
+
+
+def test_apply_refuses_when_no_health_command(tmp_path):
+    # health_cmd_for returns None (no persisted cmd, no adapter match): apply()
+    # must refuse with a clear 'no health command' outcome and NEVER install —
+    # re-probing a guaranteed-failing 'false' would mislabel it reprobe-failed.
+    fixer = _FakeFixer(str(tmp_path), install_rc=(0, False), reprobe_rc="healthy")
+    results = fixer.apply([_eligible_proposal()], session=None,
+                          health_cmd_for=lambda slug: None)
+    assert results[0].outcome == "refused"
+    assert "health command" in results[0].detail
+    assert fixer.installed == []  # refused BEFORE any install

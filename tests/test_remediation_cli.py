@@ -78,6 +78,65 @@ def test_run_invokes_hermes_on_unknowns(db, tmp_path):
     assert len(env["proposals"]) == 2  # replace semantics: count unchanged
 
 
+def test_run_remediate_reconstructs_health_cmd_via_adapters(db, tmp_path):
+    # Critical regression: cli.health_cmd is NEVER persisted in production
+    # (474/474 rows null on the real DB). run_remediate must reconstruct the
+    # re-probe command from the adapters (like the prober does), not read the
+    # empty column and fall back to "false" (which guarantees reprobe-failed).
+    _seed(db, "n", "ModuleNotFoundError: No module named 'numpy'")  # health_cmd stays None
+    out = tmp_path / "p.json"
+    seen = {}
+
+    class _RecordingAdapter:
+        def detect(self, rec):
+            return True
+        def health_cmd(self, rec):
+            return "reconstructed-health-cmd"
+
+    class StubFixer:
+        def is_eligible(self, proposal):
+            return True
+        def apply(self, proposals, *, session, health_cmd_for):
+            from core.remediation.proposal import FixResult
+            seen["cmd"] = health_cmd_for("n")
+            return [FixResult("n", "numpy", "fixed", "ok")]
+
+    run_remediate(
+        db, out_path=str(out), do_file=False, apply_safe=True, max_llm_calls=0,
+        session_id="s", generated_at="t", safe_fixer=StubFixer(),
+        adapters=[_RecordingAdapter()], paperclip=NoopPaperclip())
+    # the reconstructed command, NOT the "false" fallback
+    assert seen["cmd"] == "reconstructed-health-cmd"
+
+
+def test_run_remediate_health_cmd_none_when_no_adapter(db, tmp_path):
+    # No adapter detects the row -> health_cmd_for returns None (a clean
+    # "no probe command" signal), NOT "false". apply() turns None into a refusal.
+    _seed(db, "n", "ModuleNotFoundError: No module named 'numpy'")
+    out = tmp_path / "p.json"
+    seen = {}
+
+    class _NoMatchAdapter:
+        def detect(self, rec):
+            return False
+        def health_cmd(self, rec):
+            return "unused"
+
+    class StubFixer:
+        def is_eligible(self, proposal):
+            return True
+        def apply(self, proposals, *, session, health_cmd_for):
+            from core.remediation.proposal import FixResult
+            seen["cmd"] = health_cmd_for("n")
+            return [FixResult("n", "numpy", "refused", "no health command")]
+
+    run_remediate(
+        db, out_path=str(out), do_file=False, apply_safe=True, max_llm_calls=0,
+        session_id="s", generated_at="t", safe_fixer=StubFixer(),
+        adapters=[_NoMatchAdapter()], paperclip=NoopPaperclip())
+    assert seen["cmd"] is None
+
+
 def test_run_remediate_threads_fix_results_when_armed(db, tmp_path):
     # Armed SafeFixer: apply() now returns FixResults; run.py must thread the
     # 'fixed' count into the summary and still write proposals.json.

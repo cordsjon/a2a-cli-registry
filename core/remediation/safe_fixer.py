@@ -118,6 +118,14 @@ class SafeFixer:
                 results.append(FixResult(p.slug, p.target, "refused", "venv path escapes demo/"))
                 continue
 
+            # No re-probe command => we cannot verify a fix. Refuse BEFORE
+            # installing rather than re-probe a guaranteed-failing "false"
+            # (which would mislabel an un-verifiable CLI as reprobe-failed).
+            health_cmd = health_cmd_for(p.slug)
+            if not health_cmd:
+                results.append(FixResult(p.slug, p.target, "refused", "no health command"))
+                continue
+
             rc, timed_out = self._install_one(p.target, venv_dir)
             if timed_out:
                 results.append(FixResult(p.slug, p.target, "timeout", "install timed out"))
@@ -126,7 +134,7 @@ class SafeFixer:
                 results.append(FixResult(p.slug, p.target, "install-failed", f"pip rc={rc}"))
                 continue
 
-            status = self._reprobe_one(p.slug, health_cmd_for(p.slug), venv_dir)
+            status = self._reprobe_one(p.slug, health_cmd, venv_dir)
             if status != "healthy":
                 results.append(FixResult(p.slug, p.target, "reprobe-failed", "still unhealthy"))
                 continue
