@@ -189,6 +189,7 @@ def main(argv=None) -> int:
         if args.apply_safe:
             from core.remediation.safe_fixer import SafeFixer
             safe_fixer = SafeFixer(demo_dir=".")
+        summary = None
         try:
             with get_session(engine) as session:
                 summary = run_remediate(
@@ -202,11 +203,11 @@ def main(argv=None) -> int:
             print(f"remediate: failed to write proposals: {exc}", file=sys.stderr)
             return 4
         except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            # paperclip.sh subprocess/parse failure during --file filing.
-            # proposals.json is already written (write_proposals runs before filing).
+            # paperclip.sh failed during --file filing. proposals.json was already
+            # written (write happens before filing), so the deterministic findings
+            # survive; report and exit 0.
             print(f"remediate: warning: Paperclip filing error: {exc}", file=sys.stderr)
-            print(json.dumps(summary["counts"]))
-            print(f"remediate: wrote {out_path}; issues_filed={summary['issues_filed']}",
+            print(f"remediate: wrote {out_path}; issues_filed=0 (filing failed)",
                   file=sys.stderr)
             return 0
         print(json.dumps(summary["counts"]))

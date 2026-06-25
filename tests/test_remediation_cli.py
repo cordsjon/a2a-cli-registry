@@ -103,9 +103,6 @@ def test_write_proposals_is_atomic_overwrite(tmp_path):
 
 
 # --- CLI-level tests (append) ---
-import os
-import uuid
-import pytest
 from core.cli import main as cli_main
 
 
@@ -126,7 +123,6 @@ def test_cli_default_writes_proposals_no_network(tmp_path, monkeypatch):
         ("bad", "ModuleNotFoundError: No module named 'numpy'", "unhealthy")])
     out = tmp_path / "proposals.json"
     # Spy: any HermesAdapter.diagnose call is a failure of "no network by default".
-    import core.remediation.run as run_mod
     monkeypatch.setattr(
         "core.remediation.hermes_adapter.HermesAdapter._post",
         lambda self, payload: (_ for _ in ()).throw(AssertionError("network used")))
@@ -154,3 +150,18 @@ def test_cli_db_read_failure_exits_2_no_proposals(tmp_path):
     rc = cli_main.main(["remediate", "--db", str(bad_db), "--out", str(out)])
     assert rc == 2
     assert not out.exists()
+
+
+def test_cli_file_paperclip_failure_exits_0_and_writes(tmp_path, monkeypatch):
+    import subprocess as _sp
+    db_path = _make_db(tmp_path, [
+        ("n", "ModuleNotFoundError: No module named 'numpy'", "unhealthy")])
+    out = tmp_path / "p.json"
+
+    def boom(self, proposals, *, dry_run=True):
+        raise _sp.CalledProcessError(1, ["paperclip.sh", "list", "--json"])
+
+    monkeypatch.setattr("core.remediation.paperclip_adapter.PaperclipAdapter.file", boom)
+    rc = cli_main.main(["remediate", "--db", db_path, "--out", str(out), "--file"])
+    assert rc == 0
+    assert out.exists()  # proposals.json written before filing — survives the failure
