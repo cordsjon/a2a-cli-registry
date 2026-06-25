@@ -304,7 +304,7 @@ is the only module importing the YAML/serialization path for OKF.
 
 ---
 
-## 9. Decisions & Open Questions
+## 9. Decisions (all resolved)
 
 **Resolved by the codex review (now baked into the spec):**
 
@@ -321,18 +321,22 @@ is the only module importing the YAML/serialization path for OKF.
 - **R5 — capability multiplicity:** export the one-row-per-CLI invariant; fail
   loudly on >1 (§4). Settled.
 
-**Still open (resolve at plan time):**
+**Resolved (decisions locked, no open questions remain):**
 
-1. **YAML emission:** hand-emit the constrained YAML subset we control
-   (recommended — zero new deps, guarantees the byte-stability §6 requires, and
-   the frontmatter shape is small and fixed) **vs.** add `PyYAML` with explicit
-   `sort_keys=True` + a custom list representer. The project today has no YAML
-   dep (only `tomli`/`tomllib`). Lean: hand-emit.
-2. **Version bump:** new commands + interchange surface → `1.3.0`.
-3. **Naming:** commands `okf-produce` / `okf-ingest` (hyphenated, matches the
-   okf-skills `<skill>__<command>` convention and the single-positional argparse
-   pattern) vs. `okf produce` (two-token, needs argparse changes). Lean:
-   hyphenated.
+- **D1 — YAML emission:** **hand-emit** the constrained YAML subset we control.
+  Zero new deps (the project has only `tomli`/`tomllib`, no YAML dep), and it
+  guarantees the byte-stability §6 requires without fighting a library's
+  representer. The frontmatter shape is small and fixed (scalars, flat string
+  lists, a 2-key `ports` map, an `edges` list of `{to, via}` maps), so a
+  purpose-built emitter in `core/okf/frontmatter.py` is simpler and safer than
+  `PyYAML` + `sort_keys=True` + a custom list representer. The corresponding
+  **reader** parses the same constrained subset (frontmatter for ingest needs
+  only `description`, so the reader is even smaller).
+- **D2 — Version bump:** `1.3.0` (new commands + interchange surface; additive,
+  SemVer minor).
+- **D3 — Command naming:** `okf-produce` / `okf-ingest` (hyphenated). Matches the
+  okf-skills `<skill>__<command>` convention and drops into the existing
+  single-positional `choices` list with no argparse restructuring.
 
 ---
 
