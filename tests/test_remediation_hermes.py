@@ -41,6 +41,27 @@ def test_success_refines_to_llm_inferred():
     assert props[0].fix_kind == FixKind.PROPOSE_ONLY
 
 
+def test_partial_llm_response_yields_unknown_for_missing_slug():
+    """LLM returns a response for only one of two input slugs.
+    The omitted slug must still appear as UNKNOWN — no silent truncation."""
+    a = HermesAdapter(now=_fixed_now)
+
+    def fake_post(payload):
+        return {"choices": [{"message": {"content": json.dumps([
+            {"slug": "app", "failure_class": "wrong-cwd", "target": "app",
+             "evidence": "module found"},
+        ])}}]}
+    a._post = fake_post
+    props, recs = a.diagnose([Row("app"), Row("cli")], max_calls=5)
+    assert len(props) == 2, "every input CLI must produce exactly one proposal"
+    assert recs == []
+    slugs = {p.slug for p in props}
+    assert slugs == {"app", "cli"}
+    cli_prop = next(p for p in props if p.slug == "cli")
+    assert cli_prop.failure_class == FailureClass.UNKNOWN
+    assert cli_prop.fix_kind == FixKind.NEEDS_HUMAN
+
+
 @pytest.mark.parametrize("exc_or_status,reason", [
     ("refused", "refused"),
     ("timeout", "timeout"),
@@ -79,9 +100,9 @@ def test_max_calls_caps_batches_and_leaves_rest_unknown():
     rows = [Row(f"c{i}") for i in range(25)]  # 25 CLIs -> 3 batches of <=10
     props, recs = a.diagnose(rows, max_calls=1)  # only 1 batch allowed
     assert len(seen) == 1  # exactly one HTTP call made
-    # 15 CLIs beyond the cap stay unknown
+    # 10 CLIs from empty LLM response + 15 CLIs beyond the cap = 25 unknown
     unknown = [p for p in props if p.failure_class == FailureClass.UNKNOWN]
-    assert len(unknown) == 15
+    assert len(unknown) == 25
 
 
 def test_batch_size_at_most_ten():

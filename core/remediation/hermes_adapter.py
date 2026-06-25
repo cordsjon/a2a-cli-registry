@@ -96,14 +96,16 @@ class HermesAdapter:
         out = []
         for r in batch:
             it = by_slug.get(r.slug)
-            if it:
-                fc = _CLASS_BY_VALUE.get(it.get("failure_class", ""), FailureClass.UNKNOWN)
-                out.append(RemediationProposal(
-                    schema_version=SCHEMA_VERSION, slug=r.slug, failure_class=fc,
-                    fix_kind=_FIXKIND_BY_CLASS[fc], target=it.get("target", ""),
-                    confidence=Confidence.LLM_INFERRED,
-                    evidence=it.get("evidence", "") or (r.description or ""),
-                ))
+            if not it:
+                out.append(_unknown(r.slug, r.description))
+                continue
+            fc = _CLASS_BY_VALUE.get(it.get("failure_class", ""), FailureClass.UNKNOWN)
+            out.append(RemediationProposal(
+                schema_version=SCHEMA_VERSION, slug=r.slug, failure_class=fc,
+                fix_kind=_FIXKIND_BY_CLASS[fc], target=it.get("target", ""),
+                confidence=Confidence.LLM_INFERRED,
+                evidence=it.get("evidence", "") or (r.description or ""),
+            ))
         return out
 
     def diagnose(self, unknowns, *, max_calls):
