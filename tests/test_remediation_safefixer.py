@@ -85,3 +85,12 @@ def test_fixresult_outcomes_are_constrained():
     # this test pins the vocabulary so a typo'd outcome string is caught.
     for o in ("fixed", "install-failed", "reprobe-failed", "refused", "timeout"):
         FixResult(slug="s", target="t", outcome=o, detail="")
+
+
+# --- Task 2: Cli.fixed_by provenance column ---
+from core.models import Cli
+
+
+def test_cli_has_fixed_by_field_defaulting_none():
+    c = Cli(slug="s", lang="python")
+    assert c.fixed_by is None
