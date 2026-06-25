@@ -100,6 +100,11 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--strict-port", action="store_true",
+        help="[serve] fail if --port is in use instead of auto-selecting the "
+             "next free port",
+    )
     parser.add_argument("--query", default="")
     parser.add_argument("--out", default="./bundle",
                         help="[okf-produce] output directory for the bundle")
@@ -156,21 +161,35 @@ def main(argv=None) -> int:
     if args.command == "serve":
         import uvicorn
         from core.server.app import create_app
+        from core.server.portmanager import resolve_port, NoFreePortError
         from core.store.db import session_factory
-        # Make the running server internally consistent with --host/--port.
+        # Resolve the bind port BEFORE deriving A2A_BASE_URL: on a busy box the
+        # requested port is often taken (e.g. dagu on 8080), so unless
+        # --strict-port is set we auto-select the next free port. Everything
+        # downstream (base_url, agent card, MCP allowed-hosts) must reference the
+        # port we ACTUALLY bind, not the one originally requested.
+        try:
+            bind_port = resolve_port(args.host, args.port, strict=args.strict_port)
+        except NoFreePortError as exc:
+            print(f"serve: {exc}", file=sys.stderr)
+            return 2
+        if bind_port != args.port:
+            print(f"serve: port {args.port} in use; bound {bind_port} instead",
+                  file=sys.stderr)
+        # Make the running server internally consistent with --host/bind_port.
         # Precedence: an explicit A2A_BASE_URL (e.g. a public URL behind a proxy)
-        # always wins; otherwise derive it from --host/--port so BOTH the agent
+        # always wins; otherwise derive it from --host/bind_port so BOTH the agent
         # card (core/server/app.py) AND the MCP allowed-hosts (core/mcp/http.py,
         # read at create_app time) point at the address we actually bind.
         # "0.0.0.0" is a bind-all address, not a reachable client address, so the
         # derived base_url substitutes localhost for it.
         if "A2A_BASE_URL" not in os.environ:
             reachable_host = "localhost" if args.host == "0.0.0.0" else args.host
-            os.environ["A2A_BASE_URL"] = f"http://{reachable_host}:{args.port}"
+            os.environ["A2A_BASE_URL"] = f"http://{reachable_host}:{bind_port}"
         # Per-request REST sessions + a build-time MCP session, both managed by
         # the app from this factory. The engine outlives the call via init_db.
         app = create_app(session_factory(engine))
-        uvicorn.run(app, host=args.host, port=args.port)
+        uvicorn.run(app, host=args.host, port=bind_port)
         return 0
 
     if args.command == "populate":
