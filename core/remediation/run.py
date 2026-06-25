@@ -53,8 +53,11 @@ def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
     if apply_safe and safe_fixer is not None:
         apply_safe_requested = True
         try:
-            safe_fixer.apply([p for p in proposals
-                              if p.failure_class == FailureClass.PIP_3RD_PARTY])
+            # Route through the full eligibility gate (class AND confidence AND
+            # mapped target), not class alone — an LLM-inferred pip-3rd-party must
+            # not reach apply() when SafeFixer is armed (spec §3.4). Inert in the
+            # MVP (apply() raises), but keeps the auto-safe gate coherent.
+            safe_fixer.apply([p for p in proposals if safe_fixer.is_eligible(p)])
         except NotImplementedError:
             pass  # MVP: proposals.json + filing still happen below
 

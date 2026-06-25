@@ -83,6 +83,8 @@ def test_apply_safe_requested_caught_and_still_writes(db, tmp_path):
     out = tmp_path / "p.json"
 
     class StubFixer:
+        def is_eligible(self, proposal):
+            return True  # let the numpy proposal reach apply()
         def apply(self, proposals):
             raise NotImplementedError("stubbed")
     summary = run_remediate(

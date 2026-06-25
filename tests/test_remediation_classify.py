@@ -1,4 +1,3 @@
-import os
 import pytest
 from core.remediation.classify import (
     classify_failure, IMPORT_TO_PACKAGE, MAP_VERSION,
