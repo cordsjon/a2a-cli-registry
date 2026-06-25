@@ -100,3 +100,57 @@ def test_write_proposals_is_atomic_overwrite(tmp_path):
     assert json.loads(out.read_text()) == {"a": 2}
     # no leftover temp files in the dir
     assert {p.name for p in tmp_path.iterdir()} == {"p.json"}
+
+
+# --- CLI-level tests (append) ---
+import os
+import uuid
+import pytest
+from core.cli import main as cli_main
+
+
+def _make_db(tmp_path, seed_rows):
+    from core.store.db import init_db, get_session
+    db_path = str(tmp_path / "registry.db")
+    engine = init_db(db_path)
+    with get_session(engine) as s:
+        for slug, desc, status in seed_rows:
+            s.add(Cli(slug=slug, lang="python", description=desc,
+                      health_status=status, path="/x/" + slug + ".py"))
+        s.commit()
+    return db_path
+
+
+def test_cli_default_writes_proposals_no_network(tmp_path, monkeypatch):
+    db_path = _make_db(tmp_path, [
+        ("bad", "ModuleNotFoundError: No module named 'numpy'", "unhealthy")])
+    out = tmp_path / "proposals.json"
+    # Spy: any HermesAdapter.diagnose call is a failure of "no network by default".
+    import core.remediation.run as run_mod
+    monkeypatch.setattr(
+        "core.remediation.hermes_adapter.HermesAdapter._post",
+        lambda self, payload: (_ for _ in ()).throw(AssertionError("network used")))
+    rc = cli_main.main(["remediate", "--db", db_path, "--out", str(out)])
+    assert rc == 0
+    assert out.exists()
+    env = json.loads(out.read_text())
+    assert env["proposals"][0]["target"] == "numpy"
+
+
+def test_cli_apply_safe_exits_3_but_writes(tmp_path):
+    db_path = _make_db(tmp_path, [
+        ("n", "ModuleNotFoundError: No module named 'numpy'", "unhealthy")])
+    out = tmp_path / "p.json"
+    rc = cli_main.main(["remediate", "--db", db_path, "--out", str(out), "--apply-safe"])
+    assert rc == 3
+    assert out.exists()  # read-only artifact still produced
+
+
+def test_cli_db_read_failure_exits_2_no_proposals(tmp_path):
+    # Point at a path that is a directory -> init_db/read fails.
+    bad_db = tmp_path / "adir"
+    bad_db.mkdir()
+    out = tmp_path / "p.json"
+    rc = cli_main.main(["remediate", "--db", str(bad_db), "--out", str(out)])
+    assert rc == 2
+    assert not out.exists()
