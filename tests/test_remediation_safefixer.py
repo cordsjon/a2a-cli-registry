@@ -30,6 +30,15 @@ def test_refuses_unmapped_name(tmp_path):
     assert fixer.is_eligible(_p(FailureClass.PIP_3RD_PARTY, "romsorter")) is False
 
 
+def test_refuses_import_key_that_is_not_a_dist_value(tmp_path):
+    # 'bs4' is a KEY in IMPORT_TO_PACKAGE but NOT a value (the value is
+    # 'beautifulsoup4'). Eligibility must check distribution names (values),
+    # so a bare import name must be refused — guards against installing the
+    # wrong package for an import alias.
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    assert fixer.is_eligible(_p(FailureClass.PIP_3RD_PARTY, "bs4")) is False
+
+
 def test_refuses_all_non_pip_classes(tmp_path):
     fixer = SafeFixer(demo_dir=str(tmp_path))
     for fc in (FailureClass.PIP_UNKNOWN, FailureClass.WRONG_CWD,
