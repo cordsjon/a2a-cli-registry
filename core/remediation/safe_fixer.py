@@ -31,6 +31,26 @@ class SafeFixer:
         resolved = os.path.realpath(candidate_path)
         return resolved == self.demo_dir or resolved.startswith(self.demo_dir + os.sep)
 
+    _ALLOWLIST_ENV = ("PATH",)  # minimum needed to locate python/pip; nothing project-specific
+
+    def _isolated_env(self) -> dict:
+        """Build a scrubbed process env for pip + re-probe (spec §3.4).
+
+        Allowlist (not blocklist) so no project secret/config leaks in: start
+        from an allowlisted few (PATH), then redirect HOME/caches/XDG inside
+        demo/ and set PYTHONNOUSERSITE. A blocklist would silently pass any new
+        env var the host adds; the allowlist fails closed."""
+        sandbox = os.path.join(self.demo_dir, ".sandbox")
+        env = {k: os.environ[k] for k in self._ALLOWLIST_ENV if k in os.environ}
+        env["HOME"] = sandbox
+        env["PIP_CACHE_DIR"] = os.path.join(sandbox, "pip-cache")
+        env["TMPDIR"] = os.path.join(sandbox, "tmp")
+        env["XDG_DATA_HOME"] = os.path.join(sandbox, "xdg-data")
+        env["XDG_CACHE_HOME"] = os.path.join(sandbox, "xdg-cache")
+        env["XDG_CONFIG_HOME"] = os.path.join(sandbox, "xdg-config")
+        env["PYTHONNOUSERSITE"] = "1"
+        return env
+
     def apply(self, proposals) -> list:
         raise NotImplementedError(
             "SafeFixer.apply is stubbed in the MVP; run remediate without "

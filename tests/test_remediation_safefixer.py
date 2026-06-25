@@ -94,3 +94,23 @@ from core.models import Cli
 def test_cli_has_fixed_by_field_defaulting_none():
     c = Cli(slug="s", lang="python")
     assert c.fixed_by is None
+
+
+# --- Task 4: isolated/scrubbed process env ---
+def test_isolated_env_redirects_into_demo_and_scrubs(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", "/etc/should-not-leak")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-should-not-leak")
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    env = fixer._isolated_env()
+    demo = os.path.realpath(str(tmp_path))
+    # redirected inside demo/
+    assert env["HOME"].startswith(demo)
+    assert env["PIP_CACHE_DIR"].startswith(demo)
+    assert env["TMPDIR"].startswith(demo)
+    assert env["XDG_DATA_HOME"].startswith(demo)  # overridden, not the leaked /etc value
+    # hardening flag
+    assert env["PYTHONNOUSERSITE"] == "1"
+    # no inherited project secret
+    assert "OPENAI_API_KEY" not in env
+    # PATH is preserved (need to find pip/python) but not arbitrary project vars
+    assert "PATH" in env
