@@ -156,6 +156,15 @@ plus the identity-mapped ones seen in the fleet (`numpy`, `boto3`, `lxml`,
 is NEVER auto-installed — it falls to `pip-unknown` and is only proposed.
 Growing the map is a reviewed change, not automatic.
 
+**Versioning (panel: Fowler, scoped down per MVA).** The map carries a single
+`MAP_VERSION: int` constant, stamped into every proposals.json (§3.5). This is
+the minimum needed to detect "which map produced this target" when the map later
+changes. The panel proposed a full `AllowlistVersion` dataclass with
+valid-from/until windows and a 2-release deprecation policy — deferred as
+gold-plating: proposals.json is regenerated each run and not a long-lived store,
+so a version stamp suffices for the MVP. The deprecation-window machinery is a
+follow-up if/when proposals are ever persisted across map revisions.
+
 **Why a proven-local check, not a heuristic:** the previous design folded "not
 on the allowlist" into `wrong-cwd`, which mislabels every un-mapped third-party
 package (numpy, boto3, …) as a cwd problem. The classifier now only emits
@@ -177,9 +186,17 @@ class HermesAdapter:
   Batched ≤10 CLIs per call to amortize overhead.
 - **Prompt:** failure note + first ~20 lines of `--help` output + first ~40
   lines of source. Requests a strict-JSON `RemediationProposal` per CLI.
-- **Degradation (bulkhead):** any non-200 / parse failure → return the inputs
-  unchanged as `unknown / needs-human`. The pass degrades; it never crashes the
-  registry. Mirrors the prober's per-future exception isolation.
+- **Degradation (bulkhead):** any connection-refused / timeout / non-200 / parse
+  failure → return the inputs unchanged as `unknown / needs-human`. The pass
+  degrades; it never crashes the registry. Mirrors the prober's per-future
+  exception isolation.
+- **Attempt visibility (panel: Nygard).** A silent downgrade hides whether a CLI
+  was *never tried* vs. *tried and failed*, which causes retry thrashing. On any
+  Hermes failure, the adapter records a lightweight `FailureRecord{slug,
+  reason∈(timeout|refused|non200|parse), attempt_at}` into the proposals
+  envelope (§3.5). A future re-run can see what already failed; it does NOT
+  auto-retry (the operator decides). This is observability, not a retry engine —
+  kept minimal per MVA.
 - **Cost guard:** `max_calls` caps the number of HTTP *calls* (batches), not
   CLIs — at ≤10 CLIs/batch, the 106 unknowns need ~11 calls. If the cap is hit,
   remaining unknowns stay `unknown` and the CLI logs how many were skipped (no
@@ -197,10 +214,17 @@ class PaperclipAdapter:
   project (11 CLIs)" each become a single issue listing member CLIs in the body.
 - **Emits** a `bulk-create` YAML and shells `paperclip.sh bulk-create <yaml>`.
   `dry_run=True` (default) writes + prints the YAML without filing.
-- **Idempotency:** each issue title carries a stable short hash of
-  `(failure_class, target)`. Before filing, the adapter queries
-  `paperclip.sh list` and skips clusters that already have an open issue. Safe to
-  re-run; no duplicate spam.
+- **Idempotency (panel: Newman):** each issue title carries a stable short hash
+  computed as `sha256(failure_class + "\0" + target + "\0" +
+  "\0".join(sorted(member_slugs)))[:12]` — **order-independent** so the same
+  cluster hashes identically across runs regardless of slug discovery order.
+- **Read contract (panel: Hohpe).** Duplicate detection MUST NOT scrape free-text
+  CLI output. The adapter calls `paperclip.sh list --json` (machine-readable;
+  `paperclip.sh` already exposes `--json` on `list`) and matches on the embedded
+  cluster hash. A connection/format failure is surfaced as a distinct error
+  (filing skipped, proposals.json already written) — never a silent
+  idempotency-break that double-files. The shell call is isolated behind a thin
+  `PaperclipClient` so the format assumption lives in one place.
 
 ### 3.4 `SafeFixer` — the one mutating path (STUBBED in MVP)
 
@@ -246,6 +270,27 @@ allowlist-gated, and stubbed for the MVP.
 In the MVP, `apply()` raises `NotImplementedError`; the eligibility predicate
 and the *refusal* tests (non-mapped name, non-pip class, symlink-escape path)
 ARE implemented, but no live install runs this session.
+
+### 3.5 proposals.json envelope (panel: Hohpe, Nygard)
+
+The output artifact is an envelope, not a bare proposal array, so a consumer can
+detect staleness and reconcile a crashed run against filed issues:
+
+```json
+{
+  "schema_version": 1,
+  "map_version": 1,                 // IMPORT_TO_PACKAGE version used (see §3.1)
+  "generated_at": "<ISO8601>",      // stamped after the run (passed in, not Date.now in-script)
+  "session_id": "<uuid>",           // also embedded in filed Paperclip issue bodies
+  "proposals": [ /* RemediationProposal.to_dict() */ ],
+  "failure_records": [ /* {slug, reason, attempt_at} from Hermes degradation */ ]
+}
+```
+
+`session_id` lets an operator reconcile "proposals written but issues not filed"
+after a mid-run crash (the write-then-file ordering means proposals.json is the
+source of truth). `map_version` records which import→package map produced the
+`pip-3rd-party` targets, so a later map change is detectable in old artifacts.
 
 ---
 
@@ -327,7 +372,8 @@ deterministic findings survive any external-system failure.
 |------|-------|
 | `classify_failure` | Table-driven over the real taxonomy. **Mapped third-party** (`numpy`, `boto3`) → pip-3rd-party, target=dist name. **Import≠dist alias** (`bs4`→beautifulsoup4, `pptx`→python-pptx, `fitz`→PyMuPDF) → pip-3rd-party with the mapped distribution name, NOT the import name. **Un-mapped, not proven local** (`romsorter`, `skillmine`) → `pip-unknown` (NOT wrong-cwd, NOT auto-fix). **Proven local** (a `X.py` exists next to path) → wrong-cwd. **Dotted** (`google.cloud`) → top-segment lookup. `SyntaxError` → code-bug; env signal → env-missing; FileNotFound → wrong-cwd; gibberish → unknown. Explicitly asserts a non-mapped third-party name does NOT become wrong-cwd. |
 | `HermesAdapter` | Mock the HTTP call: (a) unknowns-only filter, (b) non-200 → `unknown/needs-human`, (c) **connection-refused → degrade**, (d) **timeout → degrade**, (e) **malformed JSON response → degrade**, (f) `max_calls` (batch) cap logs skipped count, (g) batch size ≤10. |
-| `PaperclipAdapter` | (a) clustering by `(class,target)`, (b) `dry_run=True` default writes YAML without shelling, (c) idempotency: existing open issue → skipped, (d) **`paperclip.sh` missing → warn + skip, proposals.json intact**, (e) needs-human proposals ARE filed. Mock `paperclip.sh`. |
+| `PaperclipAdapter` | (a) clustering by `(class,target)`, (b) `dry_run=True` default writes YAML without shelling, (c) idempotency: existing open issue → skipped, (d) **`paperclip.sh` missing → warn + skip, proposals.json intact**, (e) needs-human proposals ARE filed, (f) **cluster hash is order-independent** (same hash for shuffled member-slug order), (g) duplicate detection reads `list --json`, not scraped text. Mock `paperclip.sh`. |
+| envelope / FailureRecord | (a) proposals.json carries `schema_version`, `map_version`, `session_id`, `generated_at`; (b) a Hermes timeout produces a `FailureRecord{reason=timeout}` in the envelope; (c) `session_id` appears in a filed issue body. |
 | `SafeFixer` (predicate only) | (a) `apply()` raises NotImplementedError, (b) eligibility refuses **non-mapped** names, (c) refuses **all non-pip classes**, (d) **refuses a symlink-escape venv path** (resolved path outside `demo/`). |
 | `remediate` CLI | (a) default makes **no network call and no DB mutation** (assert via spy), (b) writes proposals.json atomically to `--out`, (c) `--apply-safe` → exit 3 but proposals.json still written, (d) DB-read failure → exit 2, no proposals.json, (e) proposals.json write failure → exit 4, summary still printed. |
 
@@ -351,6 +397,14 @@ designed-and-guarded but not armed.
 **Out of scope (follow-ups):** live `--apply-safe` installs; growing the
 allowlist from observed data; `wrong-venv` auto-detection of the correct venv;
 re-running discovery to refresh capabilities post-fix.
+
+**Deferred panel recommendations (architecture-panel, scored down per MVA):**
+full `AllowlistVersion` dataclass + 2-release deprecation windows (a `MAP_VERSION`
+stamp covers the MVP); a `confidence: float[0,1]` gradient (two enum states
+suffice now); a typed `PaperclipClient` HTTP/gRPC client (the `list --json` shell
+contract behind a thin wrapper is enough until Paperclip exposes an API). These
+are real evolvability improvements, deferred—not rejected—because proposals.json
+is regenerated per run and not yet a persisted store.
 
 ---
 
