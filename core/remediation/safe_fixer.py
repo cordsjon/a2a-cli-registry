@@ -8,8 +8,10 @@ realpath-resolved venv inside demo/, scrubbed allowlist env, killpg wall-clock
 timeout, and a re-probe whose only DB write is the single health_status/fixed_by
 flip. Eligibility (class AND confidence AND mapped dist) gates every entry."""
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 
 from core.prober.prober import _kill_tree, _POSIX
 from core.remediation.proposal import FailureClass, Confidence
@@ -160,15 +162,15 @@ class SafeFixer:
     def _install_one(self, target, venv_dir) -> tuple:
         """Create the venv, wheel-only install `target`. Returns (rc, timed_out).
         --only-binary=:all: forbids source builds (no setup.py execution)."""
-        import sys
         # Wipe any partial venv left by a prior killpg'd install before
         # re-creating — `python -m venv` over an existing dir is an upgrade, not
         # a clean rebuild, so a half-installed state could otherwise survive and
         # let the re-probe pass on incomplete packages (false healthy).
         shutil.rmtree(venv_dir, ignore_errors=True)
-        rc, t = self._run_contained([sys.executable, "-m", "venv", venv_dir], timeout=120.0)
-        if rc != 0 or t:
-            return (rc or 1, t)
+        rc, timed_out = self._run_contained(
+            [sys.executable, "-m", "venv", venv_dir], timeout=120.0)
+        if rc != 0 or timed_out:
+            return (rc or 1, timed_out)
         pip = os.path.join(venv_dir, "bin", "pip")
         return self._run_contained(
             [pip, "install", "--only-binary=:all:", "--no-input",
@@ -179,8 +181,7 @@ class SafeFixer:
         """Re-probe the CLI's health command in the isolated env. The venv's
         bin is prepended to PATH so the freshly-installed package is importable.
         Returns 'healthy' | 'unhealthy'."""
-        import shlex
         env = self._isolated_env()
         env["PATH"] = os.path.join(venv_dir, "bin") + os.pathsep + env.get("PATH", "")
-        rc, t = self._run_contained(shlex.split(health_cmd), timeout=10.0, env=env)
-        return "healthy" if (rc == 0 and not t) else "unhealthy"
+        rc, timed_out = self._run_contained(shlex.split(health_cmd), timeout=10.0, env=env)
+        return "healthy" if (rc == 0 and not timed_out) else "unhealthy"

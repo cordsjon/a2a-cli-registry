@@ -115,7 +115,7 @@ def main(argv=None) -> int:
     parser.add_argument("--file", action="store_true",
                         help="[remediate] actually file Paperclip issues (default: dry-run)")
     parser.add_argument("--apply-safe", action="store_true",
-                        help="[remediate] arm SafeFixer (MVP: errors, NotImplementedError)")
+                        help="[remediate] arm SafeFixer: wheel-only install + isolated re-probe into demo/ venv")
     parser.add_argument("--max-llm-calls", type=int, default=0,
                         help="[remediate] Hermes diagnosis batch cap (default 0 = skip Hermes)")
     args, _rest = parser.parse_known_args(argv)

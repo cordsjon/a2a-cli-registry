@@ -75,10 +75,16 @@ def test_fixresult_to_dict_roundtrip():
 
 
 def test_fixresult_outcomes_are_constrained():
-    # outcome is a plain str but the constructor documents the allowed set;
-    # this test pins the vocabulary so a typo'd outcome string is caught.
-    for o in ("fixed", "install-failed", "reprobe-failed", "refused", "timeout"):
+    # The constructor enforces the vocabulary via _FIX_OUTCOMES — iterate the
+    # source of truth, not a re-hardcoded literal list.
+    from core.remediation.proposal import _FIX_OUTCOMES
+    for o in _FIX_OUTCOMES:
         FixResult(slug="s", target="t", outcome=o, detail="")
+
+
+def test_fixresult_rejects_unknown_outcome():
+    with pytest.raises(ValueError):
+        FixResult(slug="s", target="t", outcome="reprobe_failed", detail="")  # underscore typo
 
 
 # --- Task 2: Cli.fixed_by provenance column ---

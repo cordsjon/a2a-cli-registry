@@ -81,6 +81,15 @@ class FixResult:
     outcome: str
     detail: str
 
+    def __post_init__(self):
+        # Enforce the vocabulary so a typo'd outcome ("reprobe_failed" vs
+        # "reprobe-failed") fails loudly instead of being silently miscounted
+        # in the run summary.
+        if self.outcome not in _FIX_OUTCOMES:
+            raise ValueError(
+                f"invalid FixResult outcome {self.outcome!r}; "
+                f"expected one of {sorted(_FIX_OUTCOMES)}")
+
     def to_dict(self) -> dict:
         return {
             "slug": self.slug, "target": self.target,

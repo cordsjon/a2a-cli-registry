@@ -1,7 +1,7 @@
 """Remediate orchestration (spec §5). Default invocation is read-only w.r.t. the
 DB and external systems: it classifies already-persisted failure notes and writes
 exactly one local artifact (proposals.json), atomically. Hermes and Paperclip are
-opt-in. SafeFixer is stubbed."""
+opt-in. SafeFixer is armed under --apply-safe (wheel-only install + re-probe)."""
 import json
 import os
 import tempfile
