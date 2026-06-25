@@ -67,7 +67,7 @@ format (mirrors how `core/tui/` is the only `rich`-importing module).
 ```
 core/okf/
   __init__.py
-  frontmatter.py  # OKF Frontmatter dataclass + YAML read/write + "---" boundary contract
+  frontmatter.py  # OKF Frontmatter dataclass + hand-emitted YAML write/read (D1) + "---" boundary contract
   serialize.py    # SQLite rows -> OKF ConceptDoc -> ./bundle/*.md   (produce)
   parse.py        # ./bundle/*.md -> {slug: description}              (ingest, descriptions only)
 ```
