@@ -163,3 +163,53 @@ def test_produce_refuses_nonempty_non_bundle_dir(tmp_path):
     (out / "junk.txt").write_text("not a bundle")
     with pytest.raises(FileExistsError):
         produce_bundle(s, str(out))
+
+
+from core.models import Cli as _Cli
+from core.okf.parse import ingest_bundle
+
+
+def test_roundtrip_ingest_restores_descriptions(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    # edit the description in the bundle (simulating enrichment)
+    p = out / "clis" / "docs" / "pdf2text.md"
+    p.write_text(p.read_text().replace("d1", "ENRICHED pdf desc"))
+    res = ingest_bundle(s, str(out))
+    assert res["updated"] >= 1
+    assert s.get(_Cli, "pdf2text").description == "ENRICHED pdf desc"
+
+
+def test_ingest_never_mutates_structure(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    p = out / "clis" / "docs" / "pdf2text.md"
+    p.write_text(p.read_text().replace("side_effect: \"none\"",
+                                       "side_effect: \"destructive\""))
+    ingest_bundle(s, str(out))
+    from core.models import Capability
+    from sqlmodel import select
+    cap = s.exec(select(Capability).where(Capability.cli_slug == "pdf2text")).one()
+    assert cap.side_effect == "none"  # untouched
+
+
+def test_ingest_unknown_slug_skipped(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    ghost = out / "clis" / "docs" / "ghost.md"
+    ghost.write_text((out / "clis" / "docs" / "pdf2text.md").read_text()
+                     .replace("pdf2text", "ghost"))
+    res = ingest_bundle(s, str(out))
+    assert res["skipped"] >= 1
+
+
+def test_ingest_malformed_counts_failed(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    (out / "clis" / "docs" / "broken.md").write_text("no frontmatter at all")
+    res = ingest_bundle(s, str(out))
+    assert res["failed"] >= 1
