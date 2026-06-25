@@ -53,6 +53,17 @@ class SafeFixer:
         env["PYTHONNOUSERSITE"] = "1"
         return env
 
+    def _venv_dir(self, target: str) -> str:
+        """Per-package venv path inside demo/, with a defensive name check.
+
+        target is already constrained to be a value in IMPORT_TO_PACKAGE by
+        is_eligible(), but _venv_dir refuses any name containing path separators
+        or '..' so a future caller can't smuggle traversal. The resulting path
+        is also checked via venv_path_ok by the caller."""
+        if os.sep in target or (os.altsep and os.altsep in target) or ".." in target:
+            raise ValueError(f"unsafe venv target name: {target!r}")
+        return os.path.join(self.demo_dir, ".sandbox", f"venv-{target}")
+
     def _run_contained(self, argv: list, *, timeout: float, env=None) -> tuple:
         """Run argv in the scrubbed env, own process group, wall-clock killpg.
 

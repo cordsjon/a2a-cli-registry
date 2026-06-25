@@ -137,3 +137,18 @@ def test_run_contained_kills_on_timeout(tmp_path):
     rc, timed_out = fixer._run_contained(
         [sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
     assert timed_out is True
+
+
+# --- Task 6: per-target sandbox venv path with traversal refusal ---
+def test_venv_dir_is_per_target_inside_demo(tmp_path):
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    vd = fixer._venv_dir("numpy")
+    assert os.path.realpath(vd).startswith(os.path.realpath(str(tmp_path)))
+    assert "numpy" in os.path.basename(vd)
+
+
+def test_venv_dir_rejects_path_traversal_target(tmp_path):
+    fixer = SafeFixer(demo_dir=str(tmp_path))
+    # a malicious/garbage target must not escape demo/ via .. or /
+    with pytest.raises(ValueError):
+        fixer._venv_dir("../../etc")
