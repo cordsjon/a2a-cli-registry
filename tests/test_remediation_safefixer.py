@@ -110,6 +110,16 @@ def test_isolated_env_redirects_into_demo_and_scrubs(tmp_path, monkeypatch):
     assert "PATH" in env
 
 
+def test_isolated_env_creates_sandbox_dirs(tmp_path):
+    # The redirected HOME/TMPDIR/cache dirs must EXIST before a subprocess uses
+    # them — pip/venv (and tempfile against TMPDIR) fail if the dir is absent.
+    fixer = SafeFixer(demo_dir=str(tmp_path / "demo"))  # demo/ doesn't exist yet
+    env = fixer._isolated_env()
+    assert os.path.isdir(env["HOME"])
+    assert os.path.isdir(env["TMPDIR"])
+    assert os.path.isdir(env["PIP_CACHE_DIR"])
+
+
 # --- Task 5: _run_contained killpg-timeout subprocess primitive ---
 import sys
 

@@ -54,6 +54,13 @@ class SafeFixer:
         env["XDG_CACHE_HOME"] = os.path.join(sandbox, "xdg-cache")
         env["XDG_CONFIG_HOME"] = os.path.join(sandbox, "xdg-config")
         env["PYTHONNOUSERSITE"] = "1"
+        # Create the redirected dirs before any subprocess uses them. pip/venv
+        # and tempfile-against-TMPDIR fail outright if the dir is absent, and
+        # nothing else mkdir's demo/.sandbox — a missing demo/ would surface as
+        # a spurious install-failed (Popen(cwd=) FileNotFoundError).
+        for d in (sandbox, env["PIP_CACHE_DIR"], env["TMPDIR"],
+                  env["XDG_DATA_HOME"], env["XDG_CACHE_HOME"], env["XDG_CONFIG_HOME"]):
+            os.makedirs(d, exist_ok=True)
         return env
 
     def _venv_dir(self, target: str) -> str:
