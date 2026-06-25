@@ -142,6 +142,18 @@ def test_produce_emits_edges_both_ways_and_no_launch_spec(tmp_path):
     assert "edges:" in pdf                       # frontmatter edges
     assert "(../text/summarize.md" in pdf        # body link to summarize
     assert 'via text' in pdf                     # via_type in link title
+    assert 'to: "summarize"' in pdf
+    assert pdf.count("- [summarize]") == 1
+
+
+def test_produce_preserves_enriched_description_on_rerun(tmp_path):
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    p = out / "clis" / "docs" / "pdf2text.md"
+    p.write_text(p.read_text().replace('description: "d1"', 'description: "ENRICHED"'))
+    produce_bundle(s, str(out), force=True)
+    assert 'description: "ENRICHED"' in p.read_text()
 
 
 def test_produce_refuses_nonempty_non_bundle_dir(tmp_path):

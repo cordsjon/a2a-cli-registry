@@ -14,7 +14,7 @@ def _atomic_write(path: Path, text: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
             fh.write(text)
         os.replace(tmp, str(path))
     finally:
@@ -82,7 +82,7 @@ def produce_bundle(session, out_dir, force=False) -> dict:
 
         path = out / (cid + ".md")
         prior_desc, prior_enriched = _existing_enrichment(path)
-        description = prior_desc if prior_desc else row["description"]
+        description = prior_desc if prior_desc is not None else row["description"]
 
         fm = {"type": "cli", "title": row["slug"], "description": description}
         if resource:
