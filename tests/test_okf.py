@@ -89,7 +89,8 @@ def test_split_doc_missing_boundaries_raises():
         split_doc("no frontmatter here")
 
 
-def test_content_hash_excludes_description_and_health():
+def test_content_hash_is_deterministic_and_bucket_sensitive():
+    # Exclusion of description/health is enforced by the function signature (not parameters), not runtime logic.
     args = dict(concept_id="clis/docs/pdf2text", slug="pdf2text", lang="python",
                 project="docs", resource="file:///bin/p2t",
                 intent_tags=["convert"], input_types=["file:pdf"],
@@ -100,3 +101,15 @@ def test_content_hash_excludes_description_and_health():
     assert content_hash(**args) == h1
     args2 = dict(args); args2["project"] = "elsewhere"; args2["concept_id"] = "clis/elsewhere/pdf2text"
     assert content_hash(**args2) != h1  # rebucket changes hash
+
+
+def test_split_doc_missing_closing_boundary_raises():
+    with pytest.raises(ValueError):
+        split_doc("---\ntype: cli\nno closing boundary\n")
+
+
+def test_frontmatter_list_item_with_comma_roundtrips():
+    fm = {"type": "cli", "title": "x", "description": "d",
+          "tags": ["a, b", "c"]}
+    text = dump_frontmatter(fm)
+    assert parse_frontmatter(text)["tags"] == ["a, b", "c"]

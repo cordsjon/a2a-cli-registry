@@ -76,6 +76,8 @@ def parse_frontmatter(text: str) -> dict:
             edges = []
             i += 1
             while i < len(lines) and lines[i].lstrip().startswith("- to:"):
+                if i + 1 >= len(lines):
+                    raise ValueError("OKF: edge entry missing 'via:' line")
                 to = _unquote(lines[i].split("to:", 1)[1])
                 via = _unquote(lines[i + 1].split("via:", 1)[1])
                 edges.append({"to": to, "via": via})
@@ -99,7 +101,30 @@ def _parse_inline_list(rest: str):
     inner = rest[1:-1].strip()
     if not inner:
         return []
-    return [_unquote(p) for p in inner.split(", ")]
+    items = []
+    i = 0
+    while i < len(inner):
+        if inner[i] == '"':
+            end = i + 1
+            while end < len(inner):
+                if inner[end] == '\\':
+                    end += 2
+                    continue
+                if inner[end] == '"':
+                    break
+                end += 1
+            items.append(_unquote(inner[i:end + 1]))
+            i = end + 1
+            if i < len(inner) and inner[i:i+2] == ", ":
+                i += 2
+        else:
+            end = inner.find(", ", i)
+            if end == -1:
+                items.append(_unquote(inner[i:]))
+                break
+            items.append(_unquote(inner[i:end]))
+            i = end + 2
+    return items
 
 
 def split_doc(content: str):
