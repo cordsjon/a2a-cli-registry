@@ -306,3 +306,9 @@ def main(argv=None) -> int:
         # Only `graph` reaches here (audit/lifecycle short-circuited above).
         print(json.dumps(queries.cli_graph(session)))
         return 0
+
+
+if __name__ == "__main__":          # `python -m core.cli.main ...`
+    # Propagate the command's exit code (remediate returns 2/3/4) so a shell
+    # caller sees it, matching the console-script entry (core.cli.main:main).
+    sys.exit(main())
