@@ -215,6 +215,49 @@ def test_ingest_malformed_counts_failed(tmp_path):
     assert res["failed"] >= 1
 
 
+def test_frontmatter_multiline_description_roundtrips():
+    fm = {"type": "cli", "title": "x",
+          "description": "First paragraph.\n\nSecond paragraph with a colon: yes."}
+    text = dump_frontmatter(fm)
+    # frontmatter value must stay on ONE physical line (no raw newline leaked)
+    assert text.count("\n") == dump_frontmatter({"type": "cli", "title": "x", "description": "d"}).count("\n")
+    assert parse_frontmatter(text)["description"] == "First paragraph.\n\nSecond paragraph with a colon: yes."
+
+
+def test_description_with_triple_dash_roundtrips():
+    fm = {"type": "cli", "title": "x", "description": "before\n---\nafter"}
+    text = dump_frontmatter(fm)
+    assert parse_frontmatter(text)["description"] == "before\n---\nafter"
+
+
+def test_split_doc_survives_dashes_in_description(tmp_path):
+    from core.okf.frontmatter import join_doc, split_doc
+    fm = {"type": "cli", "title": "x", "description": "has\n---\ndashes", "side_effect": "none"}
+    doc = join_doc(fm, "## Body\ncontent\n")
+    got_fm, got_body = split_doc(doc)
+    assert got_fm["description"] == "has\n---\ndashes"
+    assert got_fm["side_effect"] == "none"   # keys after the embedded --- survive
+    assert got_body == "## Body\ncontent\n"
+
+
+def test_e2e_multiline_description_roundtrips_through_ingest(tmp_path):
+    from core.okf.serialize import produce_bundle
+    from core.okf.parse import ingest_bundle
+    from core.models import Cli as _Cli
+    s = _session(); _seed(s)
+    out = tmp_path / "bundle"
+    produce_bundle(s, str(out))
+    p = out / "clis" / "docs" / "pdf2text.md"
+    txt = p.read_text()
+    from core.okf.frontmatter import split_doc, join_doc
+    fm, body = split_doc(txt)
+    fm["description"] = "Line one.\n\nLine two."
+    p.write_text(join_doc(fm, body))
+    res = ingest_bundle(s, str(out))
+    assert res["failed"] == 0
+    assert s.get(_Cli, "pdf2text").description == "Line one.\n\nLine two."
+
+
 def test_cli_okf_produce_then_ingest(tmp_path):
     from core.cli.main import main
     db = tmp_path / "registry.db"

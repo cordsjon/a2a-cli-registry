@@ -17,8 +17,10 @@ _KEY_ORDER = [
 
 def _scalar(v) -> str:
     s = "" if v is None else str(v)
-    # Quote when needed to stay parseable; always safe to quote.
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # Quote + escape backslash, quote, and newline so a multi-line value
+    # (LLM-enriched prose) stays on one physical line and round-trips.
+    s = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return '"' + s + '"'
 
 
 def _emit_list(items) -> str:
@@ -50,7 +52,16 @@ def dump_frontmatter(fm: dict) -> str:
 def _unquote(s: str):
     s = s.strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
-        return s[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        inner = s[1:-1]
+        out, i = [], 0
+        while i < len(inner):
+            if inner[i] == "\\" and i + 1 < len(inner):
+                nxt = inner[i + 1]
+                out.append({"n": "\n", '"': '"', "\\": "\\"}.get(nxt, nxt))
+                i += 2
+            else:
+                out.append(inner[i]); i += 1
+        return "".join(out)
     return s
 
 
