@@ -60,6 +60,34 @@ class FailureRecord:
         return {"slug": self.slug, "reason": self.reason, "attempt_at": self.attempt_at}
 
 
+_FIX_OUTCOMES = frozenset(
+    {"fixed", "install-failed", "reprobe-failed", "refused", "timeout"})
+
+
+@dataclass(frozen=True)
+class FixResult:
+    """Per-CLI outcome of a SafeFixer.apply() attempt (spec §3.4). Pure data.
+
+    outcome ∈ {fixed, install-failed, reprobe-failed, refused, timeout}:
+      fixed          – installed AND isolated re-probe passed; health flipped.
+      install-failed – pip returned non-zero (e.g. no wheel available).
+      reprobe-failed – installed but the CLI still failed its --help probe.
+      refused        – eligibility/path gate rejected it (defensive; run.py
+                       pre-filters via is_eligible, so this is belt-and-braces).
+      timeout        – install or re-probe hit the wall-clock cap (killpg'd).
+    """
+    slug: str
+    target: str
+    outcome: str
+    detail: str
+
+    def to_dict(self) -> dict:
+        return {
+            "slug": self.slug, "target": self.target,
+            "outcome": self.outcome, "detail": self.detail,
+        }
+
+
 def build_envelope(proposals, failure_records, *, map_version, generated_at, session_id) -> dict:
     """Wrap proposals in the staleness/reconciliation envelope (spec §3.5).
 

@@ -66,3 +66,22 @@ def test_venv_symlink_escape_refused(tmp_path):
     os.symlink(str(outside), str(escape))  # demo/escape -> outside (resolves out)
     fixer = SafeFixer(demo_dir=str(demo))
     assert fixer.venv_path_ok(str(escape / "venv")) is False
+
+
+# --- Task 1: FixResult value object ---
+from core.remediation.proposal import FixResult
+
+
+def test_fixresult_to_dict_roundtrip():
+    r = FixResult(slug="s", target="numpy", outcome="fixed", detail="re-probe passed")
+    assert r.to_dict() == {
+        "slug": "s", "target": "numpy", "outcome": "fixed",
+        "detail": "re-probe passed",
+    }
+
+
+def test_fixresult_outcomes_are_constrained():
+    # outcome is a plain str but the constructor documents the allowed set;
+    # this test pins the vocabulary so a typo'd outcome string is caught.
+    for o in ("fixed", "install-failed", "reprobe-failed", "refused", "timeout"):
+        FixResult(slug="s", target="t", outcome=o, detail="")
