@@ -81,6 +81,52 @@ def cli_graph(session):
             for e in session.exec(select(CliEdge)).all()]
 
 
+def export_rows(session):
+    """Full, deterministically-ordered rows for OKF export.
+
+    Unlike overview_rows/describe_cli this carries `path` and `updated_at`
+    (needed for OKF `resource`/`timestamp`) and a fully sorted shape so the
+    producer can emit byte-stable bundles. Fails loudly if a CLI has >1
+    capability row (OKF v1 exports the one-capability-per-CLI invariant).
+    """
+    clis = session.exec(select(Cli)).all()
+    caps_by_slug = {}
+    for cap in session.exec(select(Capability)).all():
+        caps_by_slug.setdefault(cap.cli_slug, []).append(cap)
+    edges_by_slug = {}
+    for e in session.exec(select(CliEdge)).all():
+        edges_by_slug.setdefault(e.from_slug, []).append(e)
+
+    out = []
+    for c in sorted(clis, key=lambda x: ((x.project or ""), x.slug)):
+        caps = caps_by_slug.get(c.slug, [])
+        if len(caps) > 1:
+            raise ValueError(
+                f"OKF export: CLI {c.slug!r} has {len(caps)} capability rows; "
+                "v1 exports one capability per CLI")
+        cap = caps[0] if caps else None
+        capability = None
+        if cap is not None:
+            capability = {
+                "intent_tags": sorted(t for t in cap.intent_tags.split(",") if t),
+                "input_types": sorted(t for t in cap.input_types.split(",") if t),
+                "output_types": sorted(t for t in cap.output_types.split(",") if t),
+                "side_effect": cap.side_effect,
+                "confidence": cap.confidence,
+            }
+        edges = sorted(
+            ({"to": e.to_slug, "via": e.via_type} for e in edges_by_slug.get(c.slug, [])),
+            key=lambda d: (d["to"], d["via"]),
+        )
+        out.append({
+            "slug": c.slug, "lang": c.lang, "project": c.project, "path": c.path,
+            "updated_at": c.updated_at, "description": c.description or "",
+            "health_status": _norm_health(c.health_status),
+            "capability": capability, "edges": edges,
+        })
+    return out
+
+
 def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
     chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [])
     health_by_slug = {}
