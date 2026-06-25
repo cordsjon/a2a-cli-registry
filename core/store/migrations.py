@@ -24,7 +24,16 @@ def ensure_fixed_by_column(db_path: str) -> None:
     con = sqlite3.connect(db_path)
     try:
         if _table_exists(con, "cli") and not _column_exists(con, "cli", "fixed_by"):
-            con.execute("ALTER TABLE cli ADD COLUMN fixed_by TEXT")
-            con.commit()
+            try:
+                con.execute("ALTER TABLE cli ADD COLUMN fixed_by TEXT")
+                con.commit()
+            except sqlite3.OperationalError as exc:
+                # check-then-ALTER is not atomic: a concurrent caller can win
+                # the race and add the column between our check and our ALTER.
+                # "duplicate column name" then means the column already exists —
+                # the desired end state — so treat it as success. Re-raise any
+                # other operational error (locked, disk I/O, etc.).
+                if "duplicate column" not in str(exc).lower():
+                    raise
     finally:
         con.close()
