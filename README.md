@@ -4,7 +4,7 @@
 > see which are healthy, and get a **suggested chain of tools** to reach a goal.
 > Served over both **MCP** and **A2A**. Describe + plan only (no remote execution).
 
-**Status:** v1.2. Language-agnostic *by design*
+**Status:** v1.3. Language-agnostic *by design*
 (Go/Node/shell adapters are stubs — non-Python tools work today by *declaring*
 their capabilities). Targets **A2A v1.0** and **`mcp==1.28.0`** (exact
 pinned versions in the design spec + `SECURITY.md`). Apache-2.0.
@@ -34,6 +34,8 @@ pip install git+https://github.com/cordsjon/a2a-cli-registry
 a2a-cli-registry populate --config your-config.toml   # discover + index your fleet
 a2a-cli-registry probe                                # run health sweep, write per-CLI health_status
 a2a-cli-registry overview                             # read-only rich view of catalog, CLIs, capabilities, health
+a2a-cli-registry okf-produce --out ./bundle           # export catalog as an OKF bundle (Markdown+YAML)
+a2a-cli-registry okf-ingest  --bundle ./bundle        # round-trip enriched descriptions back (descriptions only)
 a2a-cli-registry graph                                # see the computed call-graph
 A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streamable HTTP at /mcp)
 # then browse http://localhost:8080/overview or point Claude Code / any MCP client at http://localhost:8080/mcp
@@ -69,6 +71,10 @@ When a CLI is probed or previously probed, its health is recorded in one of four
 | `unknown` | Never probed OR unprobeable and within `staleness_ttl` | Run `probe` to establish health |
 
 Note: `stale` applies only to unprobeable CLIs (no `health_cmd`). `unknown` applies to any CLI not yet probed, plus unprobeable CLIs whose last record is within `staleness_ttl`. `healthy` and `unhealthy` come from actual probes.
+
+## What's in v1.3
+- **OKF export:** `okf-produce --out <dir>` exports the catalog as an Open Knowledge Format bundle (Markdown + YAML); byte-stable re-produce, typed ports, call-graph edges in frontmatter.
+- **OKF ingest:** `okf-ingest --bundle <dir>` round-trips LLM/human-enriched descriptions from an OKF bundle back into the catalog (descriptions only).
 
 ## What's in v1.2
 - **Web overview:** `GET /overview` serves an open, read-only Swagger-style HTML view with fleet totals, project buckets, filtering, health badges, capabilities, and incident edges. It does not render `launch_spec`.
