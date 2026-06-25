@@ -54,3 +54,49 @@ def test_export_rows_rejects_multiple_capabilities():
     s.commit()
     with pytest.raises(ValueError):
         export_rows(s)
+
+
+from core.okf.frontmatter import (
+    dump_frontmatter, parse_frontmatter, split_doc, join_doc, content_hash)
+
+
+def test_frontmatter_roundtrip_is_stable():
+    fm = {
+        "type": "cli", "title": "pdf2text", "description": "Convert PDF",
+        "resource": "file:///bin/p2t", "tags": ["convert", "document"],
+        "timestamp": "2026-06-25T00:00:20Z", "content_hash": "sha256:abc",
+        "ports": {"in": ["file:pdf"], "out": ["text"]},
+        "side_effect": "none", "confidence": "declared", "health": "healthy",
+        "edges": [{"to": "summarize", "via": "text"}],
+    }
+    text = dump_frontmatter(fm)
+    assert dump_frontmatter(parse_frontmatter(text)) == text  # byte-stable roundtrip
+    assert parse_frontmatter(text)["description"] == "Convert PDF"
+    assert parse_frontmatter(text)["tags"] == ["convert", "document"]
+
+
+def test_split_and_join_doc():
+    body = "## Capabilities\nReads pdf.\n"
+    fm = {"type": "cli", "title": "x", "description": "d"}
+    doc = join_doc(fm, body)
+    assert doc.startswith("---\n") and "\n---\n" in doc
+    got_fm, got_body = split_doc(doc)
+    assert got_fm["title"] == "x" and got_body == body
+
+
+def test_split_doc_missing_boundaries_raises():
+    with pytest.raises(ValueError):
+        split_doc("no frontmatter here")
+
+
+def test_content_hash_excludes_description_and_health():
+    args = dict(concept_id="clis/docs/pdf2text", slug="pdf2text", lang="python",
+                project="docs", resource="file:///bin/p2t",
+                intent_tags=["convert"], input_types=["file:pdf"],
+                output_types=["text"], side_effect="none", confidence="declared",
+                edges=[{"to": "summarize", "via": "text"}])
+    h1 = content_hash(**args)
+    # description/health are not even parameters -> identical inputs, identical hash
+    assert content_hash(**args) == h1
+    args2 = dict(args); args2["project"] = "elsewhere"; args2["concept_id"] = "clis/elsewhere/pdf2text"
+    assert content_hash(**args2) != h1  # rebucket changes hash
