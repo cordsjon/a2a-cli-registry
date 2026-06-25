@@ -60,6 +60,7 @@ def test_run_skips_hermes_when_max_calls_zero(db, tmp_path):
 
 def test_run_invokes_hermes_on_unknowns(db, tmp_path):
     _seed(db, "u", "totally opaque failure")
+    _seed(db, "k", "ModuleNotFoundError: No module named 'numpy'")  # one known + one unknown
     out = tmp_path / "p.json"
     seen = {}
 
@@ -73,6 +74,8 @@ def test_run_invokes_hermes_on_unknowns(db, tmp_path):
                   hermes=SpyHermes(), paperclip=NoopPaperclip())
     assert seen["slugs"] == ["u"]
     assert seen["cap"] == 3
+    env = json.loads(out.read_text())
+    assert len(env["proposals"]) == 2  # replace semantics: count unchanged
 
 
 def test_apply_safe_requested_caught_and_still_writes(db, tmp_path):
@@ -96,4 +99,4 @@ def test_write_proposals_is_atomic_overwrite(tmp_path):
     write_proposals({"a": 2}, str(out))  # overwrite
     assert json.loads(out.read_text()) == {"a": 2}
     # no leftover temp files in the dir
-    assert [p.name for p in tmp_path.iterdir()] == ["p.json"]
+    assert {p.name for p in tmp_path.iterdir()} == {"p.json"}
