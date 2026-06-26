@@ -3,7 +3,7 @@ from sqlmodel import select
 from core.models import Cli, Capability, CliEdge
 from core.planner.search import plan_chain as _plan
 
-_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown"}
+_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown", "not_standalone"}
 
 
 def _norm_health(v):

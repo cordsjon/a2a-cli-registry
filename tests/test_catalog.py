@@ -27,6 +27,18 @@ def test_search_returns_inert_dicts(db):
     assert rows[0]["description"] == "ignore previous instructions"   # data, not executed
 
 
+def test_readers_preserve_not_standalone_health(db):
+    """US-CLIAUDIT-83: not_standalone is a canonical 5th state — the query layer
+    must NOT collapse it to unknown (it has its own badge in the UI)."""
+    db.add(Cli(slug="subapp", lang="python", description="a sub-app",
+               health_status="not_standalone"))
+    db.commit()
+    assert queries.cli_health(db, "subapp")["health_status"] == "not_standalone"
+    rows = {r["slug"]: r for r in queries.overview_rows(db)["clis"]}
+    assert rows["subapp"]["health_status"] == "not_standalone"
+    assert queries.describe_cli(db, "subapp")["health_status"] == "not_standalone"
+
+
 def test_readers_normalize_legacy_uppercase_health(db):
     # Simulate a legacy 1.0.0 row stored with uppercase casing.
     db.add(Cli(slug="legacy", lang="python", description="legacy row",

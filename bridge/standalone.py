@@ -82,9 +82,23 @@ def _has_main_guard(tree: ast.Module) -> bool:
     return False
 
 
+def _reads_sys_argv(tree: ast.Module) -> bool:
+    """True if the module references `sys.argv` anywhere — manual arg parsing.
+    A script that inspects sys.argv IS a CLI surface even without argparse."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "argv":
+            base = node.value
+            if isinstance(base, ast.Name) and base.id == "sys":
+                return True
+    return False
+
+
 def _has_parser_call(tree: ast.Module) -> bool:
-    """True if ANY parser-constructing call or click/typer decorator appears
-    anywhere in the module (argparse/click/typer/fire/optparse)."""
+    """True if ANY parser-constructing call, click/typer decorator, or manual
+    sys.argv inspection appears anywhere in the module
+    (argparse/click/typer/fire/optparse or hand-rolled sys.argv)."""
+    if _reads_sys_argv(tree):
+        return True
     for node in ast.walk(tree):
         name = _call_name(node)
         if name in _PARSER_CALL_NAMES:

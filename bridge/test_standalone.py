@@ -2,13 +2,26 @@
 files and classifies them WITHOUT executing (ast only). Mirrors the two
 US-CLIAUDIT-83 ground-truth shapes verified from real source:
   - subapp:    consigliere/cli/memory_commands.py (typer.Typer, no __main__)
-  - no_parser: keto-data/scripts/categorize_ai.py (__main__, no parser)
+  - no_parser: a __main__-guarded batch script with no parser AND no sys.argv.
+
+NOTE on the spec's named AC-02 example: keto-data/scripts/categorize_ai.py was
+cited as a no_parser case, but it actually parses sys.argv for --dry-run /
+--batch-size, so it is correctly 'standalone' (a CLI surface). The genuine
+no_parser ground truth used here is simonw-tools/build_index.py (a build script
+with a __main__ guard and zero arg access). See _REAL_NO_PARSER below.
 """
 from __future__ import annotations
 
+import os
 import textwrap
 
+import pytest
+
 from bridge.standalone import classify_standalone
+
+# Real on-disk ground-truth files (skipped if the sibling project isn't present).
+_REAL_SUBAPP = "/Users/jcords-macmini/projects/20_CONSIGLIERE/consigliere/cli/memory_commands.py"
+_REAL_NO_PARSER = "/Users/jcords-macmini/projects/75_Coaching/10_Consulting/20_Tooling/simonw-tools/build_index.py"
 
 
 def _w(p, src):
@@ -109,6 +122,33 @@ def test_argparse_no_main_still_standalone(tmp_path):
     assert classify_standalone(f) == "standalone"
 
 
+def test_sys_argv_under_main_is_standalone(tmp_path):
+    """A __main__-guarded script that reads sys.argv parses args MANUALLY -> it
+    is a real CLI surface, not a no_parser batch script."""
+    f = _w(tmp_path / "manual.py", """
+        import sys
+
+        def main():
+            if len(sys.argv) > 1:
+                print(sys.argv[1])
+
+        if __name__ == "__main__":
+            main()
+    """)
+    assert classify_standalone(f) == "standalone"
+
+
+def test_sys_argv_indexed_access_is_standalone(tmp_path):
+    """Direct sys.argv[1] indexing under __main__ also counts as manual parsing."""
+    f = _w(tmp_path / "idx.py", """
+        import sys
+        if __name__ == "__main__":
+            target = sys.argv[1]
+            print(target)
+    """)
+    assert classify_standalone(f) == "standalone"
+
+
 def test_missing_file_fails_open(tmp_path):
     """A path that does not exist must NOT be suppressed -> standalone."""
     assert classify_standalone(str(tmp_path / "gone.py")) == "standalone"
@@ -124,3 +164,15 @@ def test_non_python_fails_open(tmp_path):
     """A .sh/.go path isn't ast-parseable Python -> standalone (out of scope)."""
     f = _w(tmp_path / "x.sh", "echo hi\n")
     assert classify_standalone(f) == "standalone"
+
+
+@pytest.mark.skipif(not os.path.exists(_REAL_SUBAPP), reason="consigliere not present")
+def test_real_subapp_ground_truth():
+    """AC-01 against the real file: consigliere memory_commands -> subapp."""
+    assert classify_standalone(_REAL_SUBAPP) == "subapp"
+
+
+@pytest.mark.skipif(not os.path.exists(_REAL_NO_PARSER), reason="simonw-tools not present")
+def test_real_no_parser_ground_truth():
+    """AC-02 against a real genuine batch script: build_index.py -> no_parser."""
+    assert classify_standalone(_REAL_NO_PARSER) == "no_parser"
