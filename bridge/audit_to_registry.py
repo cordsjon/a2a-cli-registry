@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from bridge.standalone import classify_standalone
+
 # Audit health classes that represent a runnable CLI worth listing.
 # BUG / TRIVIAL-UNFIXED crash on --help -> not chainable -> excluded.
 _USABLE_FINAL_CLASSES = {"PASS", "ENV", "DEP", "TRIVIAL-FIXED", "TRIVIAL"}
@@ -76,6 +78,11 @@ def audit_record_to_cli(record: dict) -> dict | None:
         entry["project"] = record["project"]
     if record.get("bucket"):
         entry["bucket"] = record["bucket"]
+    # US-CLIAUDIT-83: statically detect Typer/click sub-apps and no-parser batch
+    # scripts. Only stamp the truthy case so standalone CLIs keep byte-identical
+    # feed entries (existing golden round-trip assertions stay green).
+    if classify_standalone(file_path) != "standalone":
+        entry["not_standalone"] = True
     cap = infer_capability(record)
     if cap is not None:
         entry["capability"] = cap

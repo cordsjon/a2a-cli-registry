@@ -266,3 +266,26 @@ def test_probe_fleet_skips_disabled_cli(db, clock, monkeypatch):
     summary = probe_fleet(db, [_TrueAdapter()], clock)
     assert spawned == []                 # never spawned
     assert summary["probed"] == 0
+
+
+def test_probe_fleet_preserves_not_standalone(db, clock, monkeypatch):
+    """US-CLIAUDIT-83: a not_standalone CLI ends the run with
+    health_status='not_standalone', is counted, and is NEVER probed."""
+    spawned = []
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+        spawned.append(cmd)
+        return "healthy"
+    monkeypatch.setattr("core.prober.prober.probe_one", fake_probe_one)
+
+    cli = _seed_cli(db, "memory_commands", lang="true", health_status="unhealthy")
+    cli.not_standalone = True
+    db.add(cli); db.commit()
+
+    summary = probe_fleet(db, [_TrueAdapter()], clock)
+
+    db.expire_all()
+    refreshed = db.get(Cli, "memory_commands")
+    assert refreshed.health_status == "not_standalone"
+    assert refreshed.health_checked_at == clock.now()
+    assert summary["not_standalone"] == 1
+    assert spawned == []                 # not_standalone rows are never probed

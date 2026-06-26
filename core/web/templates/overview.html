@@ -16,6 +16,7 @@
       --unhealthy: #b42318;
       --stale: #7a5c00;
       --unknown: #55606d;
+      --not_standalone: #3a7a8c;
       --accent: #0f5f8c;
     }
     * { box-sizing: border-box; }
@@ -62,6 +63,7 @@
     .health.unhealthy { color: var(--unhealthy); }
     .health.stale { color: var(--stale); }
     .health.unknown { color: var(--unknown); }
+    .health.not_standalone { color: var(--not_standalone); }
     .filter {
       display: flex;
       flex-wrap: wrap;
@@ -199,6 +201,7 @@
         <span class="health unhealthy">▲ unhealthy {{ model.summary.unhealthy }}</span>
         <span class="health stale">◆ stale {{ model.summary.stale }}</span>
         <span class="health unknown">○ unknown {{ model.summary.unknown }}</span>
+        <span class="health not_standalone">◌ not-standalone {{ model.summary.not_standalone }}</span>
         <span class="pill">Version {{ model.summary.version }}</span>
       </div>
     </header>
@@ -227,7 +230,7 @@
                   {% if cli.description %}<span class="desc-inline{% if cli.desc_is_error %} desc-error{% endif %}"{% if cli.desc_is_error %} title="probe failure"{% endif %}>{{ cli.description }}</span>{% endif %}
                 </span>
                 <span class="lang">{{ cli.lang }}</span>
-                <span class="health {{ cli.health_status }}">{% if cli.health_status == "healthy" %}●{% elif cli.health_status == "unhealthy" %}▲{% elif cli.health_status == "stale" %}◆{% else %}○{% endif %} {{ cli.health_status }}</span>
+                <span class="health {{ cli.health_status }}">{% if cli.health_status == "healthy" %}●{% elif cli.health_status == "unhealthy" %}▲{% elif cli.health_status == "stale" %}◆{% elif cli.health_status == "not_standalone" %}◌{% else %}○{% endif %} {{ cli.health_status }}</span>
               </summary>
               <div class="card-body">
                 <p class="description">{{ cli.description }}</p>

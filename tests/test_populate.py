@@ -21,6 +21,17 @@ def _rec(slug, ins, outs):
                          side_effect="none", confidence="declared"))
 
 
+def test_not_standalone_flag_persists_to_cli_row(db, clock):
+    """US-CLIAUDIT-83: a CliRecord.not_standalone=True must land on the Cli row
+    so the prober (and UI) can preserve it."""
+    rec = _rec("subapp_cli", ["text"], ["text"])
+    rec.not_standalone = True
+    vocab = VocabularyRegistry(registered={"text"}, aliases={})
+    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
+    row = db.get(Cli, "subapp_cli")
+    assert row.not_standalone is True
+
+
 def test_populate_upserts_and_builds_edges(db, clock):
     src = FakeSource([_rec("pdf2text", ["file:pdf"], ["text:doc"]),
                       _rec("summarize", ["text:doc"], ["text:summary"])])
