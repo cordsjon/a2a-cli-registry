@@ -8,3 +8,5 @@ build/
 *.pyc
 HANDOVER-*.md
 .superpowers/
+demo/
+registry.db.lock
