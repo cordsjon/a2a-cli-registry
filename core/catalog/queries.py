@@ -1,17 +1,8 @@
 # core/catalog/queries.py
 from sqlmodel import select
 from core.models import Cli, Capability, CliEdge
+from core.health import norm_health as _norm_health  # shared vocabulary (single source of truth)
 from core.planner.search import plan_chain as _plan
-
-_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown", "not_standalone"}
-
-
-def _norm_health(v):
-    """Canonicalize a stored health_status to the lowercase set, defaulting
-    unrecognized/None values to 'unknown'. Defends consumers against legacy
-    uppercase rows that predate the lowercase normalization."""
-    s = (v or "unknown").lower()
-    return s if s in _CANON_HEALTH else "unknown"
 
 
 def _cap_row(c):

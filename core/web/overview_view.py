@@ -2,9 +2,12 @@ import importlib.metadata
 from pathlib import Path
 import tomllib
 
+from core.health import norm_health as _norm_health  # shared vocabulary (single source of truth)
 
-_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown", "not_standalone"}
+
 _UNGROUPED = "(ungrouped)"
+# Glyphs are render-specific (web) and stay local \u2014 but the KEYS must stay in
+# sync with core.health.CANON_HEALTH; a missing key would KeyError at render.
 _HEALTH_GLYPHS = {
     "healthy": "\u25cf",
     "unhealthy": "\u25b2",
@@ -12,11 +15,6 @@ _HEALTH_GLYPHS = {
     "unknown": "\u25cb",
     "not_standalone": "\u25cc",   # dotted circle: present-but-not-a-standalone-CLI
 }
-
-
-def _norm_health(value):
-    state = (value or "unknown").lower()
-    return state if state in _CANON_HEALTH else "unknown"
 
 
 def _bucket_name(cli):
