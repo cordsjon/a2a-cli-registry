@@ -1,0 +1,1962 @@
+{
+  "failure_records": [],
+  "generated_at": "2026-06-25T20:51:54Z",
+  "map_version": 1,
+  "proposals": [
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "70_ASSET-ENGINE/backend/revisions/202605271_inlay_source_log.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "202605271_inlay_source_log",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'markdown' | mapped markdown->markdown",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "generate-pdf",
+      "target": "markdown"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/scripts/build_versatile_master.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "build_versatile_master",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'ulid' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "main",
+      "target": "ulid"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'numpy' | mapped numpy->numpy",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "detect_freshness",
+      "target": "numpy"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'weasyprint' | mapped weasyprint->weasyprint",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "generate_provider_brief",
+      "target": "weasyprint"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'weasyprint' | mapped weasyprint->weasyprint",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "generate_report",
+      "target": "weasyprint"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'streamlit' | mapped streamlit->streamlit",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "app",
+      "target": "streamlit"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_artefacts",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_publications",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_onet",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "bootstrap_from_v1",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_decisions_from_spec",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_esco_onet_crosswalk",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_anthropic_index",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_maturity_default",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_relevance-2",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "seed_db-2",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'syllabus_v2' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli",
+      "target": "syllabus_v2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'db' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "run_dag",
+      "target": "db"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'ai_consulting' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-2",
+      "target": "ai_consulting"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/build_index.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "build_index",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'markdown' | mapped markdown->markdown",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "build_colophon",
+      "target": "markdown"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'networkx' | mapped networkx->networkx",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "hex_layout",
+      "target": "networkx"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'meeting_processor' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-3",
+      "target": "meeting_processor"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'portalocker' | mapped portalocker->portalocker",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "ingest",
+      "target": "portalocker"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'portalocker' | mapped portalocker->portalocker",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "init",
+      "target": "portalocker"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'meeting_processor' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "api",
+      "target": "meeting_processor"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'boto3' | mapped boto3->boto3",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "debug_s3_access",
+      "target": "boto3"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'markdown' | mapped markdown->markdown",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "mistral_ocr",
+      "target": "markdown"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'numpy' | mapped numpy->numpy",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "q3_tts",
+      "target": "numpy"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'textual' | mapped textual->textual",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "streaming_textual_markdown",
+      "target": "textual"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/python/list_llm_model_ids.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "list_llm_model_ids",
+      "target": ""
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "ImportError: cannot import name 'Image' from 'PIL' (unknown location)",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "show_image",
+      "target": "PIL (Pillow)"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/python/claude_to_markdown.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "claude_to_markdown",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'fitz' | mapped fitz->PyMuPDF",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "check_invisible_text",
+      "target": "PyMuPDF"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/python/extract_issues.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "extract_issues",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'static_ffmpeg' | mapped static_ffmpeg->static-ffmpeg",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "livestream-gif",
+      "target": "static-ffmpeg"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'boto3' | mapped boto3->boto3",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "magic_bucket",
+      "target": "boto3"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/python/modelscope_size.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "modelscope_size",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'Quartz' | mapped Quartz->pyobjc",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "macos-windows",
+      "target": "pyobjc"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'cbor2' | mapped cbor2->cbor2",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "webc_inspect",
+      "target": "cbor2"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "75_Coaching/10_Consulting/20_Tooling/simonw-tools/redis-array-playground/build_commands.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "build_commands",
+      "target": ""
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'comfy' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli_args",
+      "target": "comfy"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'utils' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "frontend_management",
+      "target": "utils"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ComfyUI/comfy_api/generate_api_stubs.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_api_stubs",
+      "target": ""
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "./glsl file extension likely not executable Python script",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "update_blueprints",
+      "target": "ComfyUI/blueprints/.glsl/update_blueprints.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'folder_paths' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "request_logger",
+      "target": "folder_paths"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'comfy' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "controlnet",
+      "target": "comfy"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'comfy' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "models",
+      "target": "comfy"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Running as __main__ requires correct current working directory to resolve relative imports",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "__main__",
+      "target": "20_CONSIGLIERE/consigliere/__main__.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'requests_html' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "gmaps_scraper",
+      "target": "requests_html"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Script may have Python syntax errors or missing imports",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "seed-ux-idea-forge",
+      "target": "20_CONSIGLIERE/scripts/seed-ux-idea-forge.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Script may have Python syntax errors or missing imports",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "gen_migration_test",
+      "target": "20_CONSIGLIERE/scripts/gen_migration_test.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "KeyError: 'SOURCE_SESSION_ID'",
+      "failure_class": "env-missing",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "orchestrate",
+      "target": "SOURCE_SESSION_ID"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Likely requires environment variables or config files specific to financial-services-ref",
+      "failure_class": "env-missing",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "validate",
+      "target": "20_CONSIGLIERE/financial-services-ref/scripts/validate.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "CLI may have missing function definitions or import errors",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "cli-4",
+      "target": "20_CONSIGLIERE/consigliere/l2s/cli.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "CLI may have missing function definitions or import errors",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "cli-7",
+      "target": "20_CONSIGLIERE/consigliere/catalog/cli.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "CLI may have missing function definitions or import errors",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "market_commands",
+      "target": "20_CONSIGLIERE/consigliere/cli/market_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "CLI may have missing function definitions or import errors",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "portfolio_commands",
+      "target": "20_CONSIGLIERE/consigliere/cli/portfolio_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "CLI may have missing function definitions or import errors",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "batch_commands",
+      "target": "20_CONSIGLIERE/consigliere/cli/batch_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "memory_commands",
+      "target": "cli/memory_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "strategic_commands",
+      "target": "cli/strategic_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "red_flag_commands",
+      "target": "cli/red_flag_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "search_commands",
+      "target": "cli/search_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "main-3",
+      "target": "cli/main.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "research_commands",
+      "target": "cli/research_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "gateway_commands",
+      "target": "cli/gateway_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "migrate",
+      "target": "cli/migrate.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "brain_commands",
+      "target": "cli/brain_commands.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error context provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ux",
+      "target": "cli/ux.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided, likely code bug or missing environment",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "registry",
+      "target": "20_CONSIGLIERE/consigliere/modules/registry.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "core_api",
+      "target": "20_CONSIGLIERE/consigliere/modules/core_api.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "base",
+      "target": "20_CONSIGLIERE/consigliere/modules/base.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "extract_io_google_roster",
+      "target": "20_CONSIGLIERE/scripts/graph4/extract_io_google_roster.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "KeyError: 'TENANT_ID'",
+      "failure_class": "env-missing",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "app-2",
+      "target": "TENANT_ID"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "mint_dev_token",
+      "target": "20_CONSIGLIERE/financial-services-ref/claude-for-msft-365-install/examples/python-bootstrap/mint_dev_token.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "HTTP Error 400: Bad Request",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "get_tenant_id",
+      "target": "/Users/jcords-macmini/projects/20_CONSIGLIERE/financial-services-ref/claude-for-msft-365-install/examples/python-bootstrap/get_tenant_id.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'tinycss2' | mapped tinycss2->tinycss2",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "gen-artifact-scaffolds",
+      "target": "tinycss2"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "cannot import name 'Image' from 'PIL' (unknown location)",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "build-og-default",
+      "target": "/Users/jcords-macmini/projects/contexteng-site/scripts/build-og-default.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'scripts' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "sync",
+      "target": "scripts"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'scripts' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "produce",
+      "target": "scripts"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'pptx' | mapped pptx->python-pptx",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "retrofit",
+      "target": "python-pptx"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'lxml' | mapped lxml->lxml",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "office_validate",
+      "target": "lxml"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'scripts' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "apply_master",
+      "target": "scripts"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'docx' | mapped docx->python-docx",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "build_reference_docx",
+      "target": "python-docx"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'pptx' | mapped pptx->python-pptx",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "scale_audit",
+      "target": "python-pptx"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'lxml' | mapped lxml->lxml",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "build_reference_pptx",
+      "target": "lxml"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'bs4' | mapped bs4->beautifulsoup4",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "migrate_to_wp",
+      "target": "beautifulsoup4"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'bs4' | mapped bs4->beautifulsoup4",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "migrate_to_wp-2",
+      "target": "beautifulsoup4"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "attempted relative import with no known parent package",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "office_engine",
+      "target": "/Users/jcords-macmini/projects/50_Excelbridge/tools/python/office_engine.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "cli-11",
+      "target": "00_Governance/api-router/api_router/cli.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'autopilot' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "conductor",
+      "target": "autopilot"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'autopilot' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "disposition",
+      "target": "autopilot"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error provided",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "backlog_add",
+      "target": "00_Governance/scripts/backlog_add.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "backlog_archive",
+      "target": "backlog_archive.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "hermes_helpers_inventory",
+      "target": "hermes_helpers_inventory.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "homer_sync",
+      "target": "homer_sync.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_hermes",
+      "target": "ics_hermes.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_lifecycle",
+      "target": "ics_lifecycle.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_migrate",
+      "target": "ics_migrate.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_offswitch",
+      "target": "ics_offswitch.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_paperclip",
+      "target": "ics_paperclip.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_readback",
+      "target": "ics_readback.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure info",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_readback_adversarial",
+      "target": "ics_readback_adversarial.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_sitrep",
+      "target": "00_Governance/scripts/ics_sitrep.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ics_unified_command",
+      "target": "00_Governance/scripts/ics_unified_command.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "janitor_staleness_monitor",
+      "target": "00_Governance/scripts/janitor_staleness_monitor.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "ImportError: attempted relative import with no known parent package",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "__main__-2",
+      "target": "00_Governance/scripts/morning_brief/__main__.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "fetch_n8n_data",
+      "target": "00_Governance/scripts/n8n_map/fetch_n8n_data.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "parse_backlog",
+      "target": "00_Governance/scripts/parse_backlog.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "OSError: [Errno 48] Address already in use",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "projects_root_server",
+      "target": "00_Governance/scripts/projects_root_server.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "OSError: [Errno 48] Address already in use",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "qmd_http_server",
+      "target": "00_Governance/scripts/qmd_http_server.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note indicates no error",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "smoke_backlog_sync_paperclip",
+      "target": "00_Governance/scripts/smoke_backlog_sync_paperclip.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'wiki_update' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-12",
+      "target": "wiki_update"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "ImportError: attempted relative import with no known parent package",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "__main__-3",
+      "target": "00_Governance/scripts/worktree_hygiene/__main__.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "wiki-drift-check",
+      "target": "script"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'numpy' | mapped numpy->numpy",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "termux_fft_server",
+      "target": "numpy"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'bottle' | mapped bottle->bottle",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "server",
+      "target": "bottle"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "termux-ocr-server",
+      "target": "script"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'romsorter' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-13",
+      "target": "romsorter"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "analyze_depth",
+      "target": "script"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'romsorter' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-14",
+      "target": "romsorter"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "capture_raw_taps",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "main-4",
+      "target": "script"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "FileNotFoundError: [Errno 2] No such file or directory: '.../bedca_food_ids.txt'",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "download_bedca",
+      "target": ""
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_categories_phase1",
+      "target": "sqlite"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No error note",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "normalize_categories",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "categorize_ai",
+      "target": "sqlite"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "FileNotFoundError: [Errno 2] No such file or directory: '.../GFS-015_TACO_4th_Edition.pdf'",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "translate_food_names",
+      "target": ""
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_names",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "backfill_food_names",
+      "target": "sqlite"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "categorize_branded",
+      "target": "sqlite"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "export_app_db",
+      "target": "database"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: source_databases",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_derivation",
+      "target": "database"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note only contains path, no error detail",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_l2_llm",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note only contains path, no error detail",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "populate",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_categories",
+      "target": "database"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_categories_phase2",
+      "target": "database"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "sqlite3.OperationalError: no such table: food_canonical",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_pt_br_names",
+      "target": "database"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note only contains path, no error detail",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_ingest_source_cmd",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note only contains path, no error detail",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_import_cmd",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note only contains path, no error detail",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "populate_cmd",
+      "target": "script"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Slug category 'enrich' suggests data processing, likely has import errors or logic issues.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_link_cmd",
+      "target": "enrich_link_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Similar to enrich_link_cmd, general enrich command may have code bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_cmd",
+      "target": "enrich_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Database command, possible SQL parsing or connection issues.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "sql_cmd",
+      "target": "sql_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Complex data merging logic, common source of bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_nutrient_merge_cmd",
+      "target": "enrich_nutrient_merge_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Quality check command, likely has validation logic bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "quality_cmd",
+      "target": "quality_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Batch processing command, potential iteration or data handling bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_gap_survey_batch_cmd",
+      "target": "enrich_gap_survey_batch_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Health check command, possible import or dependency issue.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "health_cmd",
+      "target": "health_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Playbook enrichment, likely has logic bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "enrich_playbook_cmd",
+      "target": "enrich_playbook_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Main entry point, probable import or CLI registration bug.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "main-5",
+      "target": "main.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Queue command, likely has async or task handling bugs.",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "queue_cmd",
+      "target": "queue_cmd.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note: 50_KETO/keto-data/scripts/cleanup/cleanup_orphan_source_rows.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "cleanup_orphan_source_rows",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note: 15_LookingGlass/lookingglass/cli/main.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "main-6",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "PermissionError: [Errno 13] Permission denied: '../data'",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "taxonomy_seed",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "PermissionError: [Errno 13] Permission denied: '../data'",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "obligations_seed",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "note: 40_POTX/scripts/build_versatile_master.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "build_versatile_master-2",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"generate_poster_p2.py\", line 9, in <module>\n    from",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_poster_p2",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"generate_poster.py\", line 11, in <module>\n    from",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_poster-2",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"download_files.py\", line 53, in <module>\n    main()",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "download_files",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"convert.py\", line 6, in <module>\n    from google import",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "convert",
+      "target": "cli"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'flask' | mapped flask->flask",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "bridge_server",
+      "target": "flask"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, eval_label.py:245) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "eval_label",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, ingest_prompts.py:226) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "ingest_prompts",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, migrate_sessions.py:20) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "migrate_sessions",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, server.py:20) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "server-2",
+      "target": "engine"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "usage: golden_normalize_windows.py <actual_abs> <actual_root> <repo_root> <home>",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "golden_normalize_windows",
+      "target": "cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "http.client.InvalidURL: nonnumeric port: 'None' at line 85",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "sync-portmgr",
+      "target": "sync-portmgr.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'reportlab' | mapped reportlab->reportlab",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "consulting-pricing-pdf",
+      "target": "reportlab"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "pip install openpyxl",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "xlsx-to-json",
+      "target": "xlsx-to-json.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.api import create_server, server.py:12) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "server-3",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'httpx'  (httpx>=0.27.0 listed in phantom-sync/requirements.txt) | mapped httpx->httpx",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "sync-2",
+      "target": "httpx"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, eval_label.py:245) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "eval_label-2",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, ingest_prompts.py:226) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "ingest_prompts-2",
+      "target": "engine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'engine'  (from engine.db import UsageDB, server.py:20) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "server-4",
+      "target": "engine"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "register",
+      "target": "register.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "pes_cli",
+      "target": "pes_cli.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-17",
+      "target": "cli.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "__main__-4",
+      "target": "__main__.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "worker",
+      "target": "worker.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "consigliere-pp-cli",
+      "target": "consigliere-pp-cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "hermes-pp-cli",
+      "target": "hermes-pp-cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "path not matching CLI invocation",
+      "failure_class": "wrong-cwd",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "poster-engine-pp-cli",
+      "target": "poster-engine-pp-cli"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "10_Sidequest/bpmn-icons/build-bpmn-poster.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "build-bpmn-poster",
+      "target": "/Users/jcords-macmini/projects/10_Sidequest/bpmn-icons/build-bpmn-poster.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"/Users/jcords-macmini/projects/10_Sidequest/export-vsdx.p",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "export-vsdx",
+      "target": "/Users/jcords-macmini/projects/10_Sidequest/export-vsdx.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"/Users/jcords-macmini/projects/10_Sidequest/manim-mcp/serv",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "manim_server",
+      "target": "/Users/jcords-macmini/projects/10_Sidequest/manim-mcp/server/src/manim_server.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \"/Users/jcords-macmini/projects/10_Sidequest/sidequest/cli/",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "main-7",
+      "target": "/Users/jcords-macmini/projects/10_Sidequest/sidequest/cli/main.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "Traceback (most recent call last):\n  File \".../generate_poster.py\", line 7, in <module>\n    from rep",
+      "failure_class": "code-bug",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_poster-3",
+      "target": "/Users/jcords-macmini/projects/10_STEUB-usecases/PDFscanner/generate_poster.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "10_STEUB-usecases/app/dashboard.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "dashboard",
+      "target": "/Users/jcords-macmini/projects/10_STEUB-usecases/app/dashboard.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'skillmine' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-19",
+      "target": "skillmine"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'skillprovenance' | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "cli-20",
+      "target": "skillprovenance"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'reportlab' | mapped reportlab->reportlab",
+      "failure_class": "pip-3rd-party",
+      "fix_kind": "auto-safe",
+      "schema_version": 1,
+      "slug": "generate_poster-4",
+      "target": "reportlab"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "30_SVG-PAINT/etsy-oauth-relay/server.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "server-5",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/etsy-oauth-relay/server.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "30_SVG-PAINT/etsy-oauth-relay/etsy_token.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "etsy_token",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/etsy-oauth-relay/etsy_token.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "30_SVG-PAINT/scripts/generate_pdf_v2.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_pdf_v2",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/scripts/generate_pdf_v2.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "30_SVG-PAINT/scripts/spike_trace_rembg.py",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "spike_trace_rembg",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/scripts/spike_trace_rembg.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "spike_trace_extended_sweep",
+      "target": "30_SVG-PAINT/scripts/spike_trace_extended_sweep.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "gate1_ab_test",
+      "target": "30_SVG-PAINT/scripts/gate1_ab_test.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "spike_trace_normalize",
+      "target": "30_SVG-PAINT/scripts/spike_trace_normalize.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "spike_trace_setup",
+      "target": "30_SVG-PAINT/scripts/spike_trace_setup.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "generate_p0_visual_briefs",
+      "target": "30_SVG-PAINT/scripts/generate_p0_visual_briefs.py"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.models.v2.theme_pack import ThemePack) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "theme_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.services.v2.variant_utils import detect_variant) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "etsy_publish_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.cli.build_heal import ...) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "build_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.services.v2.content_id_parser import parse_conte | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "content_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.core.database import get_session_context as get_ | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "spider_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.cli.bundle_cli import bundle_app) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "main-9",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.core.database import get_session_context) | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "enrichment_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "declared-by-regex",
+      "evidence": "ModuleNotFoundError: No module named 'app' (from app.services.v2.ai_compose_service import compose_co | unmapped, not proven local",
+      "failure_class": "pip-unknown",
+      "fix_kind": "propose-only",
+      "schema_version": 1,
+      "slug": "compose_cli",
+      "target": "app"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "ga_client",
+      "target": "30_SVG-PAINT/.claude/skills/google-analytics/scripts/ga_client.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "analyze",
+      "target": "30_SVG-PAINT/.claude/skills/google-analytics/scripts/analyze.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "init_skill",
+      "target": "30_SVG-PAINT/.claude/skills/skill-creator/scripts/init_skill.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "package_skill",
+      "target": "30_SVG-PAINT/.claude/skills/skill-creator/scripts/package_skill.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No execution attempt provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "quick_validate",
+      "target": "30_SVG-PAINT/.claude/skills/skill-creator/scripts/quick_validate.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure details provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "check_staleness",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/.claude/skills/session-handoff/scripts/check_staleness.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure details provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "validate_handoff",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/.claude/skills/session-handoff/scripts/validate_handoff.py"
+    },
+    {
+      "confidence": "llm-inferred",
+      "evidence": "No failure details provided.",
+      "failure_class": "unknown",
+      "fix_kind": "needs-human",
+      "schema_version": 1,
+      "slug": "shopify_init",
+      "target": "/Users/jcords-macmini/projects/30_SVG-PAINT/.claude/skills/shopify-development/scripts/shopify_init.py"
+    }
+  ],
+  "schema_version": 1,
+  "session_id": "56646d8a-c1df-492f-bf9f-1aa236995f5c"
+}

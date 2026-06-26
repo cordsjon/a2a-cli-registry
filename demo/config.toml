@@ -1,0 +1,17 @@
+cli_audit_path = "./demo/cli-audit/latest.json"
+
+[thresholds]
+mass_removal = 0.30
+
+[probe]
+probe_timeout = 10
+max_probe_output_bytes = 65536
+probe_concurrency = 8
+staleness_ttl = 3600
+
+[vocabulary]
+registered = ["file:pdf", "text:doc", "text:summary", "text", "url", "json:invoice"]
+
+[vocabulary.aliases]
+pdf = "file:pdf"
+PDF = "file:pdf"
