@@ -25,9 +25,41 @@ max_chain_depth = 4
 max_candidate_chains = 100
 
 # --- live ---
+# The vocabulary is the EDGE GATE: only registered (non-"unverified:") ports
+# form call-graph edges (core/vocabulary.py is_edge_eligible). LLM-inferred ports
+# (bridge/enrich_feed.py) are admitted against this list at populate time —
+# unregistered ones are quarantined to "unverified:" and excluded from chaining.
+# This curated set covers the port families the inferer actually produces across
+# the fleet (office docs, common data formats, text/url) so inferred capability
+# becomes chainable. Add a family here only when CLIs demonstrably emit it.
 [vocabulary]
-registered = ["file:pdf", "text:doc", "text:summary", "text", "url", "json:invoice"]
+registered = [
+    # text / generic
+    "text", "text:doc", "text:summary", "url", "file",
+    # data formats
+    "json", "json:invoice", "file:json", "file:csv", "file:yaml", "file:xml",
+    # documents
+    "file:pdf", "file:md", "file:html",
+    # office (pptx family + spreadsheets/docs)
+    "file:pptx", "file:ppsx", "file:potx", "file:xlsx", "file:docx",
+    # images / media
+    "image", "file:png", "file:svg",
+]
 
 [vocabulary.aliases]
 pdf = "file:pdf"
 PDF = "file:pdf"
+csv = "file:csv"
+yaml = "file:yaml"
+yml = "file:yaml"
+xml = "file:xml"
+pptx = "file:pptx"
+ppsx = "file:ppsx"
+potx = "file:potx"
+xlsx = "file:xlsx"
+docx = "file:docx"
+md = "file:md"
+markdown = "file:md"
+html = "file:html"
+png = "file:png"
+svg = "file:svg"

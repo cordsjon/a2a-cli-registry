@@ -33,7 +33,12 @@ class CliAuditSource:
                     input_types=c.get("input_types", []),
                     output_types=c.get("output_types", []),
                     side_effect=c.get("side_effect", "unknown"),
-                    confidence="declared",
+                    # Honor the feed's own confidence. Entries enriched by LLM
+                    # inference at feed-build time carry confidence="inferred";
+                    # genuinely source-declared entries omit it and default to
+                    # "declared". Hardcoding "declared" here mislabeled every
+                    # inferred capability as declared (the bridge-epic bug).
+                    confidence=c.get("confidence", "declared"),
                 )
             records.append(CliRecord(
                 slug=entry["slug"], lang=entry["lang"], path=entry["path"],
