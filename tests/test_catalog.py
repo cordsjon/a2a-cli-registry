@@ -97,6 +97,23 @@ def test_overview_rows_returns_project_caps_edges_and_no_launch_spec(db):
     assert rows["edges"] == [{"from": "alpha", "to": "beta", "via_type": "text:plain"}]
 
 
+def test_describe_cli_op_schema_allows_include_launch_spec():
+    from core.ops_registry import op_by_mcp_tool
+    op = op_by_mcp_tool("describe_cli")
+    props = op.input_schema["properties"]
+    assert "include_launch_spec" in props
+    assert props["include_launch_spec"]["type"] == "boolean"
+
+
+def test_describe_cli_op_handler_forwards_include_launch_spec(db):
+    from core.catalog.queries import describe_cli
+    db.add(Cli(slug="x", lang="python", launch_spec='{"kind":"python_module"}'))
+    db.commit()
+    # the op handler IS queries.describe_cli; forwarding the kwarg yields launch_spec
+    assert "launch_spec" in describe_cli(db, "x", include_launch_spec=True)
+    assert "launch_spec" not in describe_cli(db, "x")  # default still omits
+
+
 def test_overview_rows_query_count_is_bounded_not_per_cli(db):
     for i in range(10):
         db.add(Cli(slug=f"cli-{i}", lang="python", project="batch"))
