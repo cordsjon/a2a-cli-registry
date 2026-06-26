@@ -9,4 +9,4 @@ build/
 HANDOVER-*.md
 .superpowers/
 demo/
-*.lock
+registry.db.lock
