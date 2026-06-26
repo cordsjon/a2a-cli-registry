@@ -50,8 +50,19 @@ _SYSTEM = (
     f"Prefer these port types when they fit: {', '.join(KNOWN_PORTS)}. "
     "A typed port is 'family:subtype' or a bare family (e.g. 'file:pdf', 'text', 'url'). "
     "If the tool reads no file/stdin, input_types is []. If it only prints to stdout, "
-    "output_types is ['text']. Be conservative on side_effect: 'none' unless it clearly "
-    "writes files (writes-fs), hits the network (network), or deletes data (destructive)."
+    "output_types is ['text']. "
+    # side_effect = the tool's DEFINING effect, not every effect it can have.
+    # Classify by what the tool is FOR, in this priority order:
+    "Choose side_effect by the tool's PRIMARY purpose, in this priority: "
+    "(1) 'network' if it fetches/sends over the network (downloaders, HTTP clients, scrapers) "
+    "— network wins even though such tools also save files. "
+    "(2) 'destructive' if it deletes or irreversibly overwrites the user's existing data. "
+    "(3) 'writes-fs' ONLY for tools whose job is to MODIFY input files IN PLACE "
+    "(formatters like black, import sorters) — NOT tools that merely produce a new output file. "
+    "(4) 'none' otherwise — this is the DEFAULT, and it covers converters, extractors, "
+    "and test runners EVEN IF they write an output file or report, because writing a new "
+    "result file is not a side effect on existing data. "
+    "When unsure between 'writes-fs' and 'none', choose 'none'."
 )
 
 
