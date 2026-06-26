@@ -159,8 +159,15 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
     to_probe: list[tuple[Cli, str]] = []   # (cli, cmd)
     no_cmd: list[Cli] = []
+    # US-CLIAUDIT-83: rows statically known not to be standalone CLIs (Typer/click
+    # sub-apps, no-parser batch scripts) are never probed — probing them yields a
+    # non-zero --help that the audit mislabels broken. Their status is preserved.
+    not_standalone_rows: list[Cli] = []
 
     for cli in clis:
+        if getattr(cli, "not_standalone", False):
+            not_standalone_rows.append(cli)
+            continue
         try:
             adapter, rec = _find_adapter(cli, adapters)
             if adapter is None:
@@ -191,7 +198,8 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
                 results[slug] = "unhealthy"
 
     # --- Phase 3: write results on main thread ---
-    counts = {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0}
+    counts = {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0,
+              "not_standalone": 0}
 
     for cli, _cmd in to_probe:
         status = results.get(cli.slug, "unhealthy")
@@ -211,6 +219,12 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
             cli.health_status = "unknown"
             session.add(cli)
             counts["unknown"] += 1
+
+    for cli in not_standalone_rows:
+        cli.health_status = "not_standalone"
+        cli.health_checked_at = now
+        session.add(cli)
+        counts["not_standalone"] += 1
 
     session.commit()
     return counts
