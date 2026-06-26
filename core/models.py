@@ -14,6 +14,7 @@ class Cli(SQLModel, table=True):
     health_cmd: Optional[str] = None
     health_status: str = "unknown"                   # healthy/unhealthy/unknown/stale
     health_checked_at: Optional[float] = None
+    fixed_by: Optional[str] = None                   # 'remediation' if auto-fixed; else None
     enabled: bool = True
     a2a_invokable: bool = False                     # reserved, unread in v1
     source_run_id: Optional[str] = None

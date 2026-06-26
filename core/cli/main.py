@@ -115,7 +115,7 @@ def main(argv=None) -> int:
     parser.add_argument("--file", action="store_true",
                         help="[remediate] actually file Paperclip issues (default: dry-run)")
     parser.add_argument("--apply-safe", action="store_true",
-                        help="[remediate] arm SafeFixer (MVP: errors, NotImplementedError)")
+                        help="[remediate] arm SafeFixer: wheel-only install + isolated re-probe into demo/ venv")
     parser.add_argument("--max-llm-calls", type=int, default=0,
                         help="[remediate] Hermes diagnosis batch cap (default 0 = skip Hermes)")
     args, _rest = parser.parse_known_args(argv)
@@ -183,20 +183,35 @@ def main(argv=None) -> int:
         sid = str(uuid.uuid4())
         generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         hermes = HermesAdapter() if args.max_llm_calls > 0 else None
-        # SafeFixer is stubbed MVP-wide; pass an instance so run.py can set
-        # apply_safe_requested=True and the CLI can return exit 3 correctly.
+        # SafeFixer is ARMED: when --apply-safe is set it runs real wheel-only
+        # installs into an isolated demo/ venv and re-probes (spec §3.4).
         safe_fixer = None
         if args.apply_safe:
             from core.remediation.safe_fixer import SafeFixer
-            safe_fixer = SafeFixer(demo_dir=".")
+            safe_fixer = SafeFixer(demo_dir="demo")
+        # The armed path MUTATES the DB (the health_status/fixed_by flip + the
+        # ALTER migration). Hold the same sidecar file-lock every other write
+        # command uses (discover/produce/populate/probe) so a concurrent probe
+        # can't clobber the flip and two armed runs can't race the ALTER. The
+        # read-only default (no --apply-safe) never writes the DB, so it stays
+        # lock-free.
+        from contextlib import nullcontext
+        write_lock = (with_file_lock(_db_lock_path(args.db))
+                      if args.apply_safe else nullcontext())
         summary = None
         try:
-            with get_session(engine) as session:
-                summary = run_remediate(
-                    session, out_path=out_path, do_file=args.file,
-                    apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
-                    session_id=sid, generated_at=generated_at, hermes=hermes,
-                    safe_fixer=safe_fixer)
+            with write_lock:
+                # Close the create_all column gap inside the lock: an existing DB
+                # predates Cli.fixed_by, which create_all never adds to an
+                # already-existing table (the armed SafeFixer writes fixed_by).
+                from core.store.migrations import ensure_fixed_by_column
+                ensure_fixed_by_column(args.db)
+                with get_session(engine) as session:
+                    summary = run_remediate(
+                        session, out_path=out_path, do_file=args.file,
+                        apply_safe=args.apply_safe, max_llm_calls=args.max_llm_calls,
+                        session_id=sid, generated_at=generated_at, hermes=hermes,
+                        safe_fixer=safe_fixer, adapters=_adapters())
         except OSError as exc:
             # proposals.json write failure (disk/permission): summary lost, but
             # surface clearly and exit 4 (spec §6).
@@ -214,9 +229,8 @@ def main(argv=None) -> int:
         print(f"remediate: wrote {out_path}; issues_filed={summary['issues_filed']}",
               file=sys.stderr)
         if summary["apply_safe_requested"]:
-            print("remediate: --apply-safe not yet implemented; ran proposal-only. "
-                  "Re-run without --apply-safe for proposals.", file=sys.stderr)
-            return 3
+            print(f"remediate: --apply-safe applied {summary['fixes_applied']} fix(es)",
+                  file=sys.stderr)
         return 0
 
     engine = init_db(args.db)

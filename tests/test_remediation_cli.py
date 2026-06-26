@@ -78,21 +78,84 @@ def test_run_invokes_hermes_on_unknowns(db, tmp_path):
     assert len(env["proposals"]) == 2  # replace semantics: count unchanged
 
 
-def test_apply_safe_requested_caught_and_still_writes(db, tmp_path):
+def test_run_remediate_reconstructs_health_cmd_via_adapters(db, tmp_path):
+    # Critical regression: cli.health_cmd is NEVER persisted in production
+    # (474/474 rows null on the real DB). run_remediate must reconstruct the
+    # re-probe command from the adapters (like the prober does), not read the
+    # empty column and fall back to "false" (which guarantees reprobe-failed).
+    _seed(db, "n", "ModuleNotFoundError: No module named 'numpy'")  # health_cmd stays None
+    out = tmp_path / "p.json"
+    seen = {}
+
+    class _RecordingAdapter:
+        def detect(self, rec):
+            return True
+        def health_cmd(self, rec):
+            return "reconstructed-health-cmd"
+
+    class StubFixer:
+        def is_eligible(self, proposal):
+            return True
+        def apply(self, proposals, *, session, health_cmd_for):
+            from core.remediation.proposal import FixResult
+            seen["cmd"] = health_cmd_for("n")
+            return [FixResult("n", "numpy", "fixed", "ok")]
+
+    run_remediate(
+        db, out_path=str(out), do_file=False, apply_safe=True, max_llm_calls=0,
+        session_id="s", generated_at="t", safe_fixer=StubFixer(),
+        adapters=[_RecordingAdapter()], paperclip=NoopPaperclip())
+    # the reconstructed command, NOT the "false" fallback
+    assert seen["cmd"] == "reconstructed-health-cmd"
+
+
+def test_run_remediate_health_cmd_none_when_no_adapter(db, tmp_path):
+    # No adapter detects the row -> health_cmd_for returns None (a clean
+    # "no probe command" signal), NOT "false". apply() turns None into a refusal.
+    _seed(db, "n", "ModuleNotFoundError: No module named 'numpy'")
+    out = tmp_path / "p.json"
+    seen = {}
+
+    class _NoMatchAdapter:
+        def detect(self, rec):
+            return False
+        def health_cmd(self, rec):
+            return "unused"
+
+    class StubFixer:
+        def is_eligible(self, proposal):
+            return True
+        def apply(self, proposals, *, session, health_cmd_for):
+            from core.remediation.proposal import FixResult
+            seen["cmd"] = health_cmd_for("n")
+            return [FixResult("n", "numpy", "refused", "no health command")]
+
+    run_remediate(
+        db, out_path=str(out), do_file=False, apply_safe=True, max_llm_calls=0,
+        session_id="s", generated_at="t", safe_fixer=StubFixer(),
+        adapters=[_NoMatchAdapter()], paperclip=NoopPaperclip())
+    assert seen["cmd"] is None
+
+
+def test_run_remediate_threads_fix_results_when_armed(db, tmp_path):
+    # Armed SafeFixer: apply() now returns FixResults; run.py must thread the
+    # 'fixed' count into the summary and still write proposals.json.
     _seed(db, "n", "ModuleNotFoundError: No module named 'numpy'")
     out = tmp_path / "p.json"
 
     class StubFixer:
         def is_eligible(self, proposal):
             return True  # let the numpy proposal reach apply()
-        def apply(self, proposals):
-            raise NotImplementedError("stubbed")
+        def apply(self, proposals, *, session, health_cmd_for):
+            from core.remediation.proposal import FixResult
+            return [FixResult("n", "numpy", "fixed", "ok")]
     summary = run_remediate(
         db, out_path=str(out), do_file=False, apply_safe=True, max_llm_calls=0,
         session_id="s", generated_at="t", safe_fixer=StubFixer(),
         paperclip=NoopPaperclip())
     assert summary["apply_safe_requested"] is True
-    assert out.exists()  # proposals.json written despite stubbed apply
+    assert summary["fixes_applied"] == 1
+    assert out.exists()  # proposals.json written alongside the fix
 
 
 def test_write_proposals_is_atomic_overwrite(tmp_path):
@@ -135,13 +198,24 @@ def test_cli_default_writes_proposals_no_network(tmp_path, monkeypatch):
     assert env["proposals"][0]["target"] == "numpy"
 
 
-def test_cli_apply_safe_exits_3_but_writes(tmp_path):
+def test_cli_apply_safe_armed_exits_0_and_writes(tmp_path, monkeypatch):
+    # Armed contract: --apply-safe no longer exits 3. A clean run exits 0 and
+    # still writes proposals.json. We stub SafeFixer's I/O so no real pip runs
+    # in the CLI test (the real install path is proven in the e2e test).
     db_path = _make_db(tmp_path, [
         ("n", "ModuleNotFoundError: No module named 'numpy'", "unhealthy")])
     out = tmp_path / "p.json"
+    # Make install+re-probe deterministic: install succeeds, re-probe fails ->
+    # outcome 'reprobe-failed', run is still clean (no fix, but no error).
+    monkeypatch.setattr(
+        "core.remediation.safe_fixer.SafeFixer._install_one",
+        lambda self, target, venv_dir: (0, False))
+    monkeypatch.setattr(
+        "core.remediation.safe_fixer.SafeFixer._reprobe_one",
+        lambda self, slug, health_cmd, venv_dir: "unhealthy")
     rc = cli_main.main(["remediate", "--db", db_path, "--out", str(out), "--apply-safe"])
-    assert rc == 3
-    assert out.exists()  # read-only artifact still produced
+    assert rc == 0
+    assert out.exists()  # read-only artifact still produced alongside the armed run
 
 
 def test_cli_db_read_failure_exits_2_no_proposals(tmp_path):

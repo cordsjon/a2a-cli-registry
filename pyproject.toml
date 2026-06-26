@@ -53,4 +53,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "slow: cross-process tests that spawn subprocesses (deselect with -m 'not slow')",
+    "e2e: real network/pip; deselect with -m 'not e2e'",
 ]
