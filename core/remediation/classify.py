@@ -47,6 +47,11 @@ IMPORT_TO_PACKAGE = {
     "cbor2": "cbor2",
     "tinycss2": "tinycss2",
     "static_ffmpeg": "static-ffmpeg",
+    # ulid: two dists provide `import ulid` (python-ulid vs ulid-py) with
+    # incompatible APIs. The consuming CLI uses `from ulid import ULID`, which is
+    # the python-ulid surface — mapping to ulid-py would import-but-break at runtime.
+    "ulid": "python-ulid",
+    "requests_html": "requests-html",
 }
 
 _MNFE_RE = re.compile(r"No module named ['\"]([\w][\w.]*)['\"]")
