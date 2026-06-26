@@ -74,3 +74,20 @@ def test_roundtrip_through_real_loader(tmp_path):
 def test_lang_inference():
     assert audit_record_to_cli({"file": "/x/foo.go", "final_class": "PASS"})["lang"] == "go"
     assert audit_record_to_cli({"file": "/x/bar.sh", "final_class": "PASS"})["lang"] == "shell"
+
+
+def test_not_standalone_flag_round_trips(tmp_path):
+    """A feed entry tagged not_standalone survives the real CliAuditSource load."""
+    feed = {
+        "schema_version": 1,
+        "run_id": "t",
+        "clis": [
+            {"slug": "memory_commands", "lang": "python",
+             "path": "/x/consigliere/cli/memory_commands.py",
+             "not_standalone": True},
+        ],
+    }
+    p = tmp_path / "feed.json"
+    p.write_text(json.dumps(feed), encoding="utf-8")
+    records = CliAuditSource(str(p)).discover()
+    assert records[0].not_standalone is True

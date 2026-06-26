@@ -14,6 +14,7 @@ class CliRecord:
     declared_capability: Optional[CapabilityRecord]
     source_class: Optional[str]
     source_run_id: Optional[str]
+    not_standalone: bool = False
 
 
 @runtime_checkable

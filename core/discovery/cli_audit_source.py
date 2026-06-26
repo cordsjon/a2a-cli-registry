@@ -45,5 +45,6 @@ class CliAuditSource:
                 bucket=entry.get("bucket"), project=entry.get("project"),
                 description=entry.get("description", ""), declared_capability=cap,
                 source_class="cli_audit", source_run_id=run_id,
+                not_standalone=bool(entry.get("not_standalone", False)),
             ))
         return records

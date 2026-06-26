@@ -46,6 +46,7 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.description = rec.description
         cli.source_class = rec.source_class
         cli.source_run_id = rec.source_run_id
+        cli.not_standalone = rec.not_standalone
         cli.last_seen_at = clock.now()
         cli.updated_at = clock.now()
         cli.launch_spec = _json.dumps(launch)
