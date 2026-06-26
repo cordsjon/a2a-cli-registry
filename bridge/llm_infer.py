@@ -21,6 +21,8 @@ registry's own evaluate_inference() harness. Not the 474-CLI production pass.
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import urllib.request
 
@@ -62,28 +64,152 @@ _SYSTEM = (
     "(4) 'none' otherwise — this is the DEFAULT, and it covers converters, extractors, "
     "and test runners EVEN IF they write an output file or report, because writing a new "
     "result file is not a side effect on existing data. "
-    "When unsure between 'writes-fs' and 'none', choose 'none'."
+    "When unsure between 'writes-fs' and 'none', choose 'none'. "
+    # Fix 4: thin-help recovery. Many tools emit only a usage line; infer from the
+    # tool's NAME plus that line rather than abstaining, but stay conservative.
+    "If the help text is sparse (just a usage line or a few words), still infer "
+    "intent_tags from the tool's slug and any verbs present (e.g. slug 'seed_sources' "
+    "-> ['generate','index']; 'export_entities' -> ['extract']). Only return empty "
+    "intent_tags when there is genuinely no signal in either the slug or the text."
 )
 
 
+# Markers that mean the captured output is a CRASH, not help. A CLI that
+# ImportErrors on --help prints a traceback to stderr; capture_help used to
+# return that as "help text" (it has length), and the LLM correctly abstained
+# on garbage — but the abstention looked like "no signal in good help" when the
+# real cause was "the CLI can't run". Reject these so the caller sees no-help.
+_CRASH_MARKERS = (
+    "Traceback (most recent call last)",
+    "No module named",
+    "ModuleNotFoundError",
+    "ImportError",
+)
+# argparse/click emit these when a tool doesn't accept the flag we tried —
+# that's "wrong probe", not a crash; the probe ladder moves to the next form.
+_BAD_FLAG_MARKERS = (
+    "unrecognized arguments",
+    "no such option",
+    "invalid choice",
+    "unknown command",
+    "does not exist",
+)
+
+# Project-root sentinels: the nearest ancestor containing one of these is the
+# directory from which `python -m pkg.module` resolves package-relative imports.
+_ROOT_SENTINELS = ("pyproject.toml", "setup.py", "setup.cfg", ".git", "requirements.txt")
+
+
+def _is_crash(out: str) -> bool:
+    return any(m in out for m in _CRASH_MARKERS)
+
+
+def _is_bad_flag(out: str) -> bool:
+    low = out.lower()
+    return any(m in low for m in _BAD_FLAG_MARKERS)
+
+
+def _project_root(path: str) -> str | None:
+    """Walk up from the file to the nearest dir holding a root sentinel."""
+    d = os.path.dirname(os.path.abspath(path))
+    prev = None
+    while d and d != prev:
+        for s in _ROOT_SENTINELS:
+            if os.path.exists(os.path.join(d, s)):
+                return d
+        prev, d = d, os.path.dirname(d)
+    return None
+
+
+def _dotted_module(path: str, root: str) -> str | None:
+    """Dotted module path of `path` relative to `root` (Fix 1: package mode).
+
+    /root/pkg/sub/cli.py  under root  ->  pkg.sub.cli
+    A trailing __main__ is kept (python -m pkg works via pkg/__main__.py only if
+    we target the package, but file-stem __main__ is rare here)."""
+    try:
+        rel = os.path.relpath(os.path.abspath(path), root)
+    except ValueError:
+        return None
+    if rel.startswith(".."):
+        return None
+    rel = os.path.splitext(rel)[0]
+    parts = [p for p in rel.split(os.sep) if p]
+    if not parts:
+        return None
+    return ".".join(parts)
+
+
+def _venv_python(root: str | None) -> str:
+    """Prefer a project-local venv interpreter so package imports resolve."""
+    if root:
+        for cand in (".venv/bin/python", "venv/bin/python", ".venv/bin/python3"):
+            p = os.path.join(root, cand)
+            if os.path.exists(p):
+                return p
+    return "python3"
+
+
+# Probe forms tried in order. argv-suffix appended to the base invocation.
+_PROBE_FLAGS = (["--help"], ["-h"], ["help"], [])  # Fix 3: subcommand ladder
+
+
 def capture_help(path: str, python: str = "python3", timeout: int = 5) -> str:
-    """Capture a CLI's --help. Tries `<python> <file> --help` then `-m` form.
-    Returns combined stdout+stderr (help often goes to stderr on error)."""
-    for argv in ([python, path, "--help"], [python, "-m", _module_of(path), "--help"]):
+    """Capture a CLI's help text, robust to package-mode CLIs and crashes.
+
+    Strategy (in order, first CLEAN result wins):
+      1. module mode: `<venv-python> -m pkg.module <flag>` run from the project
+         root — fixes the dominant abstention cause (CLIs that ImportError when
+         run as a loose file because they use package-relative imports). (Fix 1)
+      2. file mode:   `<python> <file> <flag>` — for standalone scripts.
+    Each mode walks a flag ladder (--help, -h, help, bare). (Fix 3)
+    Any output that is a traceback / import crash is REJECTED as no-help. (Fix 2)
+    Returns clean help text (<=4000 chars) or "" if nothing usable was found.
+    """
+    root = _project_root(path)
+    mod = _dotted_module(path, root) if root else None
+    vpy = _venv_python(root)
+
+    invocations: list[tuple[list[str], str | None]] = []
+    if mod:
+        # module mode, run from project root so package imports resolve
+        for flag in _PROBE_FLAGS:
+            invocations.append(([vpy, "-m", mod, *flag], root))
+    for flag in _PROBE_FLAGS:
+        invocations.append(([python, path, *flag], None))
+
+    for argv, cwd in invocations:
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
-            out = (p.stdout or "") + (p.stderr or "")
-            if out.strip():
-                return out[:4000]
-        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+            p = subprocess.run(
+                argv, capture_output=True, text=True, timeout=timeout, cwd=cwd
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, OSError):
             continue
+        out = ((p.stdout or "") + (p.stderr or "")).strip()
+        if not out:
+            continue
+        if _is_crash(out):
+            continue                 # crash, not help — try the next form/mode
+        if _is_bad_flag(out):
+            continue                 # wrong flag — ladder moves on
+        # Looks like real help. Guard against a bare run that just did the work
+        # (no help, normal program output): require a help-ish shape OR a flag
+        # form (--help/-h/help) that succeeded.
+        is_flagged = argv[-1] in ("--help", "-h", "help")
+        if is_flagged or _looks_like_help(out):
+            return out[:4000]
     return ""
 
 
-def _module_of(path: str) -> str:
-    # best-effort: strip to a dotted module under projects — only used as fallback
-    import os
-    return os.path.splitext(os.path.basename(path))[0]
+_HELP_SHAPE = re.compile(r"(?im)^\s*(usage:|options:|commands:|positional arguments|"
+                         r"-h,\s*--help|--\w[\w-]+)")
+
+
+def _looks_like_help(out: str) -> bool:
+    """Heuristic: does this output resemble a help screen (not program output)?
+    Used only to accept BARE invocations, where many tools print usage but some
+    just run. Flagged invocations (--help/-h/help) skip this check."""
+    return bool(_HELP_SHAPE.search(out))
 
 
 def _call_router(help_text: str, slug: str, timeout: int = 30) -> dict | None:

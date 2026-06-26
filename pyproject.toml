@@ -50,7 +50,7 @@ include = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "bridge"]
 markers = [
     "slow: cross-process tests that spawn subprocesses (deselect with -m 'not slow')",
     "e2e: real network/pip; deselect with -m 'not e2e'",
