@@ -58,11 +58,30 @@ def test_summary_counts_all_states_with_total_equal_to_parts(monkeypatch):
         "unhealthy": 1,
         "stale": 1,
         "unknown": 2,
+        "not_standalone": 0,
         "version": "1.2.0",
     }
     assert summary["total"] == (
-        summary["healthy"] + summary["unhealthy"] + summary["stale"] + summary["unknown"]
+        summary["healthy"] + summary["unhealthy"] + summary["stale"]
+        + summary["unknown"] + summary["not_standalone"]
     )
+
+
+def test_not_standalone_counted_and_badged(monkeypatch):
+    """US-CLIAUDIT-83: a not_standalone row is a distinct 5th category — counted
+    in the summary (not collapsed to unknown) and carries its own glyph."""
+    monkeypatch.setattr(overview_view, "_package_version", lambda: "1.2.0")
+    rows = {"clis": [
+        {"slug": "a", "health_status": "healthy"},
+        {"slug": "b", "health_status": "not_standalone"},
+    ], "caps_by_slug": {}, "edges": []}
+    model = overview_view.build_overview_model(rows)
+    assert model["summary"]["not_standalone"] == 1
+    assert model["summary"]["total"] == 2   # the internal assert must not trip
+    card_b = next(c for bucket in model["buckets"]
+                  for c in bucket["clis"] if c["slug"] == "b")
+    assert card_b["health_status"] == "not_standalone"
+    assert card_b["health_glyph"]   # a glyph exists for it
 
 
 def test_incident_edges_match_from_and_to_separately(monkeypatch):
@@ -108,6 +127,7 @@ def test_empty_input_returns_zero_summary_and_no_buckets(monkeypatch):
         "unhealthy": 0,
         "stale": 0,
         "unknown": 0,
+        "not_standalone": 0,
         "version": "1.2.0",
     }
     assert model["buckets"] == []

@@ -3,7 +3,7 @@ from rich.console import Console
 from rich.table import Table
 
 _HEALTH_STYLE = {"healthy": "green", "unhealthy": "red",
-                 "stale": "yellow", "unknown": "dim"}
+                 "stale": "yellow", "unknown": "dim", "not_standalone": "dim cyan"}
 
 
 def render_overview(clis: list[dict], graph: list[dict], *, console=None) -> None:

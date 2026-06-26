@@ -3,13 +3,14 @@ from pathlib import Path
 import tomllib
 
 
-_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown"}
+_CANON_HEALTH = {"healthy", "unhealthy", "stale", "unknown", "not_standalone"}
 _UNGROUPED = "(ungrouped)"
 _HEALTH_GLYPHS = {
     "healthy": "\u25cf",
     "unhealthy": "\u25b2",
     "stale": "\u25c6",
     "unknown": "\u25cb",
+    "not_standalone": "\u25cc",   # dotted circle: present-but-not-a-standalone-CLI
 }
 
 
@@ -51,6 +52,7 @@ def build_overview_model(rows) -> dict:
         "unhealthy": 0,
         "stale": 0,
         "unknown": 0,
+        "not_standalone": 0,
         "version": _package_version(),
     }
     buckets = {}
@@ -85,7 +87,8 @@ def build_overview_model(rows) -> dict:
         ordered_names.append(_UNGROUPED)
 
     assert summary["total"] == (
-        summary["healthy"] + summary["unhealthy"] + summary["stale"] + summary["unknown"]
+        summary["healthy"] + summary["unhealthy"] + summary["stale"]
+        + summary["unknown"] + summary["not_standalone"]
     )
 
     return {
