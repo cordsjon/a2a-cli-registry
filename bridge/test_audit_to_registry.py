@@ -91,3 +91,39 @@ def test_not_standalone_flag_round_trips(tmp_path):
     p.write_text(json.dumps(feed), encoding="utf-8")
     records = CliAuditSource(str(p)).discover()
     assert records[0].not_standalone is True
+
+
+def test_subapp_record_flagged_not_standalone(tmp_path):
+    """audit_record_to_cli stamps not_standalone:true for a real sub-app file."""
+    import textwrap
+
+    f = tmp_path / "sub_commands.py"
+    f.write_text(textwrap.dedent("""
+        import typer
+        app = typer.Typer(name="sub")
+        @app.command()
+        def go(): ...
+    """), encoding="utf-8")
+
+    rec = {"final_class": "PASS", "file": str(f), "project": "p"}
+    entry = audit_record_to_cli(rec)
+    assert entry is not None
+    assert entry.get("not_standalone") is True
+
+
+def test_real_cli_not_flagged(tmp_path):
+    """A standalone argparse CLI is NOT flagged."""
+    import textwrap
+
+    f = tmp_path / "real.py"
+    f.write_text(textwrap.dedent("""
+        import argparse
+        def main():
+            argparse.ArgumentParser().parse_args()
+        if __name__ == "__main__":
+            main()
+    """), encoding="utf-8")
+
+    rec = {"final_class": "PASS", "file": str(f), "project": "p"}
+    entry = audit_record_to_cli(rec)
+    assert "not_standalone" not in entry or entry["not_standalone"] is False
