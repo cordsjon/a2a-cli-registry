@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Callable
 from core.catalog import queries
+from core.playbooks import queries as playbook_queries
+from core.playbooks import resolve as playbook_resolve
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,17 @@ OPS = [
            "goal_inputs": _STR_ARRAY, "goal_outputs": _STR_ARRAY,
            "allow_side_effects": _STR_ARRAY},
         "required": ["goal_inputs", "goal_outputs"]}),
+    Op("list_playbooks", playbook_queries.list_playbooks,
+       {"type": "object", "properties": {"query": {"type": "string"}}}),
+    Op("suggest_playbook", playbook_queries.suggest_playbook,
+       {"type": "object",
+        "properties": {"goal": {"type": "string"},
+                       "limit": {"type": "integer"}},
+        "required": ["goal"]}),
+    Op("resolve_playbook", playbook_resolve.resolve_playbook,
+       {"type": "object",
+        "properties": {"slug": {"type": "string"}},
+        "required": ["slug"]}),
 ]
 
 
