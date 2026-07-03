@@ -24,10 +24,6 @@ _NAME_HEURISTICS = {
     "json": "json",
 }
 
-_OUTPUT_FLAG_PATTERNS = {
-    "output", "dest", "target", "out",
-}
-
 _INTENT_VOCAB = [
     "build", "extract", "package", "publish", "download", "convert",
     "analyze", "export", "sync", "validate", "generate", "transform",
@@ -161,41 +157,42 @@ def extract_intent_tags(slug: str, description: str, source: str) -> list[str]:
     return [tag for tag in _INTENT_VOCAB if tag in haystack]
 
 
-def _is_output_flag(attr_name: str) -> bool:
-    """Check if an attribute name matches common output-flag conventions.
-    E.g. --output-file, --dest, --output-json, --target-dir should all be
-    treated as outputs, not inputs, regardless of containing "file" or "path"."""
-    normalized = attr_name.replace("_", "-").lower()
-    for pattern in _OUTPUT_FLAG_PATTERNS:
-        if pattern in normalized:
-            return True
-    return False
+def _declared_arg_attr_name(node: ast.Call) -> str | None:
+    """Normalize an add_argument(...) call's flag string the way argparse
+    would derive the destination attribute: strip leading dashes, replace
+    '-' with '_'. E.g. '--output-file' -> 'output_file'."""
+    arg_name = _first_str_arg(node)
+    if not arg_name:
+        return None
+    return arg_name.lstrip("-").replace("-", "_")
 
 
 def _writes_same_path_as_input(tree: ast.AST) -> bool:
-    """True only if a variable that was assigned from an input-arg attribute
-    (e.g. args.file) is later opened/written in a 'w'/'a' mode -- i.e. the
-    same path read as input is reopened for writing (in-place modification).
-    Conservative: only matches the args.<attr> -> open(args.<attr>, 'w') shape.
+    """Structural (declaration-count) rule, not name vocabulary:
 
-    Only considers attributes that match input name heuristics (file, input, path, etc.)
-    AND do NOT match output-flag conventions (output, dest, target, out).
-    This avoids false positives with --output-file or similar output-only flags.
+    If the CLI declares EXACTLY ONE argparse argument overall, and that
+    argument's args.<attr> is opened in write/append mode, this is an
+    in-place tool (it's the CLI's only path -- reading and rewriting it
+    is definitionally in-place) -> True.
+
+    If the CLI declares TWO OR MORE arguments, any args.<attr> write is
+    treated as writing to a distinct output arg, not an in-place rewrite
+    of the input -> False, regardless of what either flag is named.
+
+    This cannot be bypassed by flag-name vocabulary (e.g. --result-path
+    as an output, or --target-file as the sole in-place arg) because it
+    never inspects the name content -- only the declaration count.
     """
-    # Collect args attributes that match input heuristics, excluding output flags
-    read_paths = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "args":
-            attr_name = node.attr
-            # Exclude output-flag patterns first (takes precedence)
-            if _is_output_flag(attr_name):
-                continue
-            # Only consider this a "read path" if the attribute name suggests it's an input
-            if _arg_name_to_key(f"--{attr_name}"):
-                read_paths.add(attr_name)
+    declared_attrs: list[str] = []
+    for node in _walk_add_argument_calls(tree):
+        attr = _declared_arg_attr_name(node)
+        if attr and attr not in declared_attrs:
+            declared_attrs.append(attr)
 
-    if not read_paths:
+    if len(declared_attrs) != 1:
         return False
+
+    sole_attr = declared_attrs[0]
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
@@ -209,7 +206,7 @@ def _writes_same_path_as_input(tree: ast.AST) -> bool:
             if not mode_ok:
                 continue
             if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "args":
-                if target.attr in read_paths:
+                if target.attr == sole_attr:
                     return True
     return False
 

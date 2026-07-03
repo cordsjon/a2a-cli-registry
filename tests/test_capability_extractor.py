@@ -192,6 +192,41 @@ with open(args.output_file, "w") as f:
     assert infer_side_effect(source) == "none"
 
 
+def test_side_effect_new_output_file_regardless_of_name_vocabulary():
+    # Two declared arguments -- output flag name ("--result-path") happens to
+    # contain an input-heuristic substring ("path") and no denylist word.
+    # Must still be "none": declaration COUNT (2 args), not name content, is
+    # what makes this a converter, not an in-place tool.
+    source = '''
+import argparse
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("--in", type=Path)
+p.add_argument("--result-path", type=Path)
+args = p.parse_args()
+with open(args.result_path, "w") as f:
+    f.write("converted")
+'''
+    assert infer_side_effect(source) == "none"
+
+
+def test_side_effect_writes_fs_regardless_of_name_vocabulary():
+    # Exactly ONE declared argument -- name ("--target-file") happens to contain
+    # a word that would have been in the old deny-list ("target"). Must still be
+    # "writes-fs": it's the CLI's only path, and it's opened for writing --
+    # definitionally in-place, regardless of what the flag is called.
+    source = '''
+import argparse
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("--target-file", type=Path)
+args = p.parse_args()
+with open(args.target_file, "w") as f:
+    f.write("formatted")
+'''
+    assert infer_side_effect(source) == "writes-fs"
+
+
 def test_side_effect_none_when_neither():
     source = '''
 def add(a, b):
