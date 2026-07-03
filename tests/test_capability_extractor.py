@@ -287,3 +287,78 @@ def test_extract_capability_empty_source_all_empty():
     assert cap["output_types"] == []
     assert cap["intent_tags"] == []
     assert cap["side_effect"] == "none"
+
+
+def test_click_option_path():
+    source = '''
+import click
+
+@click.command()
+@click.option("--out", type=click.Path())
+def main(out):
+    pass
+'''
+    assert "path" in extract_inputs(source)
+
+
+def test_typer_command_path_param():
+    source = '''
+import typer
+from pathlib import Path
+
+app = typer.Typer()
+
+@app.command()
+def main(path: Path):
+    pass
+'''
+    assert "path" in extract_inputs(source)
+
+
+def test_typer_command_int_param():
+    source = '''
+import typer
+
+app = typer.Typer()
+
+@app.command()
+def main(count: int):
+    pass
+'''
+    assert "int" in extract_inputs(source)
+
+
+def test_typer_option_default():
+    source = '''
+import typer
+
+app = typer.Typer()
+
+@app.command()
+def main(name: str = typer.Option(...)):
+    pass
+'''
+    assert "str" in extract_inputs(source)
+
+
+def test_typer_only_no_argparse_click_signal_extractor_still_finds_parser():
+    # Full Typer CLI with zero argparse/click markers -- this is the 72-CLI
+    # Typer-only gap the spec calls out. Extractor must find inputs (not
+    # empty), so backfill_capabilities does NOT route this to LLM fallback.
+    source = '''
+import typer
+from pathlib import Path
+
+app = typer.Typer()
+
+@app.command()
+def convert(input_file: Path, output_file: Path):
+    """Convert input to output."""
+    pass
+
+if __name__ == "__main__":
+    app()
+'''
+    inputs = extract_inputs(source)
+    assert inputs, "Typer-only CLI must not extract to empty input_types"
+    assert "path" in inputs

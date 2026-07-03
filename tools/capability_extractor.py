@@ -69,6 +69,34 @@ def _walk_add_argument_calls(tree: ast.AST):
             yield node
 
 
+def _click_option_type(node: ast.Call) -> str | None:
+    for kw in node.keywords:
+        if kw.arg == "type" and isinstance(kw.value, ast.Call):
+            if isinstance(kw.value.func, ast.Attribute) and kw.value.func.attr == "Path":
+                return "path"
+        if kw.arg == "type" and isinstance(kw.value, ast.Name) and kw.value.id in _TYPE_MAP:
+            return _TYPE_MAP[kw.value.id]
+    return None
+
+
+def _annotation_to_type(annotation: ast.expr | None) -> str | None:
+    if annotation is None:
+        return None
+    if isinstance(annotation, ast.Name) and annotation.id in _TYPE_MAP:
+        return _TYPE_MAP[annotation.id]
+    if isinstance(annotation, ast.Attribute) and annotation.attr in _TYPE_MAP:
+        return _TYPE_MAP[annotation.attr]
+    return None
+
+
+def _is_typer_command_function(node: ast.FunctionDef) -> bool:
+    for deco in node.decorator_list:
+        target = deco.func if isinstance(deco, ast.Call) else deco
+        if isinstance(target, ast.Attribute) and target.attr == "command":
+            return True
+    return False
+
+
 def extract_inputs(source: str) -> list[str]:
     if not source.strip():
         return []
@@ -79,6 +107,10 @@ def extract_inputs(source: str) -> list[str]:
 
     found: list[str] = []
     has_any_arg = False
+
+    # argparse (incl. aliased import + subparsers, walked via ast.walk already
+    # covers subparser add_argument calls since they're still Call/Attribute
+    # nodes with .attr == "add_argument" anywhere in the tree)
     for node in _walk_add_argument_calls(tree):
         has_any_arg = True
         arg_name = _first_str_arg(node)
@@ -93,9 +125,33 @@ def extract_inputs(source: str) -> list[str]:
                 continue
         found.append("str")
 
+    # click: @click.option(...) / @click.argument(...) decorators
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            for deco in node.decorator_list:
+                if not isinstance(deco, ast.Call):
+                    continue
+                target = deco.func
+                if isinstance(target, ast.Attribute) and target.attr in ("option", "argument"):
+                    has_any_arg = True
+                    typed = _click_option_type(deco)
+                    if typed:
+                        found.append(typed)
+                        continue
+                    arg_name = _first_str_arg(deco)
+                    heuristic = _arg_name_to_key(arg_name) if arg_name else None
+                    found.append(heuristic or "str")
+
+    # Typer: @app.command() function parameters, by annotation or typer.Option/Argument default
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and _is_typer_command_function(node):
+            for arg in node.args.args:
+                has_any_arg = True
+                typed = _annotation_to_type(arg.annotation)
+                found.append(typed or "str")
+
     if not has_any_arg:
         return []
-    # de-dup, preserve first-seen order
     seen = []
     for t in found:
         if t not in seen:
