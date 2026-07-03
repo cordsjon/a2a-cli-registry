@@ -24,6 +24,10 @@ _NAME_HEURISTICS = {
     "json": "json",
 }
 
+_OUTPUT_FLAG_PATTERNS = {
+    "output", "dest", "target", "out",
+}
+
 _INTENT_VOCAB = [
     "build", "extract", "package", "publish", "download", "convert",
     "analyze", "export", "sync", "validate", "generate", "transform",
@@ -157,6 +161,17 @@ def extract_intent_tags(slug: str, description: str, source: str) -> list[str]:
     return [tag for tag in _INTENT_VOCAB if tag in haystack]
 
 
+def _is_output_flag(attr_name: str) -> bool:
+    """Check if an attribute name matches common output-flag conventions.
+    E.g. --output-file, --dest, --output-json, --target-dir should all be
+    treated as outputs, not inputs, regardless of containing "file" or "path"."""
+    normalized = attr_name.replace("_", "-").lower()
+    for pattern in _OUTPUT_FLAG_PATTERNS:
+        if pattern in normalized:
+            return True
+    return False
+
+
 def _writes_same_path_as_input(tree: ast.AST) -> bool:
     """True only if a variable that was assigned from an input-arg attribute
     (e.g. args.file) is later opened/written in a 'w'/'a' mode -- i.e. the
@@ -164,13 +179,17 @@ def _writes_same_path_as_input(tree: ast.AST) -> bool:
     Conservative: only matches the args.<attr> -> open(args.<attr>, 'w') shape.
 
     Only considers attributes that match input name heuristics (file, input, path, etc.)
-    to avoid false positives with output-only arguments (--out, --output, etc.).
+    AND do NOT match output-flag conventions (output, dest, target, out).
+    This avoids false positives with --output-file or similar output-only flags.
     """
-    # Collect args attributes that match input heuristics
+    # Collect args attributes that match input heuristics, excluding output flags
     read_paths = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "args":
             attr_name = node.attr
+            # Exclude output-flag patterns first (takes precedence)
+            if _is_output_flag(attr_name):
+                continue
             # Only consider this a "read path" if the attribute name suggests it's an input
             if _arg_name_to_key(f"--{attr_name}"):
                 read_paths.add(attr_name)

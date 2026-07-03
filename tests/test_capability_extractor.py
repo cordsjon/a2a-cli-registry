@@ -174,6 +174,24 @@ with open(args.out, "w") as f:
     assert infer_side_effect(source) == "none"
 
 
+def test_side_effect_output_file_flag_name_not_misclassified_as_writes_fs():
+    """Realistic flag name containing 'file' (an input-heuristic substring) that is
+    actually an OUTPUT -- must not be misclassified as writes-fs.
+    Regression test for bug where --output-file was treated as input due to
+    substring "file" matching input heuristics."""
+    source = '''
+import argparse
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("--in", type=Path)
+p.add_argument("--output-file", type=Path)
+args = p.parse_args()
+with open(args.output_file, "w") as f:
+    f.write("converted")
+'''
+    assert infer_side_effect(source) == "none"
+
+
 def test_side_effect_none_when_neither():
     source = '''
 def add(a, b):
