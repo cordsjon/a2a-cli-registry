@@ -41,3 +41,19 @@ def test_partial_model_response_missing_keys_defaults_safely(monkeypatch):
     assert result["output_types"] == []
     assert result["intent_tags"] == []
     assert result["side_effect"] == "unknown"
+
+
+def test_invalid_side_effect_clamped_to_unknown(monkeypatch):
+    def fake_router(prompt, slug, timeout=30):
+        return {
+            "input_types": ["path"],
+            "output_types": ["json"],
+            "intent_tags": ["convert"],
+            "side_effect": "deletes-everything",  # invalid value
+        }
+    monkeypatch.setattr(fallback, "_call_router", fake_router)
+    result = fallback.infer_capability_llm("mytool", "desc", "src")
+    assert result["side_effect"] == "unknown"
+    assert result["input_types"] == ["path"]
+    assert result["output_types"] == ["json"]
+    assert result["intent_tags"] == ["convert"]

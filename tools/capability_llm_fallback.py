@@ -75,11 +75,14 @@ def _extract_json(content: str) -> dict | None:
 def infer_capability_llm(slug: str, description: str, source: str) -> dict:
     context = _extract_context(source) if source else description
     result = _call_router(context, slug) or {}
+    se = result.get("side_effect", "unknown")
+    if se not in _SIDE_EFFECTS:
+        se = "unknown"
     return {
-        "input_types": result.get("input_types") or [],
-        "output_types": result.get("output_types") or [],
-        "intent_tags": result.get("intent_tags") or [],
-        "side_effect": result.get("side_effect") or "unknown",
+        "input_types": [str(t) for t in result.get("input_types", []) if t],
+        "output_types": [str(t) for t in result.get("output_types", []) if t],
+        "intent_tags": [str(t) for t in result.get("intent_tags", []) if t],
+        "side_effect": se,
         "confidence": "inferred",
         "provenance": "llm",
     }
