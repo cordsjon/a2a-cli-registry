@@ -33,6 +33,14 @@ _NETWORK_MODULES = {"httpx", "requests", "urllib", "socket", "aiohttp"}
 
 _FS_WRITE_CALLS = {"write_text", "write", "dump"}
 
+_SERVER_MODULES = {"http.server", "socketserver"}
+
+_SERVER_BIND_METHODS = {"serve_forever", "bind", "listen"}
+
+_DB_WRITE_METHODS = {"execute", "executemany", "commit"}
+
+_FS_WRITE_METHODS = {"write_text", "write_bytes"}
+
 
 def _arg_name_to_key(arg_name: str) -> str | None:
     """'--input-file' -> 'input-file' -> matches '--input-file' or 'file' etc."""
@@ -350,6 +358,99 @@ def _writes_same_path_as_input(tree: ast.AST) -> bool:
     return False
 
 
+def _binds_or_serves(tree: ast.AST) -> bool:
+    """True if the source imports a server module (http.server, socketserver)
+    or calls a method named serve_forever/bind/listen on any object -- covers
+    the server-bind side of network side effects (client-side network module
+    imports are already covered separately by the _NETWORK_MODULES check)."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in _SERVER_MODULES:
+            return True
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in _SERVER_MODULES:
+                    return True
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _SERVER_BIND_METHODS
+        ):
+            return True
+    return False
+
+
+def _declared_output_eligible_attrs(tree: ast.AST) -> set[str]:
+    """Set of argparse destination attrs (args.<attr>) that belong to a
+    parser group with 2+ total declared arguments -- i.e. attrs that are
+    legitimate declared *output* arguments of a converter-style CLI, using
+    the SAME declaration-COUNT convention as _writes_same_path_as_input
+    (declaration count, not name content, is what makes an arg a distinct
+    output rather than an in-place rewrite target). Writes to these attrs
+    are not a new-style generic writes-fs signal on their own -- they're
+    already correctly handled (or not) by _writes_same_path_as_input."""
+    attrs: set[str] = set()
+    for group in _group_add_argument_calls_by_parser(tree):
+        declared_attrs: list[str] = []
+        for node in group:
+            attr = _declared_arg_attr_name(node)
+            if attr and attr not in declared_attrs:
+                declared_attrs.append(attr)
+        if len(declared_attrs) >= 2:
+            attrs.update(declared_attrs)
+    return attrs
+
+
+def _writes_new_file_or_db(tree: ast.AST) -> bool:
+    """True if the source, anywhere in a function body, calls a DB-API-2.0
+    style write method (execute/executemany/commit) on any object -- this
+    branch fires unconditionally, no output-argument ambiguity applies since
+    DB writes have no analogous "declared output arg" structure -- or opens a
+    file in write/append mode (open(..., "w"/"a"/"wb"/"ab"), or
+    Path(...).write_text/.write_bytes) where the target is NOT a declared
+    output argument of a 2+-arg parser group (see
+    _declared_output_eligible_attrs): writes to args.<attr> for such an attr
+    are already correctly classified (or not) by _writes_same_path_as_input
+    and must not be re-flagged here, otherwise every genuine converter CLI
+    (distinct --in/--out args) would be misclassified as writes-fs. This is a
+    broader, generic check -- callers must run the narrower
+    _writes_same_path_as_input rule first and only fall back to this one if
+    that returns False."""
+    output_eligible_attrs = _declared_output_eligible_attrs(tree)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in _DB_WRITE_METHODS:
+                return True
+            if node.func.attr in _FS_WRITE_METHODS:
+                target = node.func.value
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "args"
+                    and target.attr in output_eligible_attrs
+                ):
+                    continue
+                return True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
+            mode_ok = False
+            for kw in list(node.keywords) + ([ast.keyword(arg=None, value=node.args[1])] if len(node.args) > 1 else []):
+                mode = kw.value
+                if isinstance(mode, ast.Constant) and isinstance(mode.value, str) and any(m in mode.value for m in ("w", "a")):
+                    mode_ok = True
+            if not mode_ok:
+                continue
+            target = node.args[0] if node.args else None
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "args"
+                and target.attr in output_eligible_attrs
+            ):
+                continue
+            return True
+    return False
+
+
 def infer_side_effect(source: str) -> str:
     if not source.strip():
         return "none"
@@ -369,7 +470,13 @@ def infer_side_effect(source: str) -> str:
     if imported_modules & _NETWORK_MODULES:
         return "network"
 
+    if _binds_or_serves(tree):
+        return "network"
+
     if _writes_same_path_as_input(tree):
+        return "writes-fs"
+
+    if _writes_new_file_or_db(tree):
         return "writes-fs"
 
     return "none"

@@ -403,3 +403,100 @@ def main(count: Annotated[int, typer.Option()]):
     pass
 '''
     assert "int" in extract_inputs(source)
+
+
+def test_side_effect_writes_fs_for_generic_db_execute_no_output_arg():
+    source = '''
+import argparse
+import sqlite3
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--role", required=True)
+    args = p.parse_args()
+    conn = sqlite3.connect("syllabus.db")
+    conn.execute("INSERT INTO topic_role (role) VALUES (?)", (args.role,))
+    conn.commit()
+'''
+    assert infer_side_effect(source) == "writes-fs"
+
+
+def test_side_effect_network_for_http_server_serve_forever():
+    source = '''
+import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        pass
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--port", type=int, default=8080)
+    args = p.parse_args()
+    server = ThreadingHTTPServer(("", args.port), Handler)
+    server.serve_forever()
+'''
+    assert infer_side_effect(source) == "network"
+
+
+def test_side_effect_writes_fs_for_generic_file_write_non_input_path():
+    source = '''
+import argparse
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--role")
+    p.add_argument("--topic")
+    args = p.parse_args()
+    with open("results.csv", "a") as f:
+        f.write(f"{args.role},{args.topic}\\n")
+'''
+    assert infer_side_effect(source) == "writes-fs"
+
+
+def test_side_effect_none_still_correct_for_genuinely_pure_function():
+    source = '''
+import argparse
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--value", type=int)
+    args = p.parse_args()
+    print(args.value * 2)
+'''
+    assert infer_side_effect(source) == "none"
+
+
+def test_side_effect_existing_inplace_rewrite_rule_still_fires_first():
+    """Regression: the existing narrow in-place-rewrite rule (Task 1, 3
+    review rounds) must still take priority and still work exactly as
+    before -- this fix must not break it."""
+    source = '''
+import argparse
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--file", required=True)
+    args = p.parse_args()
+    content = open(args.file).read()
+    with open(args.file, "w") as f:
+        f.write(content.strip())
+'''
+    assert infer_side_effect(source) == "writes-fs"
+
+
+def test_side_effect_existing_network_import_rule_still_fires():
+    """Regression: existing client-network-module import detection must
+    still work exactly as before."""
+    source = '''
+import argparse
+import requests
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--url", required=True)
+    args = p.parse_args()
+    requests.get(args.url)
+'''
+    assert infer_side_effect(source) == "network"
