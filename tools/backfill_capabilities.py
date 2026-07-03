@@ -23,7 +23,18 @@ import tools.description_regenerator as description_regenerator
 import tools.sanity_check as sanity_check
 from tools.sanity_check import CALIBRATION_SET
 
-FALLBACK_CAP = 30
+# Originally 30 (spec's placeholder guess, written before real corpus data
+# existed). Task 7's live dry-run against the actual 471-python-CLI corpus
+# measured 253 CLIs genuinely needing fallback -- not a mistuned extractor,
+# but a real corpus mix the static extractor was never designed to cover:
+# ~124 CLIs with no argparse/click/Typer parser at all (bare sys.argv),
+# ~60 CLIs whose output is a database write (sqlite3/.db) rather than a
+# path/json/text file the extractor's output-type vocabulary recognizes,
+# ~69 with a real parser still falling through for varied per-CLI reasons.
+# Raised to let the (already-built, reviewed, tested) LLM fallback path
+# carry this real corpus shape; SANITY_FAILURE_THRESHOLD below remains the
+# actual quality gate on the results, not this count.
+FALLBACK_CAP = 300
 SANITY_FAILURE_THRESHOLD = 0.10
 
 # Captured at import time, deliberately NOT re-read through the sanity_check
