@@ -70,12 +70,27 @@ def _walk_add_argument_calls(tree: ast.AST):
 
 
 def _click_option_type(node: ast.Call) -> str | None:
+    # Mapping of click attribute names (INT, FLOAT, STRING) to types
+    _CLICK_ATTR_MAP = {
+        "INT": "int",
+        "FLOAT": "float",
+        "STRING": "str",
+    }
+
     for kw in node.keywords:
-        if kw.arg == "type" and isinstance(kw.value, ast.Call):
-            if isinstance(kw.value.func, ast.Attribute) and kw.value.func.attr == "Path":
-                return "path"
-        if kw.arg == "type" and isinstance(kw.value, ast.Name) and kw.value.id in _TYPE_MAP:
-            return _TYPE_MAP[kw.value.id]
+        if kw.arg == "type":
+            # Handle type=click.Path() call
+            if isinstance(kw.value, ast.Call):
+                if isinstance(kw.value.func, ast.Attribute) and kw.value.func.attr == "Path":
+                    return "path"
+            # Handle type=int / type=str / type=float (bare names)
+            if isinstance(kw.value, ast.Name) and kw.value.id in _TYPE_MAP:
+                return _TYPE_MAP[kw.value.id]
+            # Handle type=click.INT / type=click.FLOAT / type=click.STRING (attribute form)
+            if isinstance(kw.value, ast.Attribute):
+                if isinstance(kw.value.value, ast.Name) and kw.value.value.id == "click":
+                    if kw.value.attr in _CLICK_ATTR_MAP:
+                        return _CLICK_ATTR_MAP[kw.value.attr]
     return None
 
 
@@ -86,6 +101,29 @@ def _annotation_to_type(annotation: ast.expr | None) -> str | None:
         return _TYPE_MAP[annotation.id]
     if isinstance(annotation, ast.Attribute) and annotation.attr in _TYPE_MAP:
         return _TYPE_MAP[annotation.attr]
+    # Handle Annotated[X, ...] subscript annotations
+    if isinstance(annotation, ast.Subscript):
+        # Check if the subscript is Annotated (either bare name or typing.Annotated)
+        is_annotated = False
+        if isinstance(annotation.value, ast.Name) and annotation.value.id == "Annotated":
+            is_annotated = True
+        elif isinstance(annotation.value, ast.Attribute) and annotation.value.attr == "Annotated":
+            is_annotated = True
+
+        if is_annotated:
+            # Extract the first element of the subscript (the actual type)
+            # In Python 3.9+ AST, the slice for Annotated[X, Y] is a Tuple with elts=[X, Y]
+            # For single-element Annotated[X], it might be just X
+            first_type = None
+            if isinstance(annotation.slice, ast.Tuple) and annotation.slice.elts:
+                first_type = annotation.slice.elts[0]
+            else:
+                # Single-element subscript (unusual but valid)
+                first_type = annotation.slice
+
+            # Recursively resolve the extracted type
+            if first_type:
+                return _annotation_to_type(first_type)
     return None
 
 

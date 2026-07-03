@@ -362,3 +362,44 @@ if __name__ == "__main__":
     inputs = extract_inputs(source)
     assert inputs, "Typer-only CLI must not extract to empty input_types"
     assert "path" in inputs
+
+
+def test_click_option_int_attribute_form():
+    source = '''
+import click
+
+@click.command()
+@click.option("--n", type=click.INT)
+def main(n):
+    pass
+'''
+    assert "int" in extract_inputs(source)
+
+
+def test_typer_annotated_path_param():
+    source = '''
+import typer
+from pathlib import Path
+from typing import Annotated
+
+app = typer.Typer()
+
+@app.command()
+def main(path: Annotated[Path, typer.Argument()]):
+    pass
+'''
+    assert "path" in extract_inputs(source)
+
+
+def test_typer_annotated_int_param():
+    source = '''
+import typer
+from typing import Annotated
+
+app = typer.Typer()
+
+@app.command()
+def main(count: Annotated[int, typer.Option()]):
+    pass
+'''
+    assert "int" in extract_inputs(source)
