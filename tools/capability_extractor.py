@@ -167,47 +167,92 @@ def _declared_arg_attr_name(node: ast.Call) -> str | None:
     return arg_name.lstrip("-").replace("-", "_")
 
 
-def _writes_same_path_as_input(tree: ast.AST) -> bool:
-    """Structural (declaration-count) rule, not name vocabulary:
+def _parser_var_group_key(node: ast.Call) -> str | None:
+    """Given an add_argument(...) Call node, return an identifier for which
+    parser-like variable it was called on (the ast.Name id of node.func.value),
+    e.g. 'p' for `p.add_argument(...)` or 'format_p' for `format_p.add_argument(...)`.
 
-    If the CLI declares EXACTLY ONE argparse argument overall, and that
-    argument's args.<attr> is opened in write/append mode, this is an
-    in-place tool (it's the CLI's only path -- reading and rewriting it
-    is definitionally in-place) -> True.
+    Returns None if the call target isn't a plain Name (can't be grouped --
+    treated as its own singleton group by the caller so it doesn't silently
+    vanish from the count)."""
+    if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+        return node.func.value.id
+    return None
 
-    If the CLI declares TWO OR MORE arguments, any args.<attr> write is
-    treated as writing to a distinct output arg, not an in-place rewrite
-    of the input -> False, regardless of what either flag is named.
 
-    This cannot be bypassed by flag-name vocabulary (e.g. --result-path
-    as an output, or --target-file as the sole in-place arg) because it
-    never inspects the name content -- only the declaration count.
+def _group_add_argument_calls_by_parser(tree: ast.AST) -> list[list[ast.Call]]:
+    """Group all add_argument(...) calls by which parser variable they were
+    called on, so that subparser-scoped declarations don't contaminate their
+    siblings' or the top-level parser's counts.
+
+    For a CLI without add_subparsers(), every add_argument call is chained off
+    the single top-level parser variable, so this naturally collapses to one
+    group -- identical behavior to the old ungrouped/global count.
+
+    For a CLI with add_subparsers(), each `<subparsers>.add_parser("name")`
+    call returns a distinct parser object typically assigned to its own
+    variable (e.g. `format_p = sub.add_parser("format")`); add_argument calls
+    chained off that variable belong only to that subcommand's group.
     """
-    declared_attrs: list[str] = []
+    groups: dict[str, list[ast.Call]] = {}
+    ungrouped: list[list[ast.Call]] = []
     for node in _walk_add_argument_calls(tree):
-        attr = _declared_arg_attr_name(node)
-        if attr and attr not in declared_attrs:
-            declared_attrs.append(attr)
+        key = _parser_var_group_key(node)
+        if key is None:
+            ungrouped.append([node])
+            continue
+        groups.setdefault(key, []).append(node)
+    return list(groups.values()) + ungrouped
 
-    if len(declared_attrs) != 1:
-        return False
 
-    sole_attr = declared_attrs[0]
+def _writes_same_path_as_input(tree: ast.AST) -> bool:
+    """Structural (declaration-count) rule, not name vocabulary, scoped PER
+    PARSER GROUP (top-level parser, or each subcommand's subparser) so that
+    sibling subcommands' argument counts don't contaminate one another:
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
-            if not node.args:
-                continue
-            target = node.args[0]
-            mode_ok = False
-            for kw in list(node.keywords) + ([ast.keyword(arg=None, value=node.args[1])] if len(node.args) > 1 else []):
-                if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str) and any(m in kw.value.value for m in ("w", "a")):
-                    mode_ok = True
-            if not mode_ok:
-                continue
-            if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "args":
-                if target.attr == sole_attr:
-                    return True
+    For each parser group, if it declares EXACTLY ONE argparse argument, and
+    that argument's args.<attr> is opened in write/append mode, that group is
+    an in-place tool (it's that (sub)command's only path -- reading and
+    rewriting it is definitionally in-place) -> the whole CLI is "writes-fs"
+    (capability extraction treats side_effect as a whole-CLI property: if any
+    subcommand can do in-place modification, the CLI as a whole is capable of
+    it).
+
+    If a group declares TWO OR MORE arguments, any args.<attr> write within
+    that group is treated as writing to a distinct output arg, not an
+    in-place rewrite of the input -- that group contributes nothing, but it
+    no longer suppresses a sibling group's genuine in-place classification.
+
+    This cannot be bypassed by flag-name vocabulary (e.g. --result-path as an
+    output, or --target-file as the sole in-place arg) because it never
+    inspects the name content -- only the per-group declaration count.
+    """
+    for group in _group_add_argument_calls_by_parser(tree):
+        declared_attrs: list[str] = []
+        for node in group:
+            attr = _declared_arg_attr_name(node)
+            if attr and attr not in declared_attrs:
+                declared_attrs.append(attr)
+
+        if len(declared_attrs) != 1:
+            continue
+
+        sole_attr = declared_attrs[0]
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
+                if not node.args:
+                    continue
+                target = node.args[0]
+                mode_ok = False
+                for kw in list(node.keywords) + ([ast.keyword(arg=None, value=node.args[1])] if len(node.args) > 1 else []):
+                    if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str) and any(m in kw.value.value for m in ("w", "a")):
+                        mode_ok = True
+                if not mode_ok:
+                    continue
+                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "args":
+                    if target.attr == sole_attr:
+                        return True
     return False
 
 

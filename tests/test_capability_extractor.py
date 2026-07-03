@@ -251,6 +251,36 @@ p.add_argument("--in", type=Path)
     assert cap["provenance"] == "static"
 
 
+def test_side_effect_writes_fs_scoped_per_subcommand_not_contaminated_by_siblings():
+    # 'format' subcommand has exactly ONE argument, rewritten in place (writes-fs
+    # for that subcommand). 'convert' subcommand has TWO arguments, a genuine
+    # converter (none for that subcommand). The whole-CLI side_effect must not
+    # let 'convert's argument count leak into 'format's classification --
+    # 'format' alone is a genuine in-place tool and that must be detected.
+    source = '''
+import argparse
+from pathlib import Path
+p = argparse.ArgumentParser()
+sub = p.add_subparsers()
+
+format_p = sub.add_parser("format")
+format_p.add_argument("--file", type=Path)
+
+convert_p = sub.add_parser("convert")
+convert_p.add_argument("--src", type=Path)
+convert_p.add_argument("--dst", type=Path)
+
+args = p.parse_args()
+if args.command == "format":
+    with open(args.file, "w") as f:
+        f.write("formatted")
+else:
+    with open(args.dst, "w") as f:
+        f.write("converted")
+'''
+    assert infer_side_effect(source) == "writes-fs"
+
+
 def test_extract_capability_empty_source_all_empty():
     cap = extract_capability("myclitool", "", "")
     assert cap["input_types"] == []
