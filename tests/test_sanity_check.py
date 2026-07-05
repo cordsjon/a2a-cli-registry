@@ -70,3 +70,33 @@ def test_calibration_set_has_known_good_and_bad_cases():
     bads = [c for c in sanity.CALIBRATION_SET if not c["expected_ok"]]
     assert goods
     assert bads
+
+
+def test_malformed_router_output_retried_once(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky_router(prompt, slug, timeout=30):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None
+        return {"ok": True, "reason": "fine"}
+
+    monkeypatch.setattr(sanity, "_call_router", flaky_router)
+    result = sanity.check_row("x", "Converts CSV files to JSON.", {"input_types": ["path"]})
+    assert calls["n"] == 2
+    assert result["ok"] is True
+
+
+def test_malformed_router_output_fails_after_retry(monkeypatch):
+    monkeypatch.setattr(sanity, "_call_router", lambda prompt, slug, timeout=30: None)
+    result = sanity.check_row("x", "Converts CSV files to JSON.", {"input_types": ["path"]})
+    assert result["ok"] is False
+    assert "malformed" in result["reason"]
+
+
+def test_calibration_set_covers_noarg_and_binary_output_cases():
+    assert len(sanity.CALIBRATION_SET) >= 11
+    slugs = [c["slug"] for c in sanity.CALIBRATION_SET]
+    assert "noarg-seeder" in slugs
+    assert "pdf-report" in slugs
+    assert "db-seeder-mismatch" in slugs

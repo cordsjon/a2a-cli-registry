@@ -500,3 +500,26 @@ def main():
     requests.get(args.url)
 '''
     assert infer_side_effect(source) == "network"
+
+
+def test_intent_tags_corpus_verbs_seed_ingest_migrate():
+    assert "seed" in extract_intent_tags("seed_db", "Seeds a database from an XLSX syllabus file.", "")
+    assert "ingest" in extract_intent_tags("x", "Ingest the O*NET text database into backbone tables.", "")
+    assert "migrate" in extract_intent_tags("x", "Runs a database migration for one table.", "")
+
+
+def test_intent_tags_prefix_boundary_no_substring_false_positive():
+    # 'scan' must not fire from 'landscape'; 'seed' must not fire from 'proceeds'
+    tags = extract_intent_tags("x", "renders a landscape view of proceeds", "")
+    assert "scan" not in tags
+    assert "seed" not in tags
+
+
+def test_extract_outputs_library_save_call_is_path():
+    source = "def main(out):\n    prs.save(out)\n"
+    assert extract_outputs(source) == ["path"]
+
+
+def test_extract_outputs_savefig_is_path():
+    source = "def main(out):\n    plt.savefig(out)\n"
+    assert extract_outputs(source) == ["path"]

@@ -7,6 +7,7 @@ registry capability backfill.
 from __future__ import annotations
 
 import ast
+import re
 
 _TYPE_MAP = {
     "Path": "path",
@@ -27,6 +28,14 @@ _NAME_HEURISTICS = {
 _INTENT_VOCAB = [
     "build", "extract", "package", "publish", "download", "convert",
     "analyze", "export", "sync", "validate", "generate", "transform",
+    # Corpus verbs measured from the round-3 sanity failures: 90/215 failed
+    # rows had empty intent_tags because the original 12-verb vocabulary
+    # missed the registry's dominant seeder/ingester/migrator population.
+    "seed", "ingest", "migrate", "scan", "check", "report", "serve",
+    "fetch", "crawl", "insert", "update", "restore", "snapshot", "rotate",
+    "prune", "login", "verify", "render", "merge", "register", "embed",
+    "score", "translate", "enrich", "populate", "backfill", "capture",
+    "route", "configure", "repair", "reset", "queue", "format",
 ]
 
 _NETWORK_MODULES = {"httpx", "requests", "urllib", "socket", "aiohttp"}
@@ -225,6 +234,13 @@ def extract_outputs(source: str) -> list[str]:
             elif node.func.attr == "dump" and isinstance(node.func.value, ast.Name) and node.func.value.id == "json":
                 outputs.append("json")
                 outputs.append("path")
+            elif node.func.attr in ("save", "savefig"):
+                # Library binary writers (python-pptx prs.save, PIL im.save,
+                # matplotlib savefig, reportlab c.save, openpyxl wb.save):
+                # without this, the bare-print fallback below mislabels
+                # PDF/PPTX generators as output_types=["text"] (18 round-3
+                # sanity contradictions).
+                outputs.append("path")
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
             for kw in list(node.keywords) + ([ast.keyword(arg=None, value=node.args[1])] if len(node.args) > 1 else []):
                 mode = kw.value
@@ -256,7 +272,16 @@ def extract_outputs(source: str) -> list[str]:
 
 def extract_intent_tags(slug: str, description: str, source: str) -> list[str]:
     haystack = f"{slug} {description}".lower().replace("-", " ").replace("_", " ")
-    return [tag for tag in _INTENT_VOCAB if tag in haystack]
+    # Left word boundary only: "seed" matches "seeds"/"seeding" but not
+    # "proceeds"; bare substring matching would false-fire on embeddings
+    # like "scan" in "landscape". Tags ending in 'e' are matched on their
+    # stem so "migrate" catches "migration" and "generate" catches
+    # "generation".
+    return [
+        tag
+        for tag in _INTENT_VOCAB
+        if re.search(rf"\b{tag[:-1] if tag.endswith('e') else tag}", haystack)
+    ]
 
 
 def _declared_arg_attr_name(node: ast.Call) -> str | None:
