@@ -233,3 +233,64 @@ def test_no_module_imports_core_models_cli_for_reads():
             if isinstance(node, ast.ImportFrom) and node.module == "core.models":
                 names = {alias.name for alias in node.names}
                 assert "Cli" not in names, f"{path} imports core.models.Cli -- must use raw sqlite3"
+
+
+def test_repair_loop_recovers_sanity_failed_rows(drifted_db, monkeypatch, tmp_path):
+    """A row that fails the first sanity pass gets one judge-guided repair;
+    if the repaired row re-checks ok, the proposal and sanity result are
+    replaced. Rows the repairer can't fix stay failed."""
+    import tools.capability_repair as repair
+    import tools.sanity_check as sanity
+
+    _patch_pipeline(monkeypatch, sanity_ok=True)
+
+    def check_row(slug, description, capability):
+        if "REPAIRED" in description:
+            return {"ok": True, "reason": "repaired row is coherent"}
+        if slug == "csv2json":
+            return {"ok": False, "reason": "side_effect contradicts description"}
+        return {"ok": True, "reason": ""}
+
+    monkeypatch.setattr(sanity, "check_row", check_row)
+
+    def fake_repair(slug, description, capability, reason, source):
+        assert reason == "side_effect contradicts description"
+        return {
+            "slug": slug,
+            "description": f"REPAIRED {description}",
+            "capability": {**(capability or {}), "side_effect": "writes-fs",
+                           "confidence": "inferred", "provenance": "llm"},
+        }
+
+    monkeypatch.setattr(repair, "repair_row", fake_repair)
+
+    monkeypatch.chdir(tmp_path)
+    result = backfill.run_pipeline(drifted_db)
+
+    by_slug = {r["slug"]: r for r in result["sanity_results"]}
+    assert by_slug["csv2json"]["ok"] is True
+    props = {p["slug"]: p for p in result["proposals"]}
+    assert props["csv2json"]["description"].startswith("REPAIRED")
+    assert props["csv2json"]["capability"]["side_effect"] == "writes-fs"
+    assert result["summary"]["repaired_count"] == 1
+    assert result["summary"]["sanity_fail_count"] == 0
+
+
+def test_repair_loop_keeps_original_when_repair_fails(drifted_db, monkeypatch, tmp_path):
+    import tools.capability_repair as repair
+    import tools.sanity_check as sanity
+
+    _patch_pipeline(monkeypatch, sanity_ok=True)
+    monkeypatch.setattr(
+        sanity, "check_row",
+        lambda slug, description, capability: {"ok": slug != "csv2json", "reason": "bad"},
+    )
+    monkeypatch.setattr(repair, "repair_row", lambda *a: None)
+
+    monkeypatch.chdir(tmp_path)
+    result = backfill.run_pipeline(drifted_db)
+
+    by_slug = {r["slug"]: r for r in result["sanity_results"]}
+    assert by_slug["csv2json"]["ok"] is False
+    assert result["summary"]["repaired_count"] == 0
+    assert result["summary"]["sanity_fail_count"] == 1

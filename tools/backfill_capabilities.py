@@ -19,6 +19,7 @@ from pathlib import Path
 
 import tools.capability_extractor as capability_extractor
 import tools.capability_llm_fallback as capability_llm_fallback
+import tools.capability_repair as capability_repair
 import tools.description_regenerator as description_regenerator
 import tools.sanity_check as sanity_check
 from tools.sanity_check import CALIBRATION_SET
@@ -163,6 +164,31 @@ def run_pipeline(db_path: str) -> dict:
         result = sanity_check.check_row(p["slug"], p["description"], p["capability"] or {})
         sanity_results.append({"slug": p["slug"], **result})
 
+    # Judge-guided repair round: each failed row gets exactly one repair
+    # attempt using the judge's own rejection reason, then a re-check. Only
+    # a repaired row that PASSES the re-check replaces the original -- a
+    # failed repair leaves both the proposal and its failure untouched, so
+    # this loop can only lower the fail rate, never hide a failure.
+    repaired_count = 0
+    for i, r in enumerate(sanity_results):
+        if r["ok"]:
+            continue
+        p = proposals[i]
+        row = cli_rows[i]
+        source = _read_source(row["path"]) if row["lang"] == "python" else ""
+        repaired = capability_repair.repair_row(
+            p["slug"], p["description"], p["capability"], r["reason"], source
+        )
+        if repaired is None:
+            continue
+        recheck = sanity_check.check_row(
+            repaired["slug"], repaired["description"], repaired["capability"] or {}
+        )
+        if recheck["ok"]:
+            proposals[i] = repaired
+            sanity_results[i] = {"slug": p["slug"], **recheck}
+            repaired_count += 1
+
     fail_count = sum(1 for r in sanity_results if not r["ok"])
     fail_rate = fail_count / len(sanity_results) if sanity_results else 0.0
 
@@ -178,6 +204,7 @@ def run_pipeline(db_path: str) -> dict:
         "total_rows": len(cli_rows),
         "python_rows": sum(1 for r in cli_rows if r["lang"] == "python"),
         "fallback_count": fallback_count,
+        "repaired_count": repaired_count,
         "sanity_fail_count": fail_count,
         "sanity_fail_rate": fail_rate,
         "calibration_ok": calibration_ok,

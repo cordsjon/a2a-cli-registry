@@ -20,9 +20,16 @@ _SYSTEM = (
     "You are a strict reviewer. Given a CLI's description and its capability "
     "fields (input_types, output_types, intent_tags, side_effect), decide: can "
     "a reader tell what this CLI is for and how it fits into a pipeline? "
-    "Return ONLY a compact JSON object with keys: ok (boolean), reason "
-    "(short string). If ambiguous, return ok=false with a reason -- never "
-    "guess true."
+    "The type vocabulary is deliberately coarse (path/json/text/str/int/"
+    "float) -- do not fail a row merely because its types are coarse when "
+    "the description makes their meaning clear. A tool that takes no "
+    "command-line arguments legitimately has empty input_types. FAIL when "
+    "capability fields contradict the description (e.g. side_effect 'none' "
+    "on a tool that seeds a database), when the description is corrupted "
+    "or uninformative, or when the purpose stays unclear even with the "
+    "fields. Return ONLY a compact JSON object with keys: ok (boolean), "
+    "reason (short string). If genuinely ambiguous, return ok=false with a "
+    "reason -- never guess true."
 )
 
 
@@ -89,6 +96,11 @@ def check_row(slug: str, description: str, capability: dict) -> dict:
     )
     result = _call_router(prompt, slug)
     if not result or "ok" not in result or not isinstance(result["ok"], bool):
+        # One retry: a transient router hiccup is indistinguishable from a
+        # malformed judgment and must not condemn a good row (2 rows failed
+        # this way in round 3).
+        result = _call_router(prompt, slug)
+    if not result or "ok" not in result or not isinstance(result["ok"], bool):
         return {"ok": False, "reason": "ambiguous or malformed model output"}
     return {"ok": bool(result["ok"]), "reason": str(result.get("reason", ""))}
 
@@ -140,6 +152,28 @@ CALIBRATION_SET = [
         "slug": "vague1",
         "description": "does stuff",
         "capability": {"input_types": [], "output_types": [], "intent_tags": [], "side_effect": "unknown"},
+        "expected_ok": False,
+    },
+    # Round-4 additions: pin the judge to the spec's coarse-vocabulary
+    # design so it stops failing truthful rows (a no-arg seeder's empty
+    # input_types is correct, not missing) while still catching real
+    # field/description contradictions.
+    {
+        "slug": "noarg-seeder",
+        "description": "Seeds the topics table in the app's SQLite database with default rows; takes no arguments and is safe to re-run.",
+        "capability": {"input_types": [], "output_types": ["text"], "intent_tags": ["seed", "insert"], "side_effect": "writes-fs"},
+        "expected_ok": True,
+    },
+    {
+        "slug": "pdf-report",
+        "description": "Generates a weekly PDF report from a SQLite database into a given output directory.",
+        "capability": {"input_types": ["path"], "output_types": ["path"], "intent_tags": ["generate", "report"], "side_effect": "writes-fs"},
+        "expected_ok": True,
+    },
+    {
+        "slug": "db-seeder-mismatch",
+        "description": "Seeds a database table with default rows.",
+        "capability": {"input_types": ["path"], "output_types": ["json"], "intent_tags": ["seed"], "side_effect": "none"},
         "expected_ok": False,
     },
 ]

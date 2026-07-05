@@ -57,3 +57,12 @@ def test_invalid_side_effect_clamped_to_unknown(monkeypatch):
     assert result["input_types"] == ["path"]
     assert result["output_types"] == ["json"]
     assert result["intent_tags"] == ["convert"]
+
+
+def test_system_prompt_classifies_db_and_new_file_writes_as_writes_fs():
+    # Regression: the original prompt inverted the registry's side_effect
+    # semantics ("a NEW output file is 'none'"), causing systematic
+    # contradictions on DB-seeder CLIs (round-3 sanity failures).
+    assert "database" in fallback._SYSTEM.lower()
+    assert "NEW output file is 'none'" not in fallback._SYSTEM
+    assert "ONLY if the tool modifies an input file in" not in fallback._SYSTEM
