@@ -1,30 +1,57 @@
 # core/catalog/queries.py
-from sqlmodel import select
+from sqlmodel import select, text
 from core.models import Cli, Capability, CliEdge
 from core.health import norm_health as _norm_health  # shared vocabulary (single source of truth)
 from core.planner.search import plan_chain as _plan
 
 
-def _cap_row(c):
+def _sanity_columns_present(session) -> bool:
+    """sanity_ok/sanity_reason/sanity_checked_at are drift-only columns (same
+    pattern as provenance/description_provenance) added by
+    tools.backfill_capabilities.ensure_provenance_columns via guarded ALTER,
+    NOT declared on core.models.Capability. A DB that hasn't run the backfill
+    yet (or the in-memory test schema) won't have them -- guard the raw-SQL
+    read so callers still get a clean "never checked" (None) result."""
+    rows = session.exec(text("PRAGMA table_info(capability)")).all()
+    cols = {r[1] for r in rows}
+    return {"sanity_ok", "sanity_reason", "sanity_checked_at"} <= cols
+
+
+def _sanity_by_slug(session) -> dict:
+    if not _sanity_columns_present(session):
+        return {}
+    rows = session.exec(
+        text("SELECT cli_slug, sanity_ok, sanity_reason, sanity_checked_at FROM capability")
+    ).all()
+    return {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+
+def _cap_row(c, sanity=None):
+    sanity_ok, sanity_reason, sanity_checked_at = sanity if sanity is not None else (None, None, None)
     return {"intent_tags": c.intent_tags.split(",") if c.intent_tags else [],
             "input_types": c.input_types.split(",") if c.input_types else [],
             "output_types": c.output_types.split(",") if c.output_types else [],
-            "side_effect": c.side_effect, "confidence": c.confidence}
+            "side_effect": c.side_effect, "confidence": c.confidence,
+            "sanity_ok": bool(sanity_ok) if sanity_ok is not None else None,
+            "sanity_reason": sanity_reason or "",
+            "sanity_checked_at": sanity_checked_at}
 
 
 def _caps(session, slug):
     rows = session.exec(select(Capability).where(Capability.cli_slug == slug)).all()
-    return [_cap_row(c) for c in rows]
+    sanity_by_slug = _sanity_by_slug(session)
+    return [_cap_row(c, sanity_by_slug.get(c.cli_slug)) for c in rows]
 
 
 def overview_rows(session):
     clis = session.exec(select(Cli)).all()
     caps = session.exec(select(Capability)).all()
     edges = session.exec(select(CliEdge)).all()
+    sanity_by_slug = _sanity_by_slug(session)
 
     caps_by_slug = {}
     for cap in caps:
-        caps_by_slug.setdefault(cap.cli_slug, []).append(_cap_row(cap))
+        caps_by_slug.setdefault(cap.cli_slug, []).append(_cap_row(cap, sanity_by_slug.get(cap.cli_slug)))
 
     return {
         "clis": [

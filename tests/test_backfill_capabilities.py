@@ -188,6 +188,70 @@ def test_both_provenance_columns_auto_added_when_missing(drifted_db):
     assert "description_provenance" in cols_after
 
 
+def test_sanity_columns_auto_added_when_missing_and_idempotent(drifted_db):
+    con = sqlite3.connect(drifted_db)
+    cols_before = {r[1] for r in con.execute("PRAGMA table_info(capability)")}
+    con.close()
+    assert "sanity_ok" not in cols_before
+    assert "sanity_reason" not in cols_before
+    assert "sanity_checked_at" not in cols_before
+
+    backfill.ensure_provenance_columns(drifted_db)
+    backfill.ensure_provenance_columns(drifted_db)  # idempotent -- must not raise
+
+    con = sqlite3.connect(drifted_db)
+    cols_after = {r[1] for r in con.execute("PRAGMA table_info(capability)")}
+    con.close()
+    assert "sanity_ok" in cols_after
+    assert "sanity_reason" in cols_after
+    assert "sanity_checked_at" in cols_after
+
+
+def test_persist_sanity_writes_pass_and_fail_rows(drifted_db):
+    backfill.ensure_provenance_columns(drifted_db)
+    sanity_results = [
+        {"slug": "csv2json", "ok": True, "reason": ""},
+        {"slug": "shellwrap", "ok": False, "reason": "side_effect contradicts description"},
+    ]
+    checked_at = 1_700_000_000.0
+
+    backfill._persist_sanity(drifted_db, sanity_results, checked_at)
+
+    con = sqlite3.connect(drifted_db)
+    pass_row = con.execute(
+        "SELECT sanity_ok, sanity_reason, sanity_checked_at FROM capability WHERE cli_slug='csv2json'"
+    ).fetchone()
+    fail_row = con.execute(
+        "SELECT sanity_ok, sanity_reason, sanity_checked_at FROM capability WHERE cli_slug='shellwrap'"
+    ).fetchone()
+    con.close()
+
+    assert pass_row == (1, "", checked_at)
+    assert fail_row == (0, "side_effect contradicts description", checked_at)
+
+
+def test_dry_run_persists_sanity_verdict_to_db(drifted_db, monkeypatch, tmp_path):
+    """Behavior-change assertion: dry-run (run_pipeline without --commit) now
+    writes sanity verdicts to the DB, even though it never writes description
+    or capability fields."""
+    _patch_pipeline(monkeypatch, sanity_ok=True)
+    monkeypatch.chdir(tmp_path)
+
+    backfill.run_pipeline(drifted_db)
+
+    con = sqlite3.connect(drifted_db)
+    row = con.execute(
+        "SELECT sanity_ok, sanity_reason, sanity_checked_at FROM capability WHERE cli_slug='csv2json'"
+    ).fetchone()
+    unchanged_desc = con.execute("SELECT description FROM cli WHERE slug='csv2json'").fetchone()
+    con.close()
+
+    assert row[0] == 1
+    assert row[1] == ""
+    assert row[2] is not None
+    assert unchanged_desc[0] == "30_x/csv2json.py"  # dry-run still never writes description/capability
+
+
 def test_commit_refuses_when_sanity_failure_rate_exceeds_threshold(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch, sanity_ok=False)  # 100% failure rate
     monkeypatch.chdir(tmp_path)

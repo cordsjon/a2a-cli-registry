@@ -85,6 +85,9 @@ def test_overview_rows_returns_project_caps_edges_and_no_launch_spec(db):
             "output_types": ["text:plain"],
             "side_effect": "none",
             "confidence": "declared",
+            "sanity_ok": None,
+            "sanity_reason": "",
+            "sanity_checked_at": None,
         }],
         "beta": [{
             "intent_tags": ["download"],
@@ -92,9 +95,48 @@ def test_overview_rows_returns_project_caps_edges_and_no_launch_spec(db):
             "output_types": ["file:json"],
             "side_effect": "network",
             "confidence": "inferred",
+            "sanity_ok": None,
+            "sanity_reason": "",
+            "sanity_checked_at": None,
         }],
     }
     assert rows["edges"] == [{"from": "alpha", "to": "beta", "via_type": "text:plain"}]
+
+
+def test_cap_row_includes_sanity_fields_when_set(db):
+    db.add(Cli(slug="x", lang="python", launch_spec='{"kind":"python_module"}', description="d"))
+    db.commit()
+    cap = Capability(cli_slug="x", intent_tags="convert", input_types="file:pdf",
+                      output_types="text", side_effect="none", confidence="inferred")
+    db.add(cap)
+    db.commit()
+    con = db.get_bind().raw_connection()
+    con.execute("ALTER TABLE capability ADD COLUMN sanity_ok INTEGER")
+    con.execute("ALTER TABLE capability ADD COLUMN sanity_reason TEXT")
+    con.execute("ALTER TABLE capability ADD COLUMN sanity_checked_at REAL")
+    con.execute(
+        "UPDATE capability SET sanity_ok=1, sanity_reason='', sanity_checked_at=1700000000.0 WHERE cli_slug='x'"
+    )
+    con.commit()
+
+    desc = describe_cli(db, "x")
+    row = desc["capabilities"][0]
+    assert row["sanity_ok"] is True
+    assert row["sanity_reason"] == ""
+    assert row["sanity_checked_at"] == 1700000000.0
+
+
+def test_cap_row_sanity_fields_none_when_never_checked(db):
+    db.add(Cli(slug="x", lang="python", launch_spec='{"kind":"python_module"}', description="d"))
+    db.add(Capability(cli_slug="x", intent_tags="convert", input_types="file:pdf",
+                      output_types="text", side_effect="none", confidence="inferred"))
+    db.commit()
+
+    desc = describe_cli(db, "x")
+    row = desc["capabilities"][0]
+    assert row["sanity_ok"] is None
+    assert row["sanity_reason"] == ""
+    assert row["sanity_checked_at"] is None
 
 
 def test_describe_cli_op_schema_allows_include_launch_spec():
