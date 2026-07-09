@@ -76,6 +76,12 @@ def ensure_provenance_columns(db_path: str) -> None:
     try:
         _add_column_guarded(con, "capability", "provenance", "TEXT")
         _add_column_guarded(con, "capability", "description_provenance", "TEXT")
+        # Drift-only, same pattern as the two provenance columns above: guarded
+        # ALTER, no core.models.Capability class change. Persists the last
+        # sanity_check.check_row verdict per CLI (see _persist_sanity below).
+        _add_column_guarded(con, "capability", "sanity_ok", "INTEGER")
+        _add_column_guarded(con, "capability", "sanity_reason", "TEXT")
+        _add_column_guarded(con, "capability", "sanity_checked_at", "REAL")
     finally:
         con.close()
 
@@ -122,10 +128,36 @@ def _read_source(path: str | None) -> str:
         return ""
 
 
+def _persist_sanity(db_path: str, sanity_results: list[dict], checked_at: float) -> None:
+    """Writes the last sanity_check.check_row verdict per CLI to the
+    drift-only sanity_ok/sanity_reason/sanity_checked_at columns (added by
+    ensure_provenance_columns). Runs on EVERY run_pipeline invocation,
+    dry-run included, so the /overview "as of" staleness label stays
+    meaningful between commits."""
+    con = sqlite3.connect(db_path)
+    try:
+        for r in sanity_results:
+            con.execute(
+                """UPDATE capability SET sanity_ok=?, sanity_reason=?, sanity_checked_at=?
+                   WHERE cli_slug=?""",
+                (1 if r["ok"] else 0, r["reason"], checked_at, r["slug"]),
+            )
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
 def run_pipeline(db_path: str) -> dict:
     """Dry-run body: regenerate descriptions, extract/fallback capabilities,
-    sanity-check everything, write both jsonl report files. Never writes to
-    the DB. Returns a summary dict; also the first phase of --commit."""
+    sanity-check everything, write both jsonl report files. Never writes
+    description/capability fields to the DB (that stays --commit-only via
+    write_commit). DOES persist the sanity verdict (sanity_ok/sanity_reason/
+    sanity_checked_at) on every invocation, dry-run included -- a deliberate
+    behavior change so the /overview staleness label stays meaningful between
+    commits. Returns a summary dict; also the first phase of --commit."""
     start = time.time()
     con = sqlite3.connect(db_path)
     try:
@@ -188,6 +220,9 @@ def run_pipeline(db_path: str) -> dict:
             proposals[i] = repaired
             sanity_results[i] = {"slug": p["slug"], **recheck}
             repaired_count += 1
+
+    ensure_provenance_columns(db_path)  # idempotent guard -- columns must exist before the write below
+    _persist_sanity(db_path, sanity_results, time.time())
 
     fail_count = sum(1 for r in sanity_results if not r["ok"])
     fail_rate = fail_count / len(sanity_results) if sanity_results else 0.0

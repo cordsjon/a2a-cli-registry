@@ -95,6 +95,55 @@ def test_empty_model_template_loads():
     assert "<html" in html
 
 
+def _sanity_model(cap):
+    return {
+        "summary": {"total": 1, "healthy": 1, "unhealthy": 0, "stale": 0,
+                    "unknown": 0, "version": "1.2.0"},
+        "buckets": [{
+            "name": "alpha", "count": 1,
+            "clis": [{
+                "slug": "sanity-cli", "lang": "python", "health_status": "healthy",
+                "description": "does a thing", "capabilities": [cap], "edges": [],
+            }],
+        }],
+    }
+
+
+def test_render_shows_sanity_pass_verdict_with_as_of_date():
+    html = render_overview_html(_sanity_model({
+        "intent_tags": ["convert"], "input_types": ["path"], "output_types": ["json"],
+        "side_effect": "none", "confidence": "inferred",
+        "sanity_ok": True, "sanity_reason": "",
+        "sanity_checked_at": 1700000000.0, "sanity_checked_at_display": "2023-11-14",
+    }))
+    card = _card(html, "sanity-cli")
+    assert "sanity ok" in card
+    assert "2023-11-14" in card
+
+
+def test_render_shows_sanity_fail_reason():
+    html = render_overview_html(_sanity_model({
+        "intent_tags": ["convert"], "input_types": ["path"], "output_types": ["json"],
+        "side_effect": "writes-fs", "confidence": "inferred",
+        "sanity_ok": False, "sanity_reason": "side_effect contradicts description",
+        "sanity_checked_at": 1700000000.0, "sanity_checked_at_display": "2023-11-14",
+    }))
+    card = _card(html, "sanity-cli")
+    assert "side_effect contradicts description" in card
+    assert "2023-11-14" in card
+
+
+def test_render_shows_not_yet_checked_when_sanity_none():
+    html = render_overview_html(_sanity_model({
+        "intent_tags": ["convert"], "input_types": ["path"], "output_types": ["json"],
+        "side_effect": "none", "confidence": "inferred",
+        "sanity_ok": None, "sanity_reason": "",
+        "sanity_checked_at": None, "sanity_checked_at_display": "",
+    }))
+    card = _card(html, "sanity-cli")
+    assert "not yet checked" in card
+
+
 def test_render_escapes_description_xss_sentinel():
     model = {
         "summary": {
