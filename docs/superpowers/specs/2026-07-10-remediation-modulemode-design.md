@@ -4,7 +4,7 @@
 
 `core/remediation/classify.py` classifies a CLI's probe-failure note into a
 `RemediationProposal`. When the note is a `ModuleNotFoundError`/`No module
-named 'X'`, the classifier currently has two outcomes:
+named 'X'`, the classifier currently has three outcomes:
 
 - `X` is in `IMPORT_TO_PACKAGE` (a curated import-name -> PyPI-distribution
   map) -> `PIP_3RD_PARTY`, auto-installable.
@@ -65,36 +65,65 @@ if top in IMPORT_TO_PACKAGE:
     -> PIP_3RD_PARTY (unchanged)
 if _proven_local(path, top):
     -> WRONG_CWD (unchanged, adjacent-file case)
-if _proven_module_mode(path, top):
+if _proven_module_mode(path, dotted):
     -> WRONG_CWD, evidence names the python -m invocation
-    (NEW: project-root case)
+    (NEW: project-root case; note this takes the FULL dotted
+    name from the regex match, e.g. "localpkg.missing", not
+    the truncated `top` used by the two checks above)
 -> PIP_UNKNOWN (unchanged, true fallback)
 ```
 
-`_proven_module_mode(path, top)` = call `_project_root(path)` from the new
-shared module; if a root is found, check whether `top.py` or
-`top/__init__.py` exists directly under that root. This is a **proof**, same
-philosophy as the existing `_proven_local` docstring — only classify
-`WRONG_CWD` when the module demonstrably exists at the derived root, never as
-a guess.
+`_proven_module_mode(path, dotted)` (takes the full dotted name, NOT `top`):
+- Guard first: if `path` is falsy, return `False` immediately — matches
+  `_proven_local`'s existing empty-path guard (`classify.py:73`).
+  `_project_root` walks up from `dirname(abspath(path))`; an empty path
+  would resolve against the process cwd and could "prove" an unrelated
+  module by accident.
+- Call `_project_root(path)` from the new shared module. If no root is
+  found, return `False`.
+- **Dotted-submodule correctness:** the regex that extracts `top` already
+  truncates a dotted failure (`No module named 'localpkg.missing'`) down to
+  its first segment (`classify.py:88`, `top = m.group(1).split(".")[0]`).
+  Truncating to `top` and then only checking `top/__init__.py` exists would
+  wrongly call `localpkg.missing` "proven" when `localpkg` exists but
+  `missing` genuinely doesn't. To avoid this false proof, `_proven_module_mode`
+  takes the **full dotted name** from the regex match (not the
+  pre-truncated `top`), and calls `_dotted_module`-style path construction
+  in reverse: build the expected file path
+  (`root/<part>/<part>/.../<last_part>.py` or
+  `root/<part>/.../<last_part>/__init__.py`) from the *entire* dotted name
+  and check that exact path exists. Only a full, exact match proves the
+  specific missing thing is real — a partial match on just the top segment
+  is not a proof.
+- On proof, return the concrete dotted module name (not just a bool) so the
+  caller can build the `python -m <dotted>` evidence string per AC-01. (This
+  changes the earlier signature from bool-only to `str | None`, since a
+  bare boolean can't carry the invocation string needed for evidence.)
 
 Evidence string names the concrete fix so a human/SafeFixer downstream sees
 the exact command: e.g. `"No module named 'syllabus_v2' | proven module-mode:
-python -m syllabus_v2... from <root>"`.
+python -m syllabus_v2 (from <root>)"`.
 
 **Guardrails (non-negotiable, from the ticket):**
 - `IMPORT_TO_PACKAGE` is not touched — it stays PyPI-only. This fix never
   proposes installing a local import from PyPI.
 - `_proven_module_mode` only fires on a demonstrated file/package on disk,
-  same purity contract as the rest of `classify.py` (no subprocess).
+  same purity contract as the rest of `classify.py` (no subprocess), and
+  only on an exact full-dotted-path match (no partial/prefix proofs).
 
 ## Testing
 
-- New unit tests in `core/remediation/` (mirroring the existing
-  `classify_failure` test file) covering:
+- New unit tests in `tests/test_remediation_classify.py` (the existing
+  classifier test file — not a new location) covering:
   - A `ModuleNotFoundError` for a module that exists at a derived project
     root two directories up -> `WRONG_CWD`, evidence contains the `python -m`
     form.
+  - A dotted failure (`No module named 'localpkg.missing'`) where `localpkg`
+    exists at the root but `missing` does not -> still `PIP_UNKNOWN` (proves
+    the full-dotted-path check, not just a top-segment check).
+  - An empty `path` -> `_proven_module_mode` returns `False`/`None` without
+    touching the filesystem outside the guard (regression for the empty-path
+    guard).
   - The existing adjacent-file case still resolves via `_proven_local`
     (regression, unchanged behavior).
   - A genuinely unknown/unmappable import still falls to `PIP_UNKNOWN`
@@ -104,9 +133,29 @@ python -m syllabus_v2... from <root>"`.
 - `bridge/`'s existing test suite re-run after the extraction, to confirm the
   move didn't change `capture_help`'s behavior.
 
+## Re-probing the 46 live-fleet rows (ticket AC-02 — in scope)
+
+The ticket's AC-02 requires the 46 currently-affected CLIs to be re-probed
+under module-mode once the classifier fix lands, flipping the ones that pass
+to healthy — no PyPI install involved. This is part of `US-REMED-MODULEMODE-01`
+and belongs in this change's scope as a distinct final step, run only after
+the classifier fix (above) is implemented, tested, and reviewed:
+
+1. Re-run classification (`classify_fleet`) against the live registry's
+   current `unhealthy`/`pip-unknown` rows.
+2. For rows now classified `WRONG_CWD` via the new module-mode path, re-probe
+   each with the derived `python -m <dotted>` invocation (reusing the
+   existing prober, not a new one).
+3. Rows that pass re-probe flip to `healthy` in the registry; rows that still
+   fail keep their prior status — this step only flips CLIs proven to work,
+   never forces a status.
+4. Take a DB backup before the run (same pattern as the earlier
+   not-standalone flip: `cli-registry.db.bak-<timestamp>-pre-modulemode`),
+   since this is a live-data mutation, not just a code change.
+
 ## Out of scope
 
-- Re-probing the 46 live-fleet rows against this fix (that's the ticket's
-  AC-02, a follow-up data-migration step after the code lands and is
-  reviewed — not bundled into this change).
 - Any change to `IMPORT_TO_PACKAGE` or PyPI-mapping behavior.
+- Re-probing CLIs that don't match the module-mode pattern (i.e., anything
+  that isn't newly classified `WRONG_CWD` by this fix) — those stay exactly
+  as they are today.
