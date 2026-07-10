@@ -10,6 +10,7 @@ from core.remediation.proposal import (
     SCHEMA_VERSION, RemediationProposal,
     FailureClass, FixKind, Confidence,
 )
+from core.paths.module_root import _project_root, _dotted_module
 
 MAP_VERSION = 1
 
@@ -76,6 +77,31 @@ def _proven_local(path: str, module: str) -> bool:
     return (parent / f"{module}.py").exists() or (parent / module).is_dir()
 
 
+def _proven_module_mode(path: str, dotted: str) -> str | None:
+    """Full dotted module name iff `dotted` demonstrably exists as a file or
+    package under the CLI's derived project root (python -m <dotted> would
+    resolve it). This is a PROOF like _proven_local: only checks the EXACT
+    full dotted path (not just its top segment), so a real missing submodule
+    (e.g. localpkg.missing where localpkg exists but missing doesn't) is
+    never mistaken for a proven module-mode fix. Returns the dotted name
+    (for building the evidence string) or None."""
+    if not path:
+        return None
+    root = _project_root(path)
+    if not root:
+        return None
+    import os
+    parts = dotted.split(".")
+    candidate = os.path.join(root, *parts)
+    if os.path.exists(candidate + ".py") or os.path.isdir(candidate):
+        if os.path.isdir(candidate) and not os.path.exists(
+            os.path.join(candidate, "__init__.py")
+        ):
+            return None
+        return dotted
+    return None
+
+
 def classify_failure(slug: str, note: str, path: str) -> RemediationProposal:
     note = note or ""
     regex = Confidence.DECLARED_BY_REGEX
@@ -84,10 +110,12 @@ def classify_failure(slug: str, note: str, path: str) -> RemediationProposal:
     if "SyntaxError" in note or "IndentationError" in note:
         return _proposal(slug, FailureClass.CODE_BUG, FixKind.NEEDS_HUMAN, "", regex, note)
 
-    # 2. Missing module — split third-party vs proven-local vs unknown.
+    # 2. Missing module — split third-party vs proven-local vs
+    # proven-module-mode vs unknown.
     m = _MNFE_RE.search(note)
     if m:
-        top = m.group(1).split(".")[0]
+        dotted = m.group(1)
+        top = dotted.split(".")[0]
         if top in IMPORT_TO_PACKAGE:
             return _proposal(slug, FailureClass.PIP_3RD_PARTY, FixKind.AUTO_SAFE,
                              IMPORT_TO_PACKAGE[top], regex,
@@ -95,6 +123,12 @@ def classify_failure(slug: str, note: str, path: str) -> RemediationProposal:
         if _proven_local(path, top):
             return _proposal(slug, FailureClass.WRONG_CWD, FixKind.PROPOSE_ONLY,
                              top, regex, f"{note} | proven-local {top} adjacent to {path}")
+        proven_dotted = _proven_module_mode(path, dotted)
+        if proven_dotted:
+            return _proposal(slug, FailureClass.WRONG_CWD, FixKind.PROPOSE_ONLY,
+                             proven_dotted, regex,
+                             f"{note} | proven module-mode: python -m {proven_dotted} "
+                             f"(from {_project_root(path)})")
         return _proposal(slug, FailureClass.PIP_UNKNOWN, FixKind.PROPOSE_ONLY,
                          top, regex, f"{note} | unmapped, not proven local")
 
