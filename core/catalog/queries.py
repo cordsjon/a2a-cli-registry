@@ -69,10 +69,26 @@ def overview_rows(session):
 
 def search_clis(session, query: str = ""):
     rows = session.exec(select(Cli)).all()
-    q = query.lower()
-    return [{"slug": c.slug, "lang": c.lang, "description": c.description,
-             "health_status": _norm_health(c.health_status)}
-            for c in rows if q in (c.slug + " " + c.description).lower()]
+    q = query.strip().lower()
+    if not q:
+        return [_search_row(c) for c in rows]
+    caps = session.exec(select(Capability)).all()
+    vocab_by_slug: dict[str, str] = {}
+    for cap in caps:
+        blob = " ".join([cap.intent_tags, cap.input_types, cap.output_types])
+        vocab_by_slug[cap.cli_slug] = (
+            vocab_by_slug.get(cap.cli_slug, "") + " " + blob
+        ).lower()
+    return [
+        _search_row(c) for c in rows
+        if q in (c.slug + " " + c.description).lower()
+        or q in vocab_by_slug.get(c.slug, "")
+    ]
+
+
+def _search_row(c) -> dict:
+    return {"slug": c.slug, "lang": c.lang, "description": c.description,
+            "health_status": _norm_health(c.health_status)}
 
 
 def describe_cli(session, slug: str, include_launch_spec: bool = False):
