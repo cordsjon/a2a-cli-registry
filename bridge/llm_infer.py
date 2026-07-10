@@ -27,6 +27,7 @@ import subprocess
 import urllib.request
 
 from core.capability.model import CapabilityRecord
+from core.paths.module_root import _project_root, _dotted_module
 
 ROUTER_URL = "http://localhost:9111/v1/chat/completions"
 ROUTER_MODEL = "deepseek-v4-flash"
@@ -95,11 +96,6 @@ _BAD_FLAG_MARKERS = (
     "does not exist",
 )
 
-# Project-root sentinels: the nearest ancestor containing one of these is the
-# directory from which `python -m pkg.module` resolves package-relative imports.
-_ROOT_SENTINELS = ("pyproject.toml", "setup.py", "setup.cfg", ".git", "requirements.txt")
-
-
 def _is_crash(out: str) -> bool:
     return any(m in out for m in _CRASH_MARKERS)
 
@@ -107,37 +103,6 @@ def _is_crash(out: str) -> bool:
 def _is_bad_flag(out: str) -> bool:
     low = out.lower()
     return any(m in low for m in _BAD_FLAG_MARKERS)
-
-
-def _project_root(path: str) -> str | None:
-    """Walk up from the file to the nearest dir holding a root sentinel."""
-    d = os.path.dirname(os.path.abspath(path))
-    prev = None
-    while d and d != prev:
-        for s in _ROOT_SENTINELS:
-            if os.path.exists(os.path.join(d, s)):
-                return d
-        prev, d = d, os.path.dirname(d)
-    return None
-
-
-def _dotted_module(path: str, root: str) -> str | None:
-    """Dotted module path of `path` relative to `root` (Fix 1: package mode).
-
-    /root/pkg/sub/cli.py  under root  ->  pkg.sub.cli
-    A trailing __main__ is kept (python -m pkg works via pkg/__main__.py only if
-    we target the package, but file-stem __main__ is rare here)."""
-    try:
-        rel = os.path.relpath(os.path.abspath(path), root)
-    except ValueError:
-        return None
-    if rel.startswith(".."):
-        return None
-    rel = os.path.splitext(rel)[0]
-    parts = [p for p in rel.split(os.sep) if p]
-    if not parts:
-        return None
-    return ".".join(parts)
 
 
 def _venv_python(root: str | None) -> str:
