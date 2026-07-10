@@ -87,7 +87,17 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
         adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
 
     goal_in, goal_out = set(goal_inputs), set(goal_outputs)
-    starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
+    # An empty goal_in means "no input constraint" (a query-only goal like
+    # "list files" or "check status"). `_slug_consumes(c) & goal_in` is always
+    # empty/falsy when goal_in is empty, which used to make EVERY CLI —
+    # including the ones with input_types="" that exist specifically for this
+    # case — permanently unreachable. Only match no-declared-input CLIs when
+    # goal_in is empty; a CLI with a real declared input type still requires
+    # the caller to name it (goal_in non-empty and intersecting).
+    if goal_in:
+        starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
+    else:
+        starts = [s for s, c in caps.items() if not _slug_consumes(c)]
     candidates = []
 
     for start in starts:

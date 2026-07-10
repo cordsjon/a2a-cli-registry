@@ -27,6 +27,34 @@ def test_unsatisfiable_goal_returns_empty(db):
     assert plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["audio:wav"]) == []
 
 
+def test_empty_goal_inputs_reaches_no_input_cli(db):
+    # Live bug (2026-07-11): `starts = [s for s, c in caps.items() if
+    # _slug_consumes(c) & goal_in]` — when goal_inputs=[], goal_in is an empty
+    # set, and X & set() is always empty/falsy for any X. So starts=[]
+    # unconditionally, regardless of what CLIs exist. This makes EVERY
+    # no-declared-input-type CLI (input_types="", the correct shape for a
+    # generic "list files"/"find X"/"check status" query-only goal) permanently
+    # unreachable whenever the caller can't name an input type — exactly the
+    # case for goals like "find syllabus files" (confirmed live: 276 real
+    # capability rows have input_types="" in the production registry).
+    db.add(Cli(slug="list_files", lang="python"))
+    db.add(Capability(cli_slug="list_files", intent_tags="list", input_types="",
+                      output_types="text:listing", side_effect="none", confidence="declared"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=[], goal_outputs=["text:listing"])
+    assert any(c.slugs == ["list_files"] for c in chains)
+
+
+def test_empty_goal_inputs_does_not_reach_typed_input_cli(db):
+    # The fix for the bug above must not become "goal_inputs=[] matches
+    # everything" — a CLI that DOES declare a real input type should still
+    # require goal_inputs to name it. Only genuinely no-input CLIs are valid
+    # starts when goal_inputs is empty.
+    _fleet(db)  # pdf2text declares input_types="file:pdf"
+    chains = plan_chain(db, goal_inputs=[], goal_outputs=["text:summary"])
+    assert chains == []
+
+
 def test_destructive_excluded_by_default(db):
     _fleet(db)
     chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"])
