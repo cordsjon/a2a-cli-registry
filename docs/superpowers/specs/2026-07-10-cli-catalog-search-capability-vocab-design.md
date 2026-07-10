@@ -188,8 +188,30 @@ defect. Out of scope here.
   with query `"file:pdf"` returns a non-empty `all_slugs`/`healthy` set including
   `generate_pdf`.
 - **AC-06** — Full registry unit suite green, zero new failures.
+- **AC-07 (live, cardinality)** — Re-probe the live registry post-deploy with 2-3
+  high-frequency `intent_tags` values (e.g. `"generate"`, `"convert"`, `"query"`) and
+  record the returned row count. `intent_tags` is a controlled vocabulary with heavy
+  term reuse — live-verified pre-fix: `"generate"` appears in 67/474 capability rows,
+  `"query"` in 28, `"convert"` in 27. This AC does **not** impose a ceiling on match
+  count (no evidence a ceiling is needed at this repo's scale, and enforcing one would
+  require ranking/tokenization — explicitly out of scope, see below). It exists to
+  make the cardinality visible and recorded, because **Part B's term-selection
+  strategy (picking a single "most distinctive" tag) assumes low collision without
+  measuring it** — this AC is the measurement Part B's design should be checked
+  against before that spec is written.
 
 ## Files touched
 
 - Modify: `core/catalog/queries.py` — `search_clis` (lines 70-75).
 - Test: `tests/test_catalog.py` (existing `search_clis` coverage — `test_search_returns_inert_dicts` at line 23, `test_readers_normalize_legacy_uppercase_health` at line 42 — both must stay green; new tests added for capability-vocab matching).
+- Not modified, but call `search_clis` and must keep working unchanged (covered by
+  AC-04's output-shape guarantee, not touched directly): `core/ops_registry.py:26`
+  (the `search_cli_catalog` MCP/A2A op registration), `core/server/app.py:90`,
+  `core/cli/main.py:306` (the `overview --query` CLI command).
+
+## Non-functional notes
+
+- **Query cost:** the sketch adds one full-table `SELECT` on `Capability` per
+  non-empty search call, joined in memory. At current scale (474 `Cli` rows, 474
+  `Capability` rows) this is a single extra O(N) query, not an N+1 pattern — no
+  pagination or caching needed. Revisit if the catalog grows past roughly 5k rows.
