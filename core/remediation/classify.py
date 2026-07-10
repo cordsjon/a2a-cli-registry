@@ -3,6 +3,7 @@
 Reads the failure note ALREADY persisted in cli.description (the prober/audit
 writes it). NEVER runs a subprocess. An unmatched note abstains to
 unknown/needs-human and is routed to Hermes by the caller."""
+import os
 import re
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from core.remediation.proposal import (
     SCHEMA_VERSION, RemediationProposal,
     FailureClass, FixKind, Confidence,
 )
-from core.paths.module_root import _project_root, _dotted_module
+from core.paths.module_root import _project_root
 
 MAP_VERSION = 1
 
@@ -90,7 +91,6 @@ def _proven_module_mode(path: str, dotted: str) -> str | None:
     root = _project_root(path)
     if not root:
         return None
-    import os
     parts = dotted.split(".")
     candidate = os.path.join(root, *parts)
     if os.path.exists(candidate + ".py") or os.path.isdir(candidate):
