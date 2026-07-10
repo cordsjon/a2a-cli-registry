@@ -47,16 +47,20 @@ Two consequences, both confirmed against the live registry (474 CLIs,
    query='text:doc'   all=0 healthy=0
    ```
 
-3. **The match is substring, not keyword/BM25** — multi-word queries only match if the
-   *exact phrase* appears verbatim, live-confirmed:
+3. **The match is substring, not keyword/BM25** — a query only matches if it appears
+   *verbatim* (exact characters, exact word order/spacing) inside the target blob,
+   live-confirmed:
    ```
    query='pdf'              all=9 healthy=6
    query='document'         all=1 healthy=1
-   query='document pdf'     all=0 healthy=0   (word order/spacing must match exactly)
+   query='document pdf'     all=0 healthy=0   (no CLI's blob contains this exact phrase)
    query='png_image'        all=0 healthy=0   (no literal such string anywhere)
    ```
-   Any caller — adapter or otherwise — that joins multiple terms into one query string
-   will always get zero hits. The query contract is **one term, substring-matched**.
+   A multi-term query joined with a separator (e.g. `"png_image svg_file"`) will only
+   match a CLI whose blob happens to contain that literal joined string — in practice,
+   effectively never, since the blob is built from independent fields. The safe query
+   contract for a caller is **one term, substring-matched** — joining terms is not a
+   reliable way to broaden a match.
 
 Net effect: no query construction strategy on the adapter side can make discovery
 reliable while the registry only indexes `slug + description`. The fix belongs here.
@@ -65,9 +69,10 @@ reliable while the registry only indexes `slug + description`. The fix belongs h
 
 **Part A (this repo, primary fix):** extend `search_clis` to also substring-match the
 query against each CLI's capability vocabulary — the union of `intent_tags`,
-`input_types`, and `output_types` across all its `Capability` rows, CSV-split and
-lowercased. A CLI matches if the query is a substring of the existing
-`slug + description` blob **or** the capability-vocabulary blob.
+`input_types`, and `output_types` across all its `Capability` rows, joined as raw CSV
+strings (not split into a list — see implementation sketch) and lowercased. A CLI
+matches if the query is a substring of the existing `slug + description` blob **or**
+the capability-vocabulary blob.
 
 **Part B (`hermes-adapter`, dependent):** once Part A ships, reorder
 `handle_run_cli_command` to call `_infer_capability_tags(goal)` before
@@ -82,7 +87,7 @@ behavior is re-probed).
 ```python
 def search_clis(session, query: str = ""):
     rows = session.exec(select(Cli)).all()
-    q = query.lower()
+    q = query.strip().lower()
     if not q:
         return [_search_row(c) for c in rows]
     caps = session.exec(select(Capability)).all()
@@ -111,12 +116,31 @@ the existing style (`slug + " " + description` is also matched as one blob, not
 token-split). No behavior change for CLIs with no `Capability` rows (empty vocab
 string, no match contribution — falls through to the existing slug/description check).
 
+**Known limitation, not a regression:** substring matching against unsplit CSV can
+false-positive across field/token boundaries — e.g. query `"file:pdf"` would also match
+a stored value `"file:pdfa"`, and a query landing on a comma boundary could match across
+two unrelated CSV entries. The existing `slug + description` check already has this
+class of imprecision (e.g. `"svg"` matches 60 CLIs live, far more than intended). Not
+fixed here — token-exact matching would require splitting and is a larger change with
+no evidence today's imprecision causes real false positives in practice.
+
 ### Preserved contracts
 
-- `query=""` returns all rows (existing behavior, asserted by
-  `tests/test_catalog.py:26` and `tests/test_mcp.py:14`) — the empty-query branch is
-  unchanged, added explicitly above to avoid computing vocab for the common
-  list-everything case.
+- `query=""` returns all rows (existing behavior — `tests/test_catalog.py:23`'s
+  `test_search_returns_inert_dicts` and `tests/test_catalog.py:42`'s
+  `test_readers_normalize_legacy_uppercase_health` both call `search_clis(db, "")`
+  and depend on the inserted row coming back) — the empty-query branch is unchanged,
+  added explicitly above to avoid computing vocab for the common list-everything case.
+- `query="  "` (whitespace-only, non-empty): falls through to the non-empty branch
+  today and would continue to. The sketch's `" ".join([...])` on an empty-`Capability`
+  CLI produces a two-space string, which a whitespace-only query could match — a new
+  spurious match not present today. Guard by stripping the query
+  (`q = query.strip().lower()`) before the `if not q` check, so whitespace-only queries
+  fall into the same "return everything" branch as truly empty ones. Minor, accepted
+  side effect: a query with meaningful leading/trailing whitespace (e.g. `" pdf "`)
+  today requires that literal padded substring; after stripping it matches like `"pdf"`
+  — no existing test exercises this case, and it only ever makes a match *more*
+  permissive, never drops an existing match.
 - Output row shape (`slug, lang, description, health_status`) is unchanged —
   `search_clis` still does not return `capabilities` (that stays `describe_cli`-only,
   per the existing MVA boundary from HOP-02).
@@ -152,8 +176,10 @@ defect. Out of scope here.
 - **AC-01** — `search_clis(session, "file:pdf")` returns a row for `generate_pdf`
   (or the live-equivalent slug at test time) when that CLI has a `Capability` row with
   `output_types` containing `"file:pdf"`.
-- **AC-02** — `search_clis(session, "")` still returns all rows, unchanged from today
-  (regression guard for `tests/test_catalog.py:26`, `tests/test_mcp.py:14`).
+- **AC-02** — `search_clis(session, "")` and `search_clis(session, "  ")` both return
+  all rows, unchanged from today for the empty case (regression guard for
+  `tests/test_catalog.py:23`, `tests/test_catalog.py:42`) and newly-correct for the
+  whitespace-only case (previously would have fallen into the non-empty branch).
 - **AC-03** — A CLI with no `Capability` rows is matched only by the existing
   `slug + description` check — no crash, no spurious match from an empty vocab blob.
 - **AC-04** — `search_clis` output row shape is unchanged (`slug, lang, description,
