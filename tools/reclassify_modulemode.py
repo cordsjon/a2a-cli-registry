@@ -59,8 +59,16 @@ def main():
             )
         except (subprocess.TimeoutExpired, OSError):
             continue
+        if proc.returncode != 0:
+            continue
         out = ((proc.stdout or "") + (proc.stderr or "")).strip()
-        if not out or "Traceback" in out or "ModuleNotFoundError" in out:
+        if (
+            not out
+            or "Traceback" in out
+            or "ModuleNotFoundError" in out
+            or "cannot be directly executed" in out
+            or "No module named" in out
+        ):
             continue
         flips.append(r["slug"])
 
