@@ -12,8 +12,10 @@ from __future__ import annotations
 from core.health import CANON_HEALTH, norm_health
 
 
-def test_canonical_set_has_five_states():
-    assert CANON_HEALTH == {"healthy", "unhealthy", "stale", "unknown", "not_standalone"}
+def test_canonical_set_has_six_states():
+    assert CANON_HEALTH == {
+        "healthy", "unhealthy", "stale", "unknown", "not_standalone", "skipped-needs-env",
+    }
 
 
 def test_norm_passes_canonical_values_through():

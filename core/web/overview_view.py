@@ -15,6 +15,7 @@ _HEALTH_GLYPHS = {
     "stale": "\u25c6",
     "unknown": "\u25cb",
     "not_standalone": "\u25cc",   # dotted circle: present-but-not-a-standalone-CLI
+    "skipped-needs-env": "\u25a1",   # hollow square: known env-var gap, not a defect
 }
 
 
@@ -66,6 +67,7 @@ def build_overview_model(rows) -> dict:
         "stale": 0,
         "unknown": 0,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": _package_version(),
     }
     buckets = {}
@@ -101,7 +103,7 @@ def build_overview_model(rows) -> dict:
 
     assert summary["total"] == (
         summary["healthy"] + summary["unhealthy"] + summary["stale"]
-        + summary["unknown"] + summary["not_standalone"]
+        + summary["unknown"] + summary["not_standalone"] + summary["skipped-needs-env"]
     )
 
     return {

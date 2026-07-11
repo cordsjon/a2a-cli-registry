@@ -59,11 +59,12 @@ def test_summary_counts_all_states_with_total_equal_to_parts(monkeypatch):
         "stale": 1,
         "unknown": 2,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": "1.2.0",
     }
     assert summary["total"] == (
         summary["healthy"] + summary["unhealthy"] + summary["stale"]
-        + summary["unknown"] + summary["not_standalone"]
+        + summary["unknown"] + summary["not_standalone"] + summary["skipped-needs-env"]
     )
 
 
@@ -128,6 +129,7 @@ def test_empty_input_returns_zero_summary_and_no_buckets(monkeypatch):
         "stale": 0,
         "unknown": 0,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": "1.2.0",
     }
     assert model["buckets"] == []
