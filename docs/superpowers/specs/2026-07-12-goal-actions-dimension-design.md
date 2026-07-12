@@ -1,15 +1,26 @@
 # `goal_actions` Dimension — Planner Redesign (SPUN OUT of VOCAB-01)
 
 **Date:** 2026-07-12
-**Status:** Design — PLAN-READY as of 2026-07-12 15:05 CEST: the §2.2 blocking question was
-resolved by the AC-01 brainstorm (user decision: **retag**, see §2.2). SPUN OUT into its own
-ticket (2026-07-12) after 5 Codex grounding passes.
+**Status:** Design — PLAN-READY as of 2026-07-12 ~15:30 CEST: the §2.2 blocking question was
+resolved by the AC-01 brainstorm (user decision: **retag**, see §2.2), and the 6th Codex
+pass's three findings (error contract, two wording contradictions) were folded same day.
+SPUN OUT into its own ticket (2026-07-12) after 5 Codex grounding passes.
 The parent ticket US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 was **split**: its §2.2-independent
 slice (AC-02 send_mail reachability + AC-03 seed_anthropic_index backfill) ships separately
 (see `2026-07-12-vocab01-sideeffect-reachability-slice.md`); the entire `goal_actions`
-dimension (§2.2–§2.8, AC-04/AC-05) lives here and is NOT plan-ready.
+dimension (§2.2–§2.8, AC-04/AC-05) lives here. It was NOT plan-ready at spin-out; the §2.2
+resolution (below) and the 6th-pass contract fixes made it plan-ready on 2026-07-12.
 
-**Codex pass ledger (5 passes):**
+**Codex pass ledger (6 passes):**
+- **6th pass (2026-07-12, post-decision):** VERIFIED the retag's factual basis (sole-carrier
+  probe; zero live `cliedge` rows touch `send_mail`; no consumer depends on its `notify`
+  tag) and test (k)'s no-chain semantics (valid verb + zero terminals returns `[]` at
+  queries.py:164 — well-defined, distinct from unknown-verb). Initial verdict
+  NOT-PLAN-READY on three items, all folded same day: (5) multi-match error contract
+  cross-boundary (now a `ValueError` + pass-through rule, §2.2/§2.8, test (n)); (6)
+  "disjointness again sufficient" wording contradiction (fixed — necessary-not-sufficient
+  stands); (7) status-line contradiction (fixed). Durability caveat accepted: populate.py
+  delete+recreate means a future enriched feed can restore `notify,send`; fails closed.
 - CONFIRMED sound: §2.6 compound-goal start gate, §2.7 slug-scoped final-position auth
   (4th pass), §2.8 adapter decode + one-shot reinference (5th pass — empirically verified the
   structured payload survives in `content[0].json` before flattening, retry bounded to one).
@@ -139,16 +150,30 @@ any runtime mechanism would be calibrated against a population of ONE. The decid
 
 1. **Retag (the fix).** Backfill `send_mail.intent_tags` `'notify,send'` → `'send'` in the
    live DB (backup first, row-count-asserted UPDATE, re-read verify — same runbook as AC-03).
-   The row then matches only `email`, and map-value disjointness is again sufficient for the
-   invariant. Durability: `send_mail`'s cli row is `source_class='cli_audit'`,
-   `catalog_path='reconstructed-from-db'` — no on-disk manifest feeds it, so the DB row is
-   the operative source of truth; the only reintroduction path is a future cli-audit feed
-   re-run, which the invariant test below catches as RED.
+   The row then matches only `email`. Note (6th-pass fix): map-value disjointness remains
+   NECESSARY but NOT sufficient — the retag makes the *current live population* satisfy the
+   per-terminal invariant; the invariant test stays the guard, not the map property.
+   Durability (6th-pass grounding): `send_mail`'s cli row is `source_class='cli_audit'`,
+   `catalog_path='reconstructed-from-db'`, and no `send_mail` entry exists in
+   `~/.hermes/cli-registry-enrich-cache.json` — so today the DB row is the operative source
+   of truth. BUT population deletes + recreates capability rows from feed data
+   (populate.py:55-57), so a future enriched feed CAN restore `notify,send`; the plan-time
+   integrity check + invariant test then fail closed (loud RED, no mis-route) — they do not
+   prevent the overwrite, and that is accepted.
 2. **Matching rule (deterministic, no resolution step).** A terminal satisfies action `a`
-   iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is non-empty. If any live terminal
-   matches MORE than one verb, that is a **hard error** (surfaced by the invariant test, and
-   asserted at plan time when action terminals are computed) — never a silent pick via
-   priority or specificity. Rationale: a global priority order or per-slug override map
+   iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is non-empty. If any terminal in the
+   computed action-terminal set matches MORE than one verb, that is a **hard integrity
+   error** — never a silent pick via priority or specificity. **Error contract (6th-pass
+   fix — both transports structure only `TypeError`/`ValueError`, mcp/server.py:38 /
+   a2a.py:22, so an `AssertionError` would escape unstructured):** the wrapper
+   (`core/catalog/queries.py::plan_cli_chain`) performs the check while computing
+   `action_terminals` and raises
+   `ValueError("action verb integrity: terminal '<slug>' matches multiple verbs [<a1>, <a2>]")`.
+   The transports structure it via their existing `except (TypeError, ValueError)` paths.
+   Adapter behavior: this payload does NOT match the unknown-verb shape, so the §2.8 decode
+   routes it to **pass-through** — a typed, message-preserving raise with ZERO corrective
+   reinference (reinference cannot fix registry data). Contract test (n) in §5.
+   Rationale for no resolution mechanism: a global priority order or per-slug override map
    would encode today's single example as universal law; deferring the mechanism until a
    real second multi-tagged terminal exists means the decision is made against data, not
    an n=1 guess. Rejected alternatives (recorded for the future RED case): static per-verb
@@ -286,7 +311,11 @@ map. Validation lives entirely in the registry.**
   1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
      structured `{"error": "unknown action verb: <v>; known: [...]"}` payload BEFORE
      `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
-     rather than letting it degrade to the generic "no healthy chain".
+     rather than letting it degrade to the generic "no healthy chain". **6th-pass fix:** any
+     OTHER structured `{"error": ...}` payload from `plan_cli_chain` (e.g. the §2.2
+     `action verb integrity` ValueError) is raised as a typed, message-preserving planner
+     error with ZERO corrective reinference — only the unknown-verb shape triggers
+     reinference; everything else must not degrade to the generic "no healthy chain" either.
   2. A NEW one-shot reinference step at the planner call site catches
      `UnknownActionVerbError`, re-invokes tag inference with a corrective message naming the
      rejected verb and the `known` list from the payload (mirroring the *shape* of the
@@ -395,7 +424,13 @@ map. Validation lives entirely in the registry.**
       (currently it degrades to a generic "no healthy chain" — assert that is now typed);
   (m) catching `UnknownActionVerbError` drives EXACTLY ONE corrective reinference whose
       message names the rejected verb + the `known` list, then re-calls `plan_cli_chain` once;
-      a second failure raises (no loop).
+      a second failure raises (no loop);
+  (n) **multi-match integrity error contract (§2.2, 6th-pass).** Registry side: on a
+      synthetic double-tagged terminal, `plan_cli_chain` raises
+      `ValueError("action verb integrity: ...")` naming the slug and both verbs, and each
+      transport structures it (`_error_block` / `{"error": ...}` — mcp/server.py:38,
+      a2a.py:22). Adapter side: that payload passes through as a typed, message-preserving
+      error with ZERO reinference calls (assert the inference mock is not re-invoked).
 - **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
   guard; assert forwarded `goal_actions` + retained producer.
 - **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
