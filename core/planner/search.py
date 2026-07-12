@@ -117,9 +117,15 @@ def _action_terminals(caps, goal_actions) -> set[str]:
 
 
 def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
-               max_chain_depth=4, max_candidate_chains=100):
+               max_chain_depth=4, max_candidate_chains=100, goal_actions=None):
     allow_side_effects = set(allow_side_effects or [])
+    goal_actions = list(goal_actions or [])
+    if len(goal_actions) > 1:
+        # §7: one final action hop per goal; forward-compatible list, explicit cap
+        raise ValueError(f"multiple action verbs not supported: {sorted(goal_actions)}")
     caps = _cap_index(session)
+    # §2.2: validates verbs and enforces max-one-verb-per-live-terminal.
+    action_terminals = _action_terminals(caps, goal_actions) if goal_actions else set()
     adjacency = {}
     for e in session.exec(select(CliEdge)).all():
         adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
@@ -144,12 +150,31 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
         while q:
             path, visited, hops = q.popleft()
             tail = path[-1]
-            # fail-UNSAFE prune: destructive/unknown OR inferred-side-effect
-            if _hop_excluded(caps[tail], allow_side_effects):
-                continue
-            if _slug_produces(caps[tail]) & goal_out:
-                candidates.append(_finalize(path, caps, hops))
-                continue
+            if not goal_actions:
+                # legacy path — byte-identical to the pre-goal_actions planner
+                # (§2.3: "the new clauses are gated behind non-empty goal_actions")
+                if _hop_excluded(caps[tail], allow_side_effects):
+                    continue
+                if _slug_produces(caps[tail]) & goal_out:
+                    candidates.append(_finalize(path, caps, hops))
+                    continue
+            else:
+                if _hop_excluded(caps[tail], allow_side_effects):
+                    continue
+                if tail in action_terminals:
+                    # §2.3 terminal predicate: the final hop is the action; the
+                    # artifact must come from an EARLIER hop (path[:-1]), so a
+                    # dual-capable CLI never satisfies a compound goal in 1 hop.
+                    artifact_met = (not goal_out) or any(
+                        _slug_produces(caps[s]) & goal_out for s in path[:-1])
+                    if artifact_met:
+                        candidates.append(_finalize(path, caps, hops))
+                    # action terminals are FINAL-position only (§2.6/§2.7):
+                    # never expand through one — its confirmation output must
+                    # not feed a later hop as a fake artifact.
+                    continue
+                # §2.4: a producer hop does NOT short-circuit when an action is
+                # requested — fall through to neighbor expansion.
             if len(path) >= max_chain_depth:
                 continue
             for (nxt, via) in adjacency.get(tail, []):

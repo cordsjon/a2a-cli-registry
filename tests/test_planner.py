@@ -351,3 +351,52 @@ def test_max_one_verb_per_live_terminal():
         f"max-one-verb-per-live-terminal invariant is violated; decide a fresh "
         f"disambiguation (do NOT silently pick)"
     )
+
+
+def test_compound_goal_plans_producer_then_mailer_via_persisted_edge(db):
+    # §2.3/§2.4 core predicate, isolated from §2.5 synthesis by a PERSISTED edge.
+    _mail_fleet(db)
+    db.add(CliEdge(from_slug="report_gen", to_slug="mailer", via_type="text"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert any(c.slugs == ["report_gen", "mailer"] for c in chains)
+
+
+def test_producer_does_not_short_circuit_when_goal_actions_set(db):
+    # spec §5 test (b): with goal_actions, a bare producer path is NOT terminal.
+    _mail_fleet(db)
+    db.add(CliEdge(from_slug="report_gen", to_slug="mailer", via_type="text"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert all(c.slugs != ["report_gen"] for c in chains)
+
+
+def test_empty_goal_actions_is_byte_identical_to_today(db):
+    # spec §5 test (c): regression guard — goal_actions=[] output == legacy output.
+    _fleet(db)
+    legacy = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"])
+    gated = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"],
+                       goal_actions=[])
+    assert [c.slugs for c in legacy] == [c.slugs for c in gated]
+    assert [c.hops for c in legacy] == [c.hops for c in gated]
+
+
+def test_dual_capable_cli_does_not_satisfy_compound_in_one_hop(db):
+    # spec §5 test (e) / §2.3: artifact must come from an EARLIER hop.
+    db.add(Cli(slug="dual", lang="python"))
+    db.add(Capability(cli_slug="dual", intent_tags="send", input_types="text",
+                      output_types="text", side_effect="external", confidence="declared"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["text"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert all(c.slugs != ["dual"] for c in chains)
+
+
+def test_more_than_one_action_verb_raises(db):
+    # spec §7: multi-action-per-goal is OUT — explicit error, not silent.
+    _mail_fleet(db)
+    with _pytest.raises(ValueError, match="multiple action verbs"):
+        plan_chain(db, goal_inputs=["text"], goal_outputs=[],
+                   goal_actions=["email", "webhook"])
