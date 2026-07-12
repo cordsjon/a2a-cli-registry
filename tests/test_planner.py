@@ -323,3 +323,31 @@ def test_multi_match_terminal_is_hard_integrity_error(db):
     with _pytest.raises(ValueError,
                         match=r"action verb integrity: terminal 'mailer' matches multiple verbs"):
         _action_terminals(caps, ["email"])
+
+
+@_pytest.mark.skipif(not _os.path.exists(_LIVE_REGISTRY_DB),
+                     reason="live registry ~/.hermes/cli-registry.db not present")
+def test_max_one_verb_per_live_terminal():
+    # spec §5 test (h), RED-first: for EVERY live terminal, at most one verb in
+    # _ACTION_REQUIRES_TAG matches its actual intent_tags. Reproduces the
+    # send_mail double-match ('notify,send' -> email AND notify) as RED, goes
+    # GREEN after the §8-step-0 retag, and stays as the permanent tripwire: a
+    # feed re-run reintroducing 'notify' (populate.py delete+recreate) or a new
+    # multi-tagged terminal turns it RED again, forcing a fresh design decision.
+    from sqlmodel import Session, create_engine
+    from core.planner.search import _ACTION_REQUIRES_TAG, _slug_intent_tags
+
+    engine = create_engine(f"sqlite:///{_LIVE_REGISTRY_DB}")
+    with Session(engine) as session:
+        caps = _cap_index(session)
+    offenders = {}
+    for slug, caps_for_slug in caps.items():
+        tags = _slug_intent_tags(caps_for_slug)
+        verbs = [a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & tags]
+        if len(verbs) > 1:
+            offenders[slug] = sorted(verbs)
+    assert not offenders, (
+        f"live terminals matching >1 action verb: {offenders} — the §2.2 "
+        f"max-one-verb-per-live-terminal invariant is violated; decide a fresh "
+        f"disambiguation (do NOT silently pick)"
+    )
