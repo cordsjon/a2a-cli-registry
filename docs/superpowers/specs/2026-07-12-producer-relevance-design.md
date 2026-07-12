@@ -305,3 +305,10 @@ Reviewed against commit `94952a8` and the read-only live database
    Finally, add explicit tests that `catalog.queries.plan_cli_chain` forwards the
    terms and serializes `relevance_rank`; neither behavior is covered by the
    listed registry tests as written.
+
+## Codex review — confirm pass
+
+**CONFIRM.** All five pre-panel findings are faithfully folded in the cited
+sections. The folds introduce no new contradiction, including across §2.2's
+order-invariance claim and test (b), the leaf-module helper import direction,
+and §2.1's runtime filtering with §3(f).
