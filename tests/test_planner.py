@@ -427,3 +427,32 @@ def test_synthesis_does_not_create_chains_into_non_requested_terminals(db):
                         goal_actions=["email"])
     assert chains, "email chain must still plan"
     assert all("webhooker" not in c.slugs for c in chains)
+
+
+def test_pure_action_goal_starts_at_action_terminal(db):
+    # spec §5 test (g) / §2.6: empty goal_outputs + goal_actions -> the terminal
+    # itself is a valid 1-hop chain even though its input_types='text' would
+    # normally exclude it from empty-goal_in starts.
+    _mail_fleet(db)
+    chains = plan_chain(db, goal_inputs=[], goal_outputs=[], goal_actions=["email"])
+    assert any(c.slugs == ["mailer"] for c in chains)
+
+
+def test_compound_goal_does_not_admit_action_terminal_as_start(db):
+    # spec §5 test (i) / §2.6 3rd-pass gate: with goal_outputs non-empty, no
+    # returned chain may START at the action terminal (its confirmation text
+    # must never masquerade as the artifact).
+    _mail_fleet(db)
+    chains = plan_chain(db, goal_inputs=["text"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert all(c.slugs[0] != "mailer" for c in chains)
+
+
+def test_notify_goal_does_not_route_to_send_tagged_mailer(db):
+    # spec §5 test (k), hermetic twin of the post-retag semantics: 'notify' is a
+    # VALID verb that matches zero terminals (mailer carries only 'send') — the
+    # goal plans NO chain rather than mis-routing to mail. The live half of (k)
+    # is pinned by Task 2's invariant test + the retag itself.
+    _mail_fleet(db)
+    chains = plan_chain(db, goal_inputs=[], goal_outputs=[], goal_actions=["notify"])
+    assert chains == []

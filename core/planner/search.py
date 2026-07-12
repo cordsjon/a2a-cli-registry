@@ -158,6 +158,13 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
         starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
     else:
         starts = [s for s, c in caps.items() if not _slug_consumes(c)]
+    # §2.6: ONLY a pure-action goal (empty goal_outputs) admits action
+    # terminals as starts, regardless of their declared inputs. For a compound
+    # goal the terminal is reachable ONLY as a synthesized final hop (§2.5)
+    # downstream of a real producer — starting there would let its
+    # confirmation output masquerade as the artifact (3rd-pass fix).
+    if goal_actions and not goal_out:
+        starts = sorted(set(starts) | action_terminals)
     candidates = []
 
     for start in starts:
