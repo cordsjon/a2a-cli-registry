@@ -209,3 +209,36 @@ def test_terminates_on_cyclic_typegraph(db):
     db.commit()
     # must terminate (cycle guard), not hang
     plan_chain(db, goal_inputs=["t"], goal_outputs=["nonexistent"], max_chain_depth=4)
+
+
+def test_favorably_ranked_start_not_starved_by_worse_earlier_candidates(db):
+    # 100 "worse" starts (writes-fs side effect -> side_effect_count=1) each
+    # produce ONE matching candidate immediately. A 101st start, "winner"
+    # (side_effect='none' -> side_effect_count=0, strictly better per
+    # Chain.sort_key()), is inserted LAST. Before the fix: the 100 worse
+    # candidates fill max_candidate_chains before winner's start is ever
+    # visited, so winner is starved out entirely -- not merely ranked last,
+    # ABSENT. After the fix: every start is enumerated before sorting, so
+    # winner (fewest side effects) correctly sorts to position 0.
+    #
+    # This shape is deliberately NOT "N dead-end starts + 1 winner" (that
+    # never fills the cap at all, since dead ends append nothing, and does
+    # not reproduce the bug -- confirmed during spec review). Starvation
+    # requires earlier starts that actually contend for cap space.
+    for i in range(100):
+        slug = f"worse{i:03d}"
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags="g", input_types="file:pdf",
+                          output_types="text:goal", side_effect="writes-fs", confidence="declared"))
+    db.add(Cli(slug="winner", lang="python"))
+    db.add(Capability(cli_slug="winner", intent_tags="g", input_types="file:pdf",
+                      output_types="text:goal", side_effect="none", confidence="declared"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"],
+                        max_candidate_chains=100)
+    assert chains, "expected at least 100 candidates"
+    assert chains[0].slugs == ["winner"], (
+        f"winner should rank first (fewest side effects) but got "
+        f"{chains[0].slugs}; winner present at all: "
+        f"{any(c.slugs == ['winner'] for c in chains)}"
+    )
