@@ -1,13 +1,28 @@
-# US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 — `goal_actions` Redesign
+# `goal_actions` Dimension — Planner Redesign (SPUN OUT of VOCAB-01)
 
 **Date:** 2026-07-12
-**Status:** Design — revised after FOUR Codex grounding passes. 4th-pass fixes applied:
-§2.2 max-one-verb-per-live-terminal invariant + disambiguation (the disjoint-map-values claim
-was REFUTED — `send_mail`'s `notify,send` row matched both `email` and `notify`); §2.8/§3
-explicit planner-error decode + one-shot reinference on the adapter (the "reuse the existing
-port-tag retry loop" claim was REFUTED — that loop runs pre-planner and swallows structured
-errors). Prior 3rd-pass fixes (§2.6 start gate, §2.7 slug-scoped auth) were Codex-CONFIRMED
-sound. **A 5th Codex pass on these two folded fixes is the next gate before writing-plans.**
+**Status:** Design — SPUN OUT into its own ticket (2026-07-12) after 5 Codex grounding passes.
+The parent ticket US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 was **split**: its §2.2-independent
+slice (AC-02 send_mail reachability + AC-03 seed_anthropic_index backfill) ships separately
+(see `2026-07-12-vocab01-sideeffect-reachability-slice.md`); the entire `goal_actions`
+dimension (§2.2–§2.8, AC-04/AC-05) lives here and is NOT plan-ready.
+
+**Codex pass ledger (5 passes):**
+- CONFIRMED sound: §2.6 compound-goal start gate, §2.7 slug-scoped final-position auth
+  (4th pass), §2.8 adapter decode + one-shot reinference (5th pass — empirically verified the
+  structured payload survives in `content[0].json` before flattening, retry bounded to one).
+- **OPEN — the blocking design question: §2.2 action→verb matching.** Refuted twice.
+  Attempt 1 (disjoint map values) and attempt 2 (rarer-tag tie-break) both fail because in the
+  LIVE registry (`~/.hermes/cli-registry.db`) `send_mail`=`notify,send` is the SOLE carrier of
+  BOTH `send` and `notify` — rarity is a 1–1 tie, so the tie-break can't resolve
+  `send_mail → email`. A multi-tagged terminal matching multiple action verbs needs a
+  deterministic resolution that the 2-attempt rule says must come from a fresh design pass,
+  not another patch. Candidate directions recorded in §2.2 (retag the data; explicit per-verb
+  priority order; resolve-over-single-verb invariant) — pick one via brainstorm before planning.
+
+> NOTE: the `registry.db` in THIS repo is a DIFFERENT dataset (474 CLIs, no `send_mail`, 3
+> `notify` CLIs) than the live `~/.hermes/cli-registry.db` the adapter plans against. Ground
+> all `send_mail`/tag-rarity claims against the LIVE DB — an earlier fold conflated the two.
 **Repos touched:** `a2a-cli-registry` (planner, ops schema, tests), `hermes-adapter` (tag inference, discovery, tool schema, planner call, bypass guard)
 
 ---
