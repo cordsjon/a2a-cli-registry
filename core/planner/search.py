@@ -2,7 +2,8 @@
 from collections import deque
 from dataclasses import dataclass, field
 from sqlmodel import select
-from core.models import Capability, CliEdge
+from core.models import Capability, CliEdge, Cli
+from core.catalog.match import clean_terms, ident_haystack, vocab_haystack, term_matches
 
 # excluded-by-default side-effect classes (fail-UNSAFE): destructive + unknown
 _UNSAFE_DEFAULT = {"destructive", "unknown"}
@@ -16,11 +17,15 @@ class Chain:
     side_effect_count: int
     min_confidence_rank: int       # max over hops of _CONFIDENCE_RANK (worst hop)
     hops: list[dict] = field(default_factory=list)
+    relevance_rank: int = 1    # 0 = a producer hop matches a producer_term (§2.2)
 
     def sort_key(self):
         # length asc, side-effect count asc, min-confidence DESC (rank asc since
-        # lower rank = higher confidence), slug-sequence asc (final tiebreak)
-        return (self.length, self.side_effect_count, self.min_confidence_rank, tuple(self.slugs))
+        # lower rank = higher confidence), relevance asc (0 = producer matches a
+        # requested term — resolves formerly-arbitrary slug ties, spec §2.2),
+        # slug-sequence asc (final tiebreak)
+        return (self.length, self.side_effect_count, self.min_confidence_rank,
+                self.relevance_rank, tuple(self.slugs))
 
 
 def _cap_index(session):
@@ -117,7 +122,8 @@ def _action_terminals(caps, goal_actions) -> set[str]:
 
 
 def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
-               max_chain_depth=4, max_candidate_chains=100, goal_actions=None):
+               max_chain_depth=4, max_candidate_chains=100, goal_actions=None,
+               producer_terms=None):
     allow_side_effects = set(allow_side_effects or [])
     goal_actions = list(goal_actions or [])
     if len(goal_actions) > 1:
@@ -212,6 +218,27 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
                     continue                       # cycle guard
                 q.append((path + [nxt], visited | {nxt},
                           hops + [{"from": tail, "to": nxt, "via_type": via}]))
+
+    # §2.2 producer relevance: rank 0 iff any PRODUCER hop matches any term
+    # under the shared two-haystack predicate. Producer hops = path[:-1] when
+    # the final hop is an action terminal (its verb already matched, and its
+    # blob must not fake artifact relevance); ALL hops otherwise. Runs before
+    # the [:max_candidate_chains] cut — rank-before-cap is the point (§1.1).
+    terms = clean_terms(producer_terms)
+    if terms and candidates:
+        descs = {c.slug: c.description or "" for c in session.exec(select(Cli)).all()}
+        idents, vocabs = {}, {}
+
+        def _slug_matches(s):
+            if s not in idents:
+                idents[s] = ident_haystack(s, descs.get(s, ""))
+                vocabs[s] = vocab_haystack(caps.get(s, []))
+            return any(term_matches(t, idents[s], vocabs[s]) for t in terms)
+
+        for ch in candidates:
+            producers = ch.slugs[:-1] if ch.slugs[-1] in action_terminals else ch.slugs
+            if any(_slug_matches(s) for s in producers):
+                ch.relevance_rank = 0
 
     candidates.sort(key=lambda c: c.sort_key())
     return candidates[:max_candidate_chains]
