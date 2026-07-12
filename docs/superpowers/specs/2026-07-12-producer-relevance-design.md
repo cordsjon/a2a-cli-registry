@@ -135,10 +135,17 @@ return (self.length, self.side_effect_count, self.min_confidence_rank,
 - `_TAG_INFER_SYSTEM` (cli_registry.py:487-499) gains: `producer_terms` = 1–3 short
   lowercase nouns naming the ARTIFACT the goal asks to produce (e.g. "codename",
   "cheatsheet", "poster"); `[]` when the goal names no artifact. Free text — explicitly
-  NOT restricted to the registry vocabulary.
+  NOT restricted to the registry vocabulary. The prompt MUST carry a negative
+  instruction: never emit generic type words (`text`, `json`, `file`, `output`) — a
+  generic term substring-matches most capability-vocab haystacks, marking nearly every
+  chain rank 0 and collapsing the signal back to the alphabetical tie-break (graceful
+  but useless).
 - `_infer_capability_tags` returns the key (string-filtered like `goal_actions`,
   cli_registry.py:536). Absence tolerated: missing/malformed ⇒ `[]`, never an error —
-  the feature degrades to legacy ordering, it never blocks planning.
+  the feature degrades to legacy ordering, it never blocks planning. Hygiene filtering
+  (non-string AND blank/whitespace-only elements) is **registry-side authoritative**
+  (§2.1/§2.2); the adapter forwards its string-filtered list unmodified and does NOT
+  duplicate the blank filter — one owner, no divergence.
 - **Vocab-guard exemption (load-bearing):** the step-3 vocabulary guard
   (cli_registry.py:922-930) validates `goal_inputs`/`goal_outputs` against the registry
   vocabulary and must NOT see `producer_terms` — they are fuzzy match hints, not
@@ -185,8 +192,10 @@ visibility also depends on reachability/pruning — Codex finding 5).
 
 Registry — wrapper + transport (`tests/test_ops_registry.py` / `tests/test_mcp.py`):
 - (g1) op schema accepts optional `producer_terms`; (g2)
-  `catalog.queries.plan_cli_chain` forwards terms to `planner.search.plan_chain`;
-  (g3) response chains serialize `relevance_rank`.
+  `catalog.queries.plan_cli_chain` forwards terms to `planner.search.plan_chain`, AND
+  when the op is called WITHOUT `producer_terms` the response ordering (`slugs`+`hops`)
+  matches legacy — the transport-level twin of planner test (b), proving AC-02
+  invariance through the full op path; (g3) response chains serialize `relevance_rank`.
 
 Adapter (unit, mocked MCP):
 - (h) Inference emits `producer_terms`; missing key ⇒ `[]`.
