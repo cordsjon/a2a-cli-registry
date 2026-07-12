@@ -78,6 +78,44 @@ def _slug_consumes(caps_for_slug) -> set[str]:
     return {p for c in caps_for_slug for p in c.input_types.split(",") if p}
 
 
+# --- goal_actions dimension (spec 2026-07-12-goal-actions-dimension-design §2.2) ---
+# Action verbs are matched to terminal intent tags. Map values are pairwise
+# disjoint (necessary), but the real guard is the max-one-verb-per-live-terminal
+# invariant enforced in _action_terminals (sufficient): a multi-tagged terminal
+# matching >1 verb is a hard integrity error, never a silent pick.
+_ACTION_REQUIRES_TAG = {
+    "email":      {"send"},       # send_mail carries 'send' post-retag (§8 step 0)
+    "notify":     {"notify"},     # a pure-notification terminal (none live today)
+    "webhook":    {"webhook"},
+    "file_write": {"persist"},
+}
+
+
+def _slug_intent_tags(caps_for_slug) -> set[str]:
+    return {t for c in caps_for_slug for t in c.intent_tags.split(",") if t}
+
+
+def _action_terminals(caps, goal_actions) -> set[str]:
+    """Slugs satisfying a requested action verb (§2.2). Raises ValueError on an
+    unknown verb (§2.8 structured-error contract) or on any slug whose intent
+    tags match more than one map verb (max-one-verb-per-live-terminal)."""
+    unknown = [a for a in goal_actions if a not in _ACTION_REQUIRES_TAG]
+    if unknown:
+        raise ValueError(
+            f"unknown action verb: {unknown[0]}; known: {sorted(_ACTION_REQUIRES_TAG)}")
+    terminals = set()
+    for slug, caps_for_slug in caps.items():
+        tags = _slug_intent_tags(caps_for_slug)
+        verbs = [a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & tags]
+        if len(verbs) > 1:
+            raise ValueError(
+                f"action verb integrity: terminal '{slug}' matches multiple verbs "
+                f"{sorted(verbs)}")
+        if verbs and verbs[0] in goal_actions:
+            terminals.add(slug)
+    return terminals
+
+
 def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
                max_chain_depth=4, max_candidate_chains=100):
     allow_side_effects = set(allow_side_effects or [])

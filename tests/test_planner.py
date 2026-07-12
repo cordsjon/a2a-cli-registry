@@ -282,3 +282,44 @@ def test_send_mail_reachable_at_default_cap_live():
         "send_mail absent from the default-cap (100) plan output against the live "
         "registry — cap-starvation fix 16798e3 or external-recognition 3a78aa8 regressed"
     )
+
+
+# --- US-CLIREG-GOALACTIONS-01: §2.2 action map -------------------------------
+from core.planner.search import _action_terminals, _cap_index
+
+
+def _mail_fleet(db, mailer_tags="send"):
+    """Producer (text) + a mail-terminal CLI. NO persisted edge between them —
+    edge synthesis (§2.5) is what must connect them."""
+    for slug, intag, ins, outs, se, conf in [
+        ("report_gen", "report", "file:pdf", "text", "none", "declared"),
+        ("mailer", mailer_tags, "text", "text", "external", "declared"),
+    ]:
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags=intag, input_types=ins,
+                          output_types=outs, side_effect=se, confidence=conf))
+    db.commit()
+
+
+def test_action_terminals_matches_email_via_send_tag(db):
+    _mail_fleet(db)
+    caps = _cap_index(db)
+    assert _action_terminals(caps, ["email"]) == {"mailer"}
+
+
+def test_unknown_action_verb_raises_structured_valueerror(db):
+    # spec §2.2/§2.8 test (f): never silently dropped, never routed wrong
+    _mail_fleet(db)
+    caps = _cap_index(db)
+    with _pytest.raises(ValueError, match=r"unknown action verb: telegram; known:"):
+        _action_terminals(caps, ["telegram"])
+
+
+def test_multi_match_terminal_is_hard_integrity_error(db):
+    # spec §2.2 + test (h) hermetic twin: a double-tagged terminal (notify,send)
+    # matches both 'email' and 'notify' — hard error, never a silent pick.
+    _mail_fleet(db, mailer_tags="notify,send")
+    caps = _cap_index(db)
+    with _pytest.raises(ValueError,
+                        match=r"action verb integrity: terminal 'mailer' matches multiple verbs"):
+        _action_terminals(caps, ["email"])
