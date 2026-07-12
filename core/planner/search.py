@@ -31,7 +31,7 @@ def _cap_index(session):
 
 
 def _slug_side_effect(caps_for_slug) -> str:
-    order = ["destructive", "unknown", "network", "writes-fs", "none"]
+    order = ["destructive", "unknown", "network", "external", "writes-fs", "none"]
     present = {c.side_effect for c in caps_for_slug}
     for level in order:
         if level in present:

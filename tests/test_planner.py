@@ -165,6 +165,39 @@ def test_declared_writes_fs_still_allowed_by_default(db):
     assert any("dmid" in c.slugs for c in chains)
 
 
+def test_declared_external_side_effect_always_allowed(db):
+    # a DECLARED external hop must be included by default, mirroring the
+    # writes-fs precedent above. Nonempty output_types on the synthetic
+    # capability is required — Bug 2 (empty output_types) is a separate,
+    # independently-tested gap; this test isolates Bug 1 only.
+    db.add(Cli(slug="src", lang="python"))
+    db.add(Capability(cli_slug="src", intent_tags="g", input_types="file:pdf",
+                      output_types="text:x", side_effect="none", confidence="declared"))
+    db.add(Cli(slug="emid", lang="python"))
+    db.add(Capability(cli_slug="emid", intent_tags="g", input_types="text:x",
+                      output_types="text:goal", side_effect="external", confidence="declared"))
+    db.add(CliEdge(from_slug="src", to_slug="emid", via_type="text:x"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert any("emid" in c.slugs for c in chains)
+
+
+def test_inferred_external_side_effect_excluded_by_default(db):
+    # inferred (unverified) external side-effect must fail UNSAFE by default,
+    # same rule as inferred writes-fs/network above.
+    _inferred_fleet(db, se="external")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"])
+    assert chains == []
+
+
+def test_inferred_external_side_effect_included_when_allowed(db):
+    # same goal, operator opts into the external blast-radius class -> included
+    _inferred_fleet(db, se="external")
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:goal"],
+                        allow_side_effects=["external"])
+    assert any("mid" in c.slugs for c in chains)
+
+
 def test_terminates_on_cyclic_typegraph(db):
     db.add(Cli(slug="a", lang="python")); db.add(Cli(slug="b", lang="python"))
     db.add(Capability(cli_slug="a", input_types="t", output_types="t", intent_tags="x",
