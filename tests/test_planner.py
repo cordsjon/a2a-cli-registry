@@ -242,3 +242,31 @@ def test_favorably_ranked_start_not_starved_by_worse_earlier_candidates(db):
         f"{chains[0].slugs}; winner present at all: "
         f"{any(c.slugs == ['winner'] for c in chains)}"
     )
+
+
+def test_external_terminal_reachable_at_default_cap(db):
+    # AC-02 regression pin for the cap-starvation fix (a2a-cli-registry 16798e3).
+    # Before 16798e3, plan_chain broke out of the outer start-loop once
+    # len(candidates) >= max_candidate_chains (default 100) BEFORE sorting, so a
+    # favorably-ranked start could be starved out if dict-iteration visited 100+
+    # other valid starts first. This pins that a live-shaped `external` terminal
+    # (send_mail: notify,send | text->text | external) survives to the ranked
+    # output at the DEFAULT cap even amid 120 competing text->text producers.
+    # 120 competing producers, all text:doc -> text:summary, no side effect.
+    for i in range(120):
+        slug = f"producer_{i}"
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags="summarize",
+                          input_types="text:doc", output_types="text:summary",
+                          side_effect="none", confidence="declared"))
+    # The live-shaped external terminal: consumes+produces text, side_effect external.
+    db.add(Cli(slug="send_mail", lang="python"))
+    db.add(Capability(cli_slug="send_mail", intent_tags="notify,send",
+                      input_types="text:summary", output_types="text:summary",
+                      side_effect="external", confidence="declared"))
+    db.commit()
+
+    chains = plan_chain(db, goal_inputs=["text:doc"], goal_outputs=["text:summary"],
+                        allow_side_effects={"external"})
+    assert any("send_mail" in c.slugs for c in chains), \
+        "send_mail starved out at default cap — cap-starvation fix 16798e3 regressed"
