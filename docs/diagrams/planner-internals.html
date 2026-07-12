@@ -1,0 +1,505 @@
+<title>Planner Internals — plan_chain & the goal_actions Redesign</title>
+<style>
+  :root {
+    --ground: #0d1117;
+    --panel: #131a24;
+    --panel-2: #182130;
+    --ink: #dce6f2;
+    --ink-dim: #8ba0b8;
+    --ink-faint: #5a6b80;
+    --line: #223040;
+    --line-bright: #2f4356;
+    --teal: #4fd1c5;
+    --teal-deep: #1f8a80;
+    --amber: #f0b070;
+    --amber-deep: #b97a3a;
+    --violet: #9b8cf0;
+    --violet-deep: #6a5cc0;
+    --green: #5bd18a;
+    --red: #f0757e;
+    --mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", ui-monospace, "Consolas", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --ground: #f5f7fa;
+      --panel: #ffffff;
+      --panel-2: #eef2f7;
+      --ink: #14202e;
+      --ink-dim: #46586c;
+      --ink-faint: #7c8da3;
+      --line: #d9e1ea;
+      --line-bright: #c2cfdc;
+      --teal: #12897e;
+      --teal-deep: #4fd1c5;
+      --amber: #b06a1f;
+      --amber-deep: #f0b070;
+      --violet: #5a4bb8;
+      --violet-deep: #9b8cf0;
+      --green: #1f9d5c;
+      --red: #cc3b48;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d1117; --panel: #131a24; --panel-2: #182130;
+    --ink: #dce6f2; --ink-dim: #8ba0b8; --ink-faint: #5a6b80;
+    --line: #223040; --line-bright: #2f4356;
+    --teal: #4fd1c5; --amber: #f0b070; --violet: #9b8cf0;
+    --green: #5bd18a; --red: #f0757e;
+  }
+  :root[data-theme="light"] {
+    --ground: #f5f7fa; --panel: #ffffff; --panel-2: #eef2f7;
+    --ink: #14202e; --ink-dim: #46586c; --ink-faint: #7c8da3;
+    --line: #d9e1ea; --line-bright: #c2cfdc;
+    --teal: #12897e; --amber: #b06a1f; --violet: #5a4bb8;
+    --green: #1f9d5c; --red: #cc3b48;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---- header ---- */
+  header {
+    padding: 64px 0 40px; border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--teal); margin: 0 0 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before {
+    content: ""; width: 28px; height: 1px; background: var(--teal);
+    display: inline-block;
+  }
+  h1 {
+    font-family: var(--sans); font-weight: 720; font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h1 .mono { font-family: var(--mono); font-weight: 600; color: var(--teal); font-size: 0.86em; }
+  .lede {
+    font-size: 18px; color: var(--ink-dim); max-width: 62ch; margin: 0;
+    text-wrap: pretty;
+  }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px;
+    font-family: var(--mono); font-size: 12.5px;
+  }
+  .chip {
+    padding: 5px 11px; border: 1px solid var(--line-bright); border-radius: 3px;
+    color: var(--ink-dim); background: var(--panel);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .chip.shipped { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+  .chip.shipped b { color: var(--green); }
+  .chip.open { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); }
+  .chip.open b { color: var(--amber); }
+
+  /* ---- section scaffolding ---- */
+  section { padding: 52px 0; border-bottom: 1px solid var(--line); }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; }
+  .sec-num {
+    font-family: var(--mono); font-size: 13px; color: var(--teal);
+    font-weight: 600; letter-spacing: 0.04em;
+  }
+  h2 {
+    font-size: clamp(21px, 3vw, 27px); font-weight: 680; letter-spacing: -0.015em;
+    margin: 0; text-wrap: balance;
+  }
+  .sec-sub { color: var(--ink-dim); font-size: 16px; max-width: 64ch; margin: 12px 0 28px; }
+
+  /* ---- pipeline diagram ---- */
+  .pipe {
+    display: grid; gap: 0; margin: 12px 0 8px;
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    background: var(--panel);
+  }
+  .stage {
+    display: grid; grid-template-columns: 44px 1fr; align-items: stretch;
+    border-top: 1px solid var(--line);
+    position: relative; transition: background .18s ease;
+  }
+  .stage:first-child { border-top: none; }
+  .stage:hover { background: var(--panel-2); }
+  .stage:focus-within { background: var(--panel-2); }
+  .rail {
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 20px; gap: 8px; position: relative;
+    background: color-mix(in srgb, var(--teal) 6%, transparent);
+    border-right: 1px solid var(--line);
+  }
+  .node {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--ground); border: 2px solid var(--teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 14%, transparent);
+    z-index: 2; flex: none;
+  }
+  .stage.gate .node { border-color: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 16%, transparent); }
+  .stage.out .node { background: var(--teal); }
+  .rail-line {
+    width: 2px; flex: 1; background: var(--line-bright);
+    margin-bottom: -1px;
+  }
+  .stage:last-child .rail-line { background: transparent; }
+  .stage-body { padding: 18px 22px 20px; min-width: 0; }
+  .stage-title {
+    font-family: var(--mono); font-size: 14.5px; font-weight: 600;
+    color: var(--ink); margin: 0 0 3px; display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap;
+  }
+  .stage-title .fn { color: var(--teal); }
+  .stage.gate .stage-title .fn { color: var(--amber); }
+  .loc {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+    font-weight: 400; letter-spacing: 0;
+  }
+  .stage-desc { font-size: 14.5px; color: var(--ink-dim); margin: 4px 0 0; max-width: 68ch; }
+  .stage-detail {
+    margin-top: 12px; font-family: var(--mono); font-size: 12.5px;
+    color: var(--ink-dim); background: var(--ground);
+    border: 1px solid var(--line); border-left: 2px solid var(--teal);
+    border-radius: 4px; padding: 11px 14px; line-height: 1.55;
+    max-height: 0; opacity: 0; overflow: hidden; padding-top: 0; padding-bottom: 0;
+    border-width: 0 0 0 2px; transition: max-height .22s ease, opacity .18s ease, padding .22s ease;
+  }
+  .stage:hover .stage-detail, .stage:focus-within .stage-detail {
+    max-height: 260px; opacity: 1; padding: 11px 14px; border-width: 1px 1px 1px 2px;
+  }
+  .stage.gate .stage-detail { border-left-color: var(--amber); }
+  .stage-detail .k { color: var(--amber); }
+  .stage-detail .t { color: var(--teal); }
+  .hint {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint);
+    text-align: right; margin: 6px 2px 0; letter-spacing: 0.02em;
+  }
+
+  /* ---- side-effect ladder ---- */
+  .ladder { display: grid; gap: 7px; margin: 8px 0 4px; }
+  .rung {
+    display: grid; grid-template-columns: 130px 1fr auto; align-items: center;
+    gap: 14px; padding: 11px 16px; border-radius: 5px;
+    background: var(--panel); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 13px;
+  }
+  .rung .lvl { font-weight: 600; }
+  .rung .desc { color: var(--ink-dim); font-size: 12.5px; font-family: var(--sans); }
+  .rung .count {
+    font-variant-numeric: tabular-nums; color: var(--ink-dim);
+    background: var(--panel-2); padding: 2px 9px; border-radius: 3px; font-size: 12px;
+  }
+  .rung.destructive { border-left: 3px solid var(--red); } .rung.destructive .lvl { color: var(--red); }
+  .rung.unknown { border-left: 3px solid var(--red); } .rung.unknown .lvl { color: var(--red); }
+  .rung.network { border-left: 3px solid var(--amber); } .rung.network .lvl { color: var(--amber); }
+  .rung.external { border-left: 3px solid var(--amber); } .rung.external .lvl { color: var(--amber); }
+  .rung.writesfs { border-left: 3px solid var(--amber); } .rung.writesfs .lvl { color: var(--amber); }
+  .rung.none { border-left: 3px solid var(--green); } .rung.none .lvl { color: var(--green); }
+  .rung .gatemark { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+  .rung.destructive .gatemark, .rung.unknown .gatemark { color: var(--red); }
+
+  /* ---- generic prose + code ---- */
+  p.body { font-size: 15.5px; color: var(--ink-dim); max-width: 66ch; }
+  code {
+    font-family: var(--mono); font-size: 0.9em; background: var(--panel-2);
+    padding: 1px 5px; border-radius: 3px; color: var(--ink);
+  }
+  .callsig {
+    font-family: var(--mono); font-size: 13px; background: var(--ground);
+    border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px;
+    overflow-x: auto; color: var(--ink-dim); line-height: 1.7; margin: 16px 0;
+  }
+  .callsig .fn { color: var(--teal); }
+  .callsig .arg { color: var(--ink); }
+  .callsig .cmt { color: var(--ink-faint); }
+  .callsig .new { color: var(--violet); }
+
+  /* ---- goal_actions design cards ---- */
+  .designwrap { position: relative; }
+  .designwrap::before {
+    content: "DESIGNED · NOT BUILT"; position: absolute; top: -10px; right: 0;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+    color: var(--violet); border: 1px solid color-mix(in srgb, var(--violet) 40%, var(--line));
+    padding: 3px 9px; border-radius: 3px; background: var(--panel);
+  }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 26px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+    padding: 18px 18px 20px; border-top: 2px solid var(--violet-deep);
+  }
+  .card .tag {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    color: var(--violet); text-transform: uppercase; margin: 0 0 8px;
+  }
+  .card h3 { font-size: 16px; margin: 0 0 7px; font-weight: 640; letter-spacing: -0.01em; }
+  .card p { font-size: 13.5px; color: var(--ink-dim); margin: 0; line-height: 1.5; }
+  .card .mono-note { font-family: var(--mono); font-size: 12px; color: var(--teal); margin-top: 10px; display: block; }
+
+  /* ---- reveal (the two holes) ---- */
+  .reveal { display: grid; gap: 16px; margin-top: 24px; }
+  .hole {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 20px 22px; border-left: 3px solid var(--red);
+  }
+  .hole-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .hole-head .num { font-family: var(--mono); color: var(--red); font-weight: 600; font-size: 13px; }
+  .hole-head h3 { font-size: 16.5px; margin: 0; font-weight: 640; letter-spacing: -0.01em; }
+  .hole-head .status {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, var(--line));
+    padding: 2px 8px; border-radius: 3px; margin-left: auto;
+  }
+  .hole p { font-size: 14px; color: var(--ink-dim); margin: 0 0 12px; max-width: 72ch; }
+  .hole p:last-child { margin-bottom: 0; }
+  .refute {
+    font-family: var(--mono); font-size: 12.5px; background: var(--ground);
+    border: 1px solid var(--line); border-radius: 5px; padding: 12px 15px;
+    color: var(--ink-dim); line-height: 1.6; margin: 4px 0 12px;
+  }
+  .refute .bad { color: var(--red); } .refute .good { color: var(--green); } .refute .hl { color: var(--amber); }
+
+  /* ---- outcome / split ---- */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+  .split-col { border-radius: 8px; padding: 20px 22px; border: 1px solid var(--line); background: var(--panel); }
+  .split-col.ship { border-top: 3px solid var(--green); }
+  .split-col.defer { border-top: 3px solid var(--amber); }
+  .split-col h3 { font-size: 15px; margin: 0 0 4px; font-weight: 640; display: flex; align-items: center; gap: 9px; }
+  .split-col .tick { font-family: var(--mono); font-size: 12px; }
+  .split-col.ship .tick { color: var(--green); }
+  .split-col.defer .tick { color: var(--amber); }
+  .split-col .ac { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin: 0 0 14px; }
+  .split-col ul { margin: 0; padding-left: 18px; }
+  .split-col li { font-size: 13.5px; color: var(--ink-dim); margin-bottom: 7px; line-height: 1.45; }
+  .split-col li b { color: var(--ink); font-weight: 600; }
+  .split-col .ref { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-top: 14px; display: block; }
+
+  footer {
+    padding: 40px 0 0; color: var(--ink-faint); font-size: 13px;
+    font-family: var(--mono); line-height: 1.7;
+  }
+  footer a { color: var(--teal); text-decoration: none; }
+
+  @media (max-width: 620px) {
+    .split, .rung { grid-template-columns: 1fr; }
+    .rung { gap: 6px; }
+    .stage { grid-template-columns: 34px 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+    .stage-detail { max-height: 260px; opacity: 1; padding: 11px 14px; border-width: 1px 1px 1px 2px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">a2a-cli-registry · planner subsystem</p>
+    <h1>How <span class="mono">plan_chain()</span> routes a goal through 475 CLIs — and the redesign that would let it act</h1>
+    <p class="lede">The planner turns a stated goal into a ranked list of CLI chains by walking a capability graph. This page traces every stage of the live engine, then reveals the <span class="mono">goal_actions</span> redesign that failed five grounding passes — and why it was split off rather than forced.</p>
+    <div class="meta-row">
+      <span class="chip shipped"><b>SHIPPED</b> &nbsp;send_mail reachability · seed backfill</span>
+      <span class="chip open"><b>OPEN</b> &nbsp;goal_actions verb-matching</span>
+      <span class="chip"><b>475</b> CLIs indexed</span>
+      <span class="chip">core/planner/<b>search.py</b></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>The live pipeline</h2></div>
+    <p class="sec-sub">One call, six stages. A goal is a pair of type sets — what you have (<code>goal_inputs</code>) and what you want (<code>goal_outputs</code>). Hover any stage to expose its inner mechanism.</p>
+
+    <div class="callsig">
+<span class="fn">plan_chain</span>(session, <span class="arg">goal_inputs</span>, <span class="arg">goal_outputs</span>, allow_side_effects=<span class="cmt">None</span>,
+           max_chain_depth=<span class="arg">4</span>, max_candidate_chains=<span class="arg">100</span>) <span class="cmt">→ list[Chain]</span>
+    </div>
+
+    <div class="pipe">
+      <div class="stage" tabindex="0">
+        <div class="rail"><span class="node"></span><span class="rail-line"></span></div>
+        <div class="stage-body">
+          <p class="stage-title"><span class="fn">_cap_index</span> + adjacency build <span class="loc">search.py:84–87</span></p>
+          <p class="stage-desc">Load every capability row and every persisted <code>CliEdge</code> into an in-memory graph: <code>adjacency[from] = [(to, via_type)]</code>.</p>
+          <div class="stage-detail">One row per CLI: <span class="t">intent_tags · input_types · output_types · side_effect · confidence</span>. Edges are typed by the artifact that flows across them (<span class="t">via_type</span>), e.g. a <span class="k">text</span> edge only forms when the producer's output type matches the consumer's input type.</div>
+        </div>
+      </div>
+
+      <div class="stage" tabindex="0">
+        <div class="rail"><span class="node"></span><span class="rail-line"></span></div>
+        <div class="stage-body">
+          <p class="stage-title">Start selection <span class="loc">search.py:97–100</span></p>
+          <p class="stage-desc">Pick the CLIs a chain may begin at. If the goal names inputs, starts are CLIs that consume one. If <code>goal_inputs</code> is empty, starts are the no-declared-input CLIs (a query-only goal like "list files").</p>
+          <div class="stage-detail">The empty-inputs branch is load-bearing: <span class="k">276</span> live rows carry <span class="t">input_types=""</span> for exactly this case. A naive <span class="t">consumes(c) &amp; goal_in</span> would make all of them unreachable when <span class="t">goal_in</span> is empty — a fixed bug, guarded by a regression test.</div>
+        </div>
+      </div>
+
+      <div class="stage" tabindex="0">
+        <div class="rail"><span class="node"></span><span class="rail-line"></span></div>
+        <div class="stage-body">
+          <p class="stage-title">BFS frontier <span class="loc">search.py:103–121</span></p>
+          <p class="stage-desc">From each start, breadth-first walk the graph. State is <code>(path, visited, hops)</code>; a <code>visited</code> set guards cycles; depth is capped at <code>max_chain_depth=4</code>.</p>
+          <div class="stage-detail">A path terminates the moment its tail <span class="t">produces</span> a goal output — appended as a candidate. Otherwise it expands along the tail's outgoing typed edges. Cycle guard: <span class="k">if nxt in visited: continue</span>.</div>
+        </div>
+      </div>
+
+      <div class="stage gate" tabindex="0">
+        <div class="rail"><span class="node"></span><span class="rail-line"></span></div>
+        <div class="stage-body">
+          <p class="stage-title">Side-effect gate <span class="fn">_hop_excluded</span> <span class="loc">search.py:46–71</span></p>
+          <p class="stage-desc">Fail-<em>unsafe</em> prune on every hop. Destructive and unknown side-effects are excluded by default; an <em>inferred</em> (unverified) side-effect with real blast radius is also excluded unless the caller opts into its class.</p>
+          <div class="stage-detail"><span class="k">_UNSAFE_DEFAULT = {destructive, unknown}</span>. A <span class="t">writes-fs</span> or <span class="t">network</span> hop is excluded only when <span class="hl">inferred</span> and not in <span class="t">allow_side_effects</span>. Confidence alone never excludes an inferred <span class="t">none</span> hop.</div>
+        </div>
+      </div>
+
+      <div class="stage" tabindex="0">
+        <div class="rail"><span class="node"></span><span class="rail-line"></span></div>
+        <div class="stage-body">
+          <p class="stage-title">Sort — <span class="fn">then</span> cap <span class="loc">search.py:123–124</span></p>
+          <p class="stage-desc">Every enumerated candidate is sorted <em>before</em> the cap is applied, then the top <code>max_candidate_chains=100</code> are returned. Sorting before slicing is the cap-starvation fix.</p>
+          <div class="stage-detail">sort_key = (<span class="t">length</span> ↑, <span class="t">side_effect_count</span> ↑, <span class="t">min_confidence_rank</span> ↑, <span class="t">slugs</span>). Before the fix (<span class="k">16798e3</span>), the loop broke at 100 candidates <span class="hl">before</span> sorting, so a favorably-ranked start could be starved out by dict-iteration order.</div>
+        </div>
+      </div>
+
+      <div class="stage out" tabindex="0">
+        <div class="rail"><span class="node"></span></div>
+        <div class="stage-body">
+          <p class="stage-title">Ranked chains out</p>
+          <p class="stage-desc">A list of <code>Chain</code> objects, best first. Each carries its ordered <code>slugs</code>, hop trace, side-effect count, and worst-hop confidence.</p>
+          <div class="stage-detail">Live probe: goal <span class="t">text → text</span> at the default cap returns <span class="k">100</span> chains; <span class="t">send_mail</span> sits at sorted <span class="hl">position 18</span> — reachable, verified by the shipped AC-02 test.</div>
+        </div>
+      </div>
+    </div>
+    <p class="hint">▸ hover / focus a stage to reveal its mechanism</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The side-effect ladder</h2></div>
+    <p class="sec-sub">Every capability declares one side-effect level. The gate reads them in severity order — this is the safety spine of the planner. Live counts are from the 475-CLI registry.</p>
+    <div class="ladder">
+      <div class="rung destructive"><span class="lvl">destructive</span><span class="desc">deletes / overwrites irreversibly</span><span class="count">4 CLIs</span></div>
+      <div class="rung unknown"><span class="lvl">unknown</span><span class="desc">unclassified — treated as dangerous</span><span class="count">112 CLIs</span></div>
+      <div class="rung network"><span class="lvl">network</span><span class="desc">makes outbound calls</span><span class="count">42 CLIs</span></div>
+      <div class="rung external"><span class="lvl">external</span><span class="desc">acts on the outside world — <b>send_mail</b> is the only one</span><span class="count">1 CLI</span></div>
+      <div class="rung writesfs"><span class="lvl">writes-fs</span><span class="desc">writes to the filesystem</span><span class="count">33 CLIs</span></div>
+      <div class="rung none"><span class="lvl">none</span><span class="desc">pure — no blast radius</span><span class="count">283 CLIs</span></div>
+    </div>
+    <p class="body" style="margin-top:22px">Two levels — <span style="color:var(--red)">destructive</span> and <span style="color:var(--red)">unknown</span> — are excluded by default regardless of confidence. The middle three are excluded only when their side-effect is <em>inferred</em> rather than <em>declared</em>. <code>send_mail</code> declares <code>external</code>, so it is never term-gated — the fact that unlocked side-effect reachability in the first place.</p>
+  </section>
+
+  <section class="designwrap">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The redesign: a <span style="font-family:var(--mono);color:var(--violet)">goal_actions</span> dimension</h2></div>
+    <p class="sec-sub">A compound goal — "produce a report <em>and</em> email it" — is unplannable today. The producer's output and the mail action collapse onto one <code>goal_outputs</code> term, and the first text producer terminates the chain before <code>send_mail</code> is ever appended. The redesign models the terminal action as its own goal dimension.</p>
+
+    <div class="callsig">
+<span class="cmt"># the new third list — the action verb the goal demands</span>
+goal_inputs   <span class="cmt"># what the user already has</span>
+goal_outputs  <span class="cmt"># the produced artifact only</span>
+<span class="new">goal_actions</span>  <span class="cmt"># NEW — terminal action verbs (email, notify, webhook…)</span>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <p class="tag">§2.2 · matching</p>
+        <h3>Tag-keyed, not enum-keyed</h3>
+        <p>Match action terminals by their intent tags, not the side-effect enum (email/notify/webhook all collapse to <code>external</code>). Each verb maps to a discriminating tag.</p>
+        <span class="mono-note">email → {send}</span>
+      </div>
+      <div class="card">
+        <p class="tag">§2.3 · terminal predicate</p>
+        <h3>Artifact before action</h3>
+        <p>The producer hop and the action hop must be distinct positions. Since <code>send_mail</code> both consumes and outputs text, a naive predicate would let it satisfy a compound goal in one false hop.</p>
+        <span class="mono-note">artifact_met ∧ action_met</span>
+      </div>
+      <div class="card">
+        <p class="tag">§2.5 · edge synthesis</p>
+        <h3>Reach the unreachable</h3>
+        <p><code>send_mail</code> has zero persisted incoming edges (hub down-weight). The planner synthesizes producer→terminal edges in memory, at plan time — no persisted-table change.</p>
+        <span class="mono-note">adjacency[P] += (P, T, hub)</span>
+      </div>
+      <div class="card">
+        <p class="tag">§2.7 · authorization</p>
+        <h3>Slug-scoped, final only</h3>
+        <p>Self-authorization is scoped to the exact matched slugs and only at the final hop — never widened to the whole enum class (which would admit all 33 writes-fs CLIs mid-chain).</p>
+        <span class="mono-note">is_final ∧ slug ∈ action_terminals</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>The reveal — two holes that failed grounding</h2></div>
+    <p class="sec-sub">The design went through five Codex grounding passes. §2.6 and §2.7 were confirmed sound. Two claims were refuted against live code — each internally coherent, each false against the real substrate. This is why the redesign was <em>split off</em>, not shipped.</p>
+
+    <div class="reveal">
+      <div class="hole">
+        <div class="hole-head"><span class="num">HOLE 1</span><h3>Disjoint map values ≠ one verb per terminal</h3><span class="status">refuted ×2</span></div>
+        <p>The spec claimed: since the tag sets <code>{send}</code> and <code>{notify}</code> are disjoint, no terminal can match two verbs. That's a set-cover fallacy — disjoint <em>map values</em> don't stop a single <em>multi-tagged</em> terminal from satisfying multiple verbs.</p>
+        <div class="refute">send_mail.intent_tags = <span class="hl">"notify,send"</span>
+matches email → {<span class="good">send</span>}   <span class="bad">✓</span>
+matches notify → {<span class="good">notify</span>}   <span class="bad">✗ ← false match</span>  a notify goal would route to send_mail</div>
+        <p>The second attempt — a rarer-tag tie-break — died on live data too: in <code>~/.hermes/cli-registry.db</code>, <code>send</code> and <code>notify</code> each occur on exactly <b>one</b> capability (send_mail itself). A 1–1 rarity tie, so the tie-break can't resolve. Two attempts, both refuted → stop and reframe.</p>
+      </div>
+
+      <div class="hole">
+        <div class="hole-head"><span class="num">HOLE 2</span><h3>The "reuse the existing retry loop" claim</h3><span class="status">refuted, then fixed</span></div>
+        <p>The spec claimed the adapter could reuse its existing vocab-reject retry loop to re-infer on an unknown action verb. But that loop runs <em>before</em> the planner is ever called and only handles port tags — and the planner's structured error is swallowed into a generic "no healthy chain" before any caller sees the verb.</p>
+        <div class="refute">_infer_capability_tags retry  <span class="hl">@545–568</span>  <span class="bad">← pre-planner, port-tags only</span>
+plan_cli_chain call           <span class="hl">@899</span>      <span class="bad">← error decoded here, too late</span>
+_select_chain                 <span class="hl">@668</span>      <span class="bad">← flattens {error} → "no healthy chain"</span></div>
+        <p>Resolution: a new typed <code>UnknownActionVerbError</code> decode <em>before</em> flattening, plus a one-shot reinference on the planner-error path. This fold was confirmed sound by the fifth pass — the fix is real, it simply isn't the reuse the spec imagined.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-bottom:none">
+    <div class="sec-head"><span class="sec-num">05</span><h2>The outcome — split, not forced</h2></div>
+    <p class="sec-sub">The 2-attempt rule fired on Hole 1. Rather than a third patch, the ticket was split: everything §2.2-independent shipped; the whole <code>goal_actions</code> dimension became its own ticket, with verb-matching flagged as the open design question.</p>
+
+    <div class="split">
+      <div class="split-col ship">
+        <h3><span class="tick">▸ SHIPPED</span> VOCAB-01 → Done</h3>
+        <p class="ac">merged · a2a-cli-registry master e9df044</p>
+        <ul>
+          <li><b>AC-01</b> — declared-<code>external</code> recognition + <code>send_mail.output_types</code> backfill</li>
+          <li><b>AC-02</b> — <code>send_mail</code> reachable at the default cap (live probe, position 18/100)</li>
+          <li><b>AC-03</b> — <code>seed_anthropic_index</code> writes-fs / path / inferred backfill + hop-exclusion test</li>
+        </ul>
+        <span class="ref">final review PASS · 9/10 · 0 regressions</span>
+      </div>
+      <div class="split-col defer">
+        <h3><span class="tick">▸ DEFERRED</span> GOALACTIONS-01 → Ideation</h3>
+        <p class="ac">filed · the whole goal_actions dimension</p>
+        <ul>
+          <li><b>AC-01</b> — <em>the open question:</em> multi-tagged-terminal disambiguation (retag / priority order / resolve-over-verb)</li>
+          <li><b>AC-02–03</b> — planner + adapter implementation (§2.2–§2.8)</li>
+          <li><b>AC-04–05</b> — compound-goal bypass guard + live producer→send_mail E2E</li>
+        </ul>
+        <span class="ref">needs a fresh brainstorm before writing-plans</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    core/planner/search.py · docs/superpowers/specs/2026-07-12-goal-actions-dimension-design.md<br>
+    Grounded in the live registry (~/.hermes/cli-registry.db, 475 CLIs) · line refs are current as of a2a-cli-registry master e9df044.
+  </footer>
+</div>
+
+<script>
+  // Light signal-trace: pulse each pipeline node in sequence on load (respects reduced-motion).
+  (function () {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var nodes = document.querySelectorAll(".pipe .node");
+    nodes.forEach(function (n, i) {
+      n.animate(
+        [
+          { boxShadow: "0 0 0 3px color-mix(in srgb, var(--teal) 14%, transparent)" },
+          { boxShadow: "0 0 0 7px color-mix(in srgb, var(--teal) 32%, transparent)" },
+          { boxShadow: "0 0 0 3px color-mix(in srgb, var(--teal) 14%, transparent)" }
+        ],
+        { duration: 620, delay: 240 * i, easing: "ease-out" }
+      );
+    });
+  })();
+</script>
