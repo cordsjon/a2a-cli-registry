@@ -117,3 +117,33 @@ def test_describe_via_mcp_omits_launch_spec(db):
     # sanity: we got a real describe result, not an error
     assert "error" not in payload
     assert payload.get("slug") == "secret-cli"
+
+
+def test_plan_cli_chain_accepts_goal_actions_key(db):
+    # schema omission guard (§3): without the ops-schema entry this returns
+    # "unknown input keys: ['goal_actions']" (ops_registry.py:101)
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": ["text"], "goal_actions": []})
+    payload = out["content"][0]["json"]
+    assert not (isinstance(payload, dict) and "unknown input keys" in str(payload.get("error", "")))
+
+
+def test_plan_cli_chain_unknown_verb_is_structured_error(db):
+    # §2.8: unknown verb -> structured op error with the known-verbs vocabulary
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": [], "goal_actions": ["telegram"]})
+    err = out["content"][0]["json"]["error"]
+    assert "unknown action verb: telegram" in err and "known:" in err
+
+
+def test_plan_cli_chain_multi_match_integrity_error_is_structured(db):
+    # registry half of §5 test (n): the §2.2 integrity ValueError surfaces as a
+    # structured _error_block, not an unstructured exception
+    db.add(Cli(slug="dual_mail", lang="python"))
+    db.add(Capability(cli_slug="dual_mail", intent_tags="notify,send", input_types="text",
+                      output_types="text", side_effect="external", confidence="declared"))
+    db.commit()
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": [], "goal_actions": ["email"]})
+    err = out["content"][0]["json"]["error"]
+    assert "action verb integrity" in err and "dual_mail" in err

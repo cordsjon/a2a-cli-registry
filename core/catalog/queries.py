@@ -161,8 +161,10 @@ def export_rows(session):
     return out
 
 
-def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
-    chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [])
+def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
+                   goal_actions=None):
+    chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [],
+                   goal_actions=goal_actions or [])
     health_by_slug = {}
 
     def _health(slug):

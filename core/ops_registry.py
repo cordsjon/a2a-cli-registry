@@ -37,7 +37,7 @@ OPS = [
     Op("plan_cli_chain", queries.plan_cli_chain,
        {"type": "object", "properties": {
            "goal_inputs": _STR_ARRAY, "goal_outputs": _STR_ARRAY,
-           "allow_side_effects": _STR_ARRAY},
+           "allow_side_effects": _STR_ARRAY, "goal_actions": _STR_ARRAY},
         "required": ["goal_inputs", "goal_outputs"]}),
     Op("list_playbooks", playbook_queries.list_playbooks,
        {"type": "object", "properties": {"query": {"type": "string"}}}),
