@@ -161,9 +161,10 @@ def export_rows(session):
 
 
 def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
-                   goal_actions=None):
+                   goal_actions=None, producer_terms=None):
     chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [],
-                   goal_actions=goal_actions or [])
+                   goal_actions=goal_actions or [],
+                   producer_terms=producer_terms or [])
     health_by_slug = {}
 
     def _health(slug):
@@ -176,5 +177,6 @@ def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     for ch in chains:
         hops = [{**hop, "health_status": _health(hop["slug"])} for hop in ch.hops]
         out.append({"slugs": ch.slugs, "length": ch.length,
-                    "side_effect_count": ch.side_effect_count, "hops": hops})
+                    "side_effect_count": ch.side_effect_count,
+                    "relevance_rank": ch.relevance_rank, "hops": hops})
     return out
