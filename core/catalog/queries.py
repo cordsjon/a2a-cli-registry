@@ -3,6 +3,7 @@ from sqlmodel import select, text
 from core.models import Cli, Capability, CliEdge
 from core.health import norm_health as _norm_health  # shared vocabulary (single source of truth)
 from core.planner.search import plan_chain as _plan
+from core.catalog.match import ident_haystack, vocab_haystack, term_matches
 
 
 def _sanity_columns_present(session) -> bool:
@@ -72,17 +73,15 @@ def search_clis(session, query: str = ""):
     q = query.strip().lower()
     if not q:
         return [_search_row(c) for c in rows]
-    caps = session.exec(select(Capability)).all()
-    vocab_by_slug: dict[str, str] = {}
-    for cap in caps:
-        blob = " ".join([cap.intent_tags, cap.input_types, cap.output_types])
-        vocab_by_slug[cap.cli_slug] = (
-            vocab_by_slug.get(cap.cli_slug, "") + " " + blob
-        ).lower()
+    # two-haystack predicate shared with the planner's producer-relevance rank
+    # (core/catalog/match.py) — one implementation, so the two cannot drift.
+    caps_by_slug: dict[str, list] = {}
+    for cap in session.exec(select(Capability)).all():
+        caps_by_slug.setdefault(cap.cli_slug, []).append(cap)
     return [
         _search_row(c) for c in rows
-        if q in (c.slug + " " + c.description).lower()
-        or q in vocab_by_slug.get(c.slug, "")
+        if term_matches(q, ident_haystack(c.slug, c.description),
+                        vocab_haystack(caps_by_slug.get(c.slug, [])))
     ]
 
 
