@@ -101,11 +101,9 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     candidates = []
 
     for start in starts:
-        if len(candidates) >= max_candidate_chains:
-            break
         # BFS state: (path, visited, hops). Cycle guard via visited set.
         q = deque([([start], {start}, [])])
-        while q and len(candidates) < max_candidate_chains:
+        while q:
             path, visited, hops = q.popleft()
             tail = path[-1]
             # fail-UNSAFE prune: destructive/unknown OR inferred-side-effect
