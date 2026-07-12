@@ -1,7 +1,10 @@
 # US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 — `goal_actions` Redesign
 
 **Date:** 2026-07-12
-**Status:** Design (revised after two Codex grounding passes; findings folded in)
+**Status:** Design — revised after THREE Codex grounding passes. 3rd-pass fixes applied
+(disjoint tag sets §2.2, compound-goal start gate §2.6, slug-scoped final-position auth
+§2.7, shared-vocab contract §2.8). **A 4th Codex pass is the next action to confirm
+PLAN-READY before writing-plans.**
 **Repos touched:** `a2a-cli-registry` (planner, ops schema, tests), `hermes-adapter` (tag inference, discovery, tool schema, planner call, bypass guard)
 
 ---
@@ -71,25 +74,36 @@ Tag inference emits three lists instead of overloading two:
 - `goal_actions` — the terminal action verb(s) the goal demands (e.g. `email`). NEW.
   These are **intent-tag terms**, matched against terminals' `intent_tags`.
 
-### 2.2 Action → required-intent-tag map (tag-keyed, not enum-keyed)
-A small explicit dict, the single source of truth, mapping an inference action verb to
-the set of intent tags a terminal must carry to satisfy it:
+### 2.2 Action → required-intent-tag map (tag-keyed, DISJOINT tag sets)
+The action verbs are matched to terminal intent tags via a single shared dict. Codex's 3rd
+pass found that overlapping tag sets re-introduce ambiguity: if `webhook` includes `notify`,
+then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. **The tag sets must be
+pairwise disjoint** so each live terminal satisfies at most one action verb:
 
 ```
 _ACTION_REQUIRES_TAG = {
-    "email":  {"notify", "send"},    # send_mail carries notify,send
-    "notify": {"notify"},
-    "webhook":{"webhook", "notify"},
-    "file_write": {"write", "persist"},
+    "email":      {"send"},       # send_mail carries notify,send -> 'send' is its
+                                  #   discriminating tag ('notify' is shared vocabulary)
+    "notify":     {"notify"},     # a pure-notification terminal (none live today)
+    "webhook":    {"webhook"},    # requires the specific 'webhook' tag, NOT 'notify'
+    "file_write": {"persist"},    # a fs-writing terminal tagged 'persist' (none live today)
 }
 ```
 
 A terminal satisfies action `a` iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is
-non-empty. An action verb absent from the map is a **hard inference-validation error**
-(one retry, then ValueError) — never silently dropped, never routed to a wrong terminal.
-This closes Codex's "email may route to a webhook terminal" hole: matching is on the
-action tag, and `send_mail` (`notify,send`) vs a future webhook terminal (`webhook`) are
-distinguishable.
+non-empty. **Disjointness invariant** (asserted by a unit test over the map + validated
+against live tags): no two values share a tag, so no terminal matches two verbs. Live check:
+`email → {send}` matches only `send_mail`; `webhook → {webhook}` and `notify → {notify}`
+match zero live terminals (correctly — none exist yet), so an `email` goal can never route
+to a webhook/notify terminal. An action verb absent from the map is a **hard
+inference-validation error** (one retry, then ValueError) — never silently dropped, never
+routed to a wrong terminal.
+
+> Trade-off: keying `email` on `send` alone (dropping `notify`) means a future
+> notification-only mail CLI tagged `notify` but not `send` would not match `email`. That's
+> the correct bias — an `email` goal should reach a *sending* terminal, and `notify` stays
+> reserved for the distinct `notify` action. Revisit the map when a second `external`
+> terminal is registered (the map is the single place to update).
 
 ### 2.3 Artifact-vs-confirmation resolution (Codex REFUTED the naive predicate)
 Codex's fatal finding: `send_mail` both consumes AND outputs `text`, so a naive
@@ -129,25 +143,70 @@ untouched for all other pairs, so the 192-text-CLI explosion does not reopen. `v
 is preserved (= H) for hop tracing. The persisted `CliEdge` table and `compute_edges` are
 **not** modified.
 
-### 2.6 Start-selection for pure-action goals (Codex VERIFIED gap)
+### 2.6 Start-selection for pure-action goals (Codex VERIFIED gap; 3rd-pass narrowed)
 A pure action with empty `goal_inputs` AND empty `goal_outputs` still cannot start at
 `send_mail`: empty inputs select only no-input CLIs (search.py:97-100), but
-`send_mail.input_types='text'`. Resolution: when `goal_actions` is non-empty, the start
-set additionally includes any terminal satisfying a requested action, regardless of its
-declared inputs — an action terminal is a valid 1-hop chain when there is no artifact to
-produce first. (This is the "explicitly admit matching action terminals as starts" option
-Codex named.)
+`send_mail.input_types='text'`. Resolution: **only when `goal_outputs` is empty** (a pure
+action with no artifact to produce first), the start set additionally includes any terminal
+satisfying a requested action, regardless of its declared inputs.
 
-### 2.7 Enum resolution — single source of truth (Codex REFUTED duplication)
-Codex: the planner can't own the action map while the adapter also passes resolved
-`allow_side_effects` enums — one side duplicates it. Resolution: **the planner owns
-everything.** `plan_chain`/`plan_cli_chain` gain `goal_actions`; the planner resolves each
-action's matched terminal, reads that terminal's actual `side_effect`, and unions those
-enums into the effective `allow_side_effects` for `_hop_excluded` internally. The adapter
-passes `goal_actions` through verbatim and does NOT pre-resolve enums. `allow_side_effects`
-remains a caller-overridable input for explicit opt-in, but action terminals self-authorize
-their own declared side_effect (a declared terminal the user explicitly asked to act with
-is, by request, allowed).
+**3rd-pass fix — gate on `not goal_out`, NOT merely `goal_actions` non-empty.** Codex found
+that admitting action terminals as starts for a *compound* goal (non-empty `goal_outputs`)
+is unsafe: with two matching terminals, terminal A's confirmation `text` output could be
+consumed as the "artifact" feeding terminal B, falsely satisfying the compound predicate.
+So for a compound goal the action terminal is reachable ONLY as a synthesized final hop
+(§2.5) downstream of a real producer — never as a start. Pure-action (empty `goal_outputs`)
+is the only case that admits an action terminal as a start.
+
+### 2.7 Self-authorization — SLUG-scoped, final-position only (3rd-pass fix)
+The adapter can't pre-resolve enums without duplicating the action map, so **the planner
+owns resolution**: `plan_chain`/`plan_cli_chain` gain `goal_actions`; the adapter passes
+`goal_actions` verbatim and does NOT pre-resolve enums.
+
+**3rd-pass fix — do NOT union the terminal's enum into a class-wide `allow_side_effects`.**
+Codex found that unioning e.g. `writes-fs` (a `file_write` terminal's enum) into
+`allow_side_effects` would globally admit all 32 live inferred `writes-fs` CLIs as valid
+mid-chain hops — a security regression. Instead, self-authorization is **slug-scoped and
+final-position-only**:
+
+- The planner computes `action_terminals: set[str]` = the exact slugs matched to a
+  requested action (§2.2).
+- `_hop_excluded` is consulted as today for every hop with the caller's (unmodified)
+  `allow_side_effects`. The ONLY relaxation: a hop is additionally allowed if it is in
+  `action_terminals` AND it is the FINAL hop of the path being evaluated. No other hop, and
+  no other CLI of the same enum class, gains authorization.
+- Mechanism: pass `action_terminals` + a `is_final` flag into the exclusion check at the
+  terminal-evaluation site (search.py:110-116), rather than mutating the shared
+  `allow_side_effects` set. `_hop_excluded`'s existing signature/logic is unchanged; the
+  planner wraps it: `excluded = _hop_excluded(caps, allow) and not (is_final and slug in
+  action_terminals)`.
+- Explicit caller `allow_side_effects` remains class-wide (an operator opting into
+  `writes-fs` accepts that blast radius knowingly) — only the *implicit action
+  self-authorization* is slug-scoped.
+
+### 2.8 Shared action-vocab contract — no cross-repo duplication (3rd-pass fix)
+Codex flagged that the spec had the planner own `_ACTION_REQUIRES_TAG` while implying the
+adapter must validate `goal_actions` against it and retry — with no mechanism, that forces
+a duplicated map across two repos. Resolution: **the adapter does NOT own or duplicate the
+map. Validation lives entirely in the registry.**
+
+- The adapter's tag inference emits `goal_actions` and forwards them **verbatim** to
+  `plan_cli_chain` (the existing MCP `_mcp_call` path). It performs no action-verb
+  validation of its own.
+- The registry's `plan_cli_chain` op validates each action verb against
+  `_ACTION_REQUIRES_TAG` (the single owner). An unknown verb returns a **structured op
+  error** (`{"error": "unknown action verb: <v>; known: [...]"}`) via the existing
+  ops error channel (ops_registry already returns string errors, e.g. the unknown-key
+  path at ops_registry.py:101).
+- The adapter treats that structured error like any other planner failure: it surfaces it
+  and (if it wants a retry) re-invokes tag inference with the rejected verb named — reusing
+  the EXISTING vocab-reject retry loop pattern (`_infer_capability_tags`, cli_registry.py:
+  ~545-566), which already round-trips "these tags were rejected" back to the model. The
+  known-verbs list travels in the error payload, so the model gets the vocabulary without
+  the adapter hardcoding it.
+- Net: `_ACTION_REQUIRES_TAG` exists in exactly one place (the planner). The adapter learns
+  the vocabulary at runtime from the registry's error payload. No duplication, no contract
+  test needed beyond "adapter surfaces the structured error + retries."
 
 ---
 
@@ -156,14 +215,14 @@ is, by request, allowed).
 | Unit | Responsibility | Change |
 |---|---|---|
 | `hermes_adapter/tools/cli_registry.py::_TAG_INFER_SYSTEM` | goal → 3 tag lists | Add `goal_actions` (intent-tag verbs); stop overloading `goal_outputs` for actions |
-| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse/validate model JSON | Parse+validate `goal_actions` (reject verbs not in `_ACTION_REQUIRES_TAG`, one retry); allow empty `goal_outputs` when `goal_actions` present |
+| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation; adapter surfaces the structured error + retries via the existing vocab-reject loop) |
 | `hermes_adapter/tools/cli_registry.py` discovery (~843) | `output_term = goal_outputs[0]` | **Codex VERIFIED crash:** guard empty `goal_outputs`; when empty + `goal_actions` present, discover via the action term instead of `goal_outputs[0]`; restructure the logging/fallback/error branches that assume a non-empty output term |
 | `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now) |
 | `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
 | `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
-| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG`, tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts (§2.6), internal enum union (§2.7) |
-| `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through |
-| `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** logic; the planner feeds it the action-unioned allow-set |
+| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), disjoint tag-keyed matching (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
+| `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
+| `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** signature/logic; the planner wraps its result with the slug-scoped final-position relaxation (§2.7) — it does NOT receive a widened allow-set |
 | `core/graph/edges.py` | persisted edges | **Unchanged** (synthesis is planning-time only) |
 
 ---
@@ -213,9 +272,16 @@ is, by request, allowed).
       terminals (e.g. a `network` terminal when only `email` was requested);
   (e) a dual-capable CLI (produces goal_out AND has the action tag) does NOT satisfy a
       compound goal in ONE hop (artifact must precede action, §2.3);
-  (f) an unknown action verb (not in `_ACTION_REQUIRES_TAG`) raises, not silently drops;
+  (f) an unknown action verb (not in `_ACTION_REQUIRES_TAG`) returns a structured error, not
+      silently dropped (§2.8);
   (g) pure-action goal (empty goal_outputs, non-empty goal_actions) starts at and returns
-      the action terminal (§2.6).
+      the action terminal (§2.6);
+  (h) `_ACTION_REQUIRES_TAG` values are pairwise DISJOINT (§2.2 invariant) — assert over the
+      map itself AND that no live terminal matches two verbs;
+  (i) a compound goal does NOT admit an action terminal as a START (§2.6 gate) — only as a
+      synthesized final hop after a producer;
+  (j) slug-scoped final-position auth (§2.7): a `writes-fs` action terminal being the final
+      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded).
 - **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
   guard; assert forwarded `goal_actions` + retained producer.
 - **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
