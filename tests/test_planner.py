@@ -456,3 +456,41 @@ def test_notify_goal_does_not_route_to_send_tagged_mailer(db):
     _mail_fleet(db)
     chains = plan_chain(db, goal_inputs=[], goal_outputs=[], goal_actions=["notify"])
     assert chains == []
+
+
+def test_action_terminal_self_authorized_at_final_position_only(db):
+    # spec §5 test (j) / §2.7: an inferred writes-fs action terminal (excluded
+    # by default) is allowed as the FINAL hop without widening allow_side_effects...
+    for slug, intag, ins, outs, se, conf in [
+        ("gen", "report", "file:pdf", "text", "none", "declared"),
+        ("fs_writer", "persist", "text", "text", "writes-fs", "inferred"),
+    ]:
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags=intag, input_types=ins,
+                          output_types=outs, side_effect=se, confidence=conf))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["file_write"])
+    assert any(c.slugs == ["gen", "fs_writer"] for c in chains)
+
+
+def test_action_self_auth_does_not_admit_other_writes_fs_mid_chain(db):
+    # ...and the self-auth is SLUG-scoped: a DIFFERENT inferred writes-fs CLI
+    # mid-chain stays excluded (no class-wide allow widening — the 3rd-pass
+    # security fix).
+    for slug, intag, ins, outs, se, conf in [
+        ("gen", "report", "file:pdf", "text:mid", "none", "declared"),
+        ("dirty_mid", "transform", "text:mid", "text", "writes-fs", "inferred"),
+        ("fs_writer", "persist", "text", "text", "writes-fs", "inferred"),
+    ]:
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags=intag, input_types=ins,
+                          output_types=outs, side_effect=se, confidence=conf))
+    db.add(CliEdge(from_slug="gen", to_slug="dirty_mid", via_type="text:mid"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["file_write"])
+    # the only route to a 'text' artifact runs through dirty_mid (excluded) —
+    # so NO chain may exist; dirty_mid must not be admitted by fs_writer's auth
+    assert all("dirty_mid" not in c.slugs for c in chains)
+    assert chains == []

@@ -182,7 +182,14 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
                     candidates.append(_finalize(path, caps, hops))
                     continue
             else:
-                if _hop_excluded(caps[tail], allow_side_effects):
+                # §2.7: slug-scoped, final-position-only self-authorization.
+                # _hop_excluded is consulted unchanged with the caller's
+                # allow_side_effects; the ONLY relaxation is an action terminal
+                # at terminal position (the branch below never expands through
+                # one, so reaching it here IS final position). No other hop and
+                # no other CLI of the same side-effect class is admitted.
+                if _hop_excluded(caps[tail], allow_side_effects) \
+                        and tail not in action_terminals:
                     continue
                 if tail in action_terminals:
                     # §2.3 terminal predicate: the final hop is the action; the
