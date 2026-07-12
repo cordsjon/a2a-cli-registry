@@ -494,3 +494,86 @@ def test_action_self_auth_does_not_admit_other_writes_fs_mid_chain(db):
     # so NO chain may exist; dirty_mid must not be admitted by fs_writer's auth
     assert all("dirty_mid" not in c.slugs for c in chains)
     assert chains == []
+
+
+# --- producer relevance (spec 2026-07-12-producer-relevance-design §3) ---
+
+def _tied_producers(db, slugs):
+    for slug in slugs:
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags="generate", input_types="file:pdf",
+                          output_types="text", side_effect="none", confidence="declared"))
+    db.commit()
+
+
+def test_producer_terms_beat_alphabetical_tie_break(db):
+    # spec §3 (a): 3 rank-tied producers; the semantic match sorts LAST.
+    _tied_producers(db, ["aaa_build", "mmm_report", "zzz_codename"])
+    legacy = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"])
+    assert legacy[0].slugs == ["aaa_build"]            # alphabetical tie-break today
+    ranked = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        producer_terms=["codename"])
+    assert ranked[0].slugs == ["zzz_codename"]         # first RETURNED chain
+    assert ranked[0].relevance_rank == 0
+    assert all(c.relevance_rank == 1 for c in ranked[1:])
+
+
+def test_omitted_and_empty_producer_terms_are_order_identical_to_legacy(db):
+    # spec §3 (b): order-and-existing-fields invariance (slugs+hops), the same
+    # comparison shape as test_empty_goal_actions_is_byte_identical_to_today.
+    _fleet(db)
+    legacy = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"])
+    gated = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"],
+                       producer_terms=[])
+    assert [c.slugs for c in legacy] == [c.slugs for c in gated]
+    assert [c.hops for c in legacy] == [c.hops for c in gated]
+
+
+def test_unmatched_producer_terms_fall_back_to_legacy_order(db):
+    # spec §3 (d)
+    _tied_producers(db, ["aaa_build", "zzz_codename"])
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        producer_terms=["zzz-nothing-matches-this"])
+    assert chains[0].slugs == ["aaa_build"]
+    assert all(c.relevance_rank == 1 for c in chains)
+
+
+def test_action_terminal_match_does_not_mark_chain_relevant(db):
+    # spec §3 (e): term matches ONLY the action terminal's blob -> rank stays 1.
+    db.add(Cli(slug="gen", lang="python"))
+    db.add(Capability(cli_slug="gen", intent_tags="generate", input_types="file:pdf",
+                      output_types="text", side_effect="none", confidence="declared"))
+    db.add(Cli(slug="codename_mailer", lang="python"))
+    db.add(Capability(cli_slug="codename_mailer", intent_tags="send", input_types="text",
+                      output_types="text", side_effect="external", confidence="declared"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["email"], producer_terms=["codename"])
+    assert chains, "compound chain [gen, codename_mailer] must exist via synthesized edge"
+    assert all(c.relevance_rank == 1 for c in chains)
+
+
+def test_producer_terms_hygiene_non_string_and_blank_dropped(db):
+    # spec §3 (f): blank "" would substring-match EVERYTHING; non-strings must
+    # not crash (ops validator doesn't check item types, §2.1).
+    _tied_producers(db, ["aaa_build", "zzz_codename"])
+    dirty = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                       producer_terms=[42, "  ", None, ""])
+    assert dirty[0].slugs == ["aaa_build"]
+    assert all(c.relevance_rank == 1 for c in dirty)
+
+
+def test_relevant_producer_survives_candidate_cap(db):
+    # spec §3 (c), fixture modeled on
+    # test_favorably_ranked_start_not_starved_by_worse_earlier_candidates:
+    # 150 rank-tied producers + 'zzz_target' sorting past position 100 —
+    # truncated by the legacy key, first with producer_terms.
+    _tied_producers(db, [f"prod{i:03d}" for i in range(150)] + ["zzz_target"])
+    legacy = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        max_candidate_chains=100)
+    assert len(legacy) == 100
+    assert all(c.slugs != ["zzz_target"] for c in legacy)   # truncated out today
+    ranked = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        max_candidate_chains=100, producer_terms=["target"])
+    assert ranked[0].slugs == ["zzz_target"]
+    assert ranked[0].relevance_rank == 0
