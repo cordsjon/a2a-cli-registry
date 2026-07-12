@@ -21,11 +21,22 @@
 
 ### Task 1: AC-02 — pin `send_mail` reachability at the default cap
 
+> **CORRECTION (execution, 2026-07-12):** the original plan drafted a *synthetic-fixture*
+> version of this test. That was a design error: send_mail's `external` side effect makes
+> `Chain.sort_key()` rank it behind every side-effect-free producer, so any fixture stacking
+> N perfect `none`-producers correctly sorts send_mail LAST — the test would fail even though
+> the planner is correct (verified during execution: uncapped, send_mail sorts to position
+> 120/121 behind 120 `none`-producers). An edgeless send_mail is also unreachable entirely
+> (the sibling `test_favorably_ranked_start_not_starved...` documents this exact anti-pattern).
+> The correct AC-02 is the spec's *live-row probe* option: assert against the real
+> `~/.hermes/cli-registry.db` (send_mail at position 18/100), guarded by `skipif` the DB is
+> absent. This is what was implemented and is GREEN.
+
 **Files:**
-- Test: `tests/test_planner.py` (append one test function)
+- Test: `tests/test_planner.py` (append one test function, `skipif`-guarded live-DB probe)
 
 **Interfaces:**
-- Consumes: `plan_chain`, `Chain` (already imported at `tests/test_planner.py:1-2`); the `db` fixture (`tests/conftest.py:29`); models `Cli`, `Capability`, `CliEdge` (`core/models`).
+- Consumes: `plan_chain` (already imported at `tests/test_planner.py:2`); `sqlmodel.Session`/`create_engine` (imported locally in the test); `os`/`pytest` for the skipif guard.
 - Produces: nothing downstream (leaf test).
 
 - [ ] **Step 1: Write the failing test**

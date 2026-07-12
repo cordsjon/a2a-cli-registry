@@ -242,3 +242,43 @@ def test_favorably_ranked_start_not_starved_by_worse_earlier_candidates(db):
         f"{chains[0].slugs}; winner present at all: "
         f"{any(c.slugs == ['winner'] for c in chains)}"
     )
+
+
+import os as _os
+import pytest as _pytest
+
+_LIVE_REGISTRY_DB = _os.path.expanduser("~/.hermes/cli-registry.db")
+
+
+@_pytest.mark.skipif(not _os.path.exists(_LIVE_REGISTRY_DB),
+                     reason="live registry ~/.hermes/cli-registry.db not present")
+def test_send_mail_reachable_at_default_cap_live():
+    # AC-02: `send_mail` (the live `external` terminal) is reachable at the
+    # DEFAULT candidate cap (max_candidate_chains=100) via type-routing against
+    # the LIVE registry. This is the meaningful reachability assertion: a
+    # synthetic fixture cannot prove it honestly, because send_mail's `external`
+    # side effect makes Chain.sort_key() rank it behind every competing
+    # side-effect-free producer — stacking N perfect `none`-producers would
+    # correctly sort send_mail last, which is not the live behavior. Against the
+    # real 474-CLI registry send_mail sits at sorted position 18/100 (the
+    # BACKLOG-documented probe result), because the real competitor mix is not
+    # all-perfect-none-producers.
+    #
+    # This pins two shipped fixes together: the cap-starvation fix (16798e3,
+    # enumerate-all -> sort -> cap) and the declared-`external` recognition +
+    # output_types backfill (3a78aa8). If either regresses, send_mail drops out
+    # of the default-cap window and this test fails.
+    #
+    # The dedicated cap-starvation MECHANISM is pinned separately and
+    # synthetically by test_favorably_ranked_start_not_starved_by_worse_earlier_candidates
+    # above; this test guards the live-data reachability the mechanism enables.
+    from sqlmodel import Session, create_engine
+
+    engine = create_engine(f"sqlite:///{_LIVE_REGISTRY_DB}")
+    with Session(engine) as session:
+        chains = plan_chain(session, goal_inputs=["text"], goal_outputs=["text"],
+                            allow_side_effects=set())
+    assert any("send_mail" in c.slugs for c in chains), (
+        "send_mail absent from the default-cap (100) plan output against the live "
+        "registry — cap-starvation fix 16798e3 or external-recognition 3a78aa8 regressed"
+    )
