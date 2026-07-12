@@ -11,7 +11,13 @@ slice (AC-02 send_mail reachability + AC-03 seed_anthropic_index backfill) ships
 dimension (§2.2–§2.8, AC-04/AC-05) lives here. It was NOT plan-ready at spin-out; the §2.2
 resolution (below) and the 6th-pass contract fixes made it plan-ready on 2026-07-12.
 
-**Codex pass ledger (6 passes):**
+**Codex pass ledger (7 passes):**
+- **7th pass (2026-07-12, narrow confirm of the 6th-pass folds):** CONFIRMED the ValueError
+  transport contract (ops_registry.py:37 / mcp/server.py:36 / a2a.py:20), the adapter
+  routing rule, hard-error-vs-pass-through consistency, and both wording fixes. Two
+  residual nits, folded same day: integrity-check ownership unified on the PLANNER
+  (§2.2/§2.7/§3 now agree; wrapper only threads), and the pass-through exception named
+  `PlannerStructuredError` (§2.8, test (n) asserts exact type + verbatim message).
 - **6th pass (2026-07-12, post-decision):** VERIFIED the retag's factual basis (sole-carrier
   probe; zero live `cliedge` rows touch `send_mail`; no consumer depends on its `notify`
   tag) and test (k)'s no-chain semantics (valid verb + zero terminals returns `[]` at
@@ -165,11 +171,14 @@ any runtime mechanism would be calibrated against a population of ONE. The decid
    computed action-terminal set matches MORE than one verb, that is a **hard integrity
    error** — never a silent pick via priority or specificity. **Error contract (6th-pass
    fix — both transports structure only `TypeError`/`ValueError`, mcp/server.py:38 /
-   a2a.py:22, so an `AssertionError` would escape unstructured):** the wrapper
-   (`core/catalog/queries.py::plan_cli_chain`) performs the check while computing
-   `action_terminals` and raises
+   a2a.py:22, so an `AssertionError` would escape unstructured):** the PLANNER
+   (`core/planner/search.py::plan_chain`) performs the check while computing
+   `action_terminals` (single owner — consistent with §2.7 and the §3 component table;
+   7th-pass fix, the earlier wrapper-owner wording was contradictory) and raises
    `ValueError("action verb integrity: terminal '<slug>' matches multiple verbs [<a1>, <a2>]")`.
-   The transports structure it via their existing `except (TypeError, ValueError)` paths.
+   The ValueError propagates unchanged through the `queries.py` wrapper, and the transports
+   structure it via their existing `except (TypeError, ValueError)` paths (7th-pass
+   CONFIRMED against ops_registry.py:37 / mcp/server.py:36 / a2a.py:20).
    Adapter behavior: this payload does NOT match the unknown-verb shape, so the §2.8 decode
    routes it to **pass-through** — a typed, message-preserving raise with ZERO corrective
    reinference (reinference cannot fix registry data). Contract test (n) in §5.
@@ -311,11 +320,12 @@ map. Validation lives entirely in the registry.**
   1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
      structured `{"error": "unknown action verb: <v>; known: [...]"}` payload BEFORE
      `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
-     rather than letting it degrade to the generic "no healthy chain". **6th-pass fix:** any
-     OTHER structured `{"error": ...}` payload from `plan_cli_chain` (e.g. the §2.2
-     `action verb integrity` ValueError) is raised as a typed, message-preserving planner
-     error with ZERO corrective reinference — only the unknown-verb shape triggers
-     reinference; everything else must not degrade to the generic "no healthy chain" either.
+     rather than letting it degrade to the generic "no healthy chain". **6th-pass fix
+     (type named in 7th pass):** any OTHER structured `{"error": ...}` payload from
+     `plan_cli_chain` (e.g. the §2.2 `action verb integrity` ValueError) is raised as
+     `PlannerStructuredError(message)` — a new typed, message-preserving adapter exception —
+     with ZERO corrective reinference; only the unknown-verb shape triggers reinference.
+     Neither shape may degrade to the generic "no healthy chain".
   2. A NEW one-shot reinference step at the planner call site catches
      `UnknownActionVerbError`, re-invokes tag inference with a corrective message naming the
      rejected verb and the `known` list from the payload (mirroring the *shape* of the
@@ -342,7 +352,7 @@ map. Validation lives entirely in the registry.**
 |---|---|---|
 | `hermes_adapter/tools/cli_registry.py::_TAG_INFER_SYSTEM` | goal → 3 tag lists | Add `goal_actions` (intent-tag verbs); stop overloading `goal_outputs` for actions |
 | `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation). Its 545-568 retry stays port-tag-only; the action-verb reinference is a SEPARATE new path (see decode row below), NOT this loop |
-| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)` — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
+| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)`; any other structured error payload (e.g. §2.2 integrity) raises `PlannerStructuredError(message)` with zero reinference — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
 | `hermes_adapter/tools/cli_registry.py` discovery (~843) | `output_term = goal_outputs[0]` | **Codex VERIFIED crash:** guard empty `goal_outputs`; when empty + `goal_actions` present, discover via the action term instead of `goal_outputs[0]`; restructure the logging/fallback/error branches that assume a non-empty output term |
 | `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
 | `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
@@ -429,8 +439,9 @@ map. Validation lives entirely in the registry.**
       synthetic double-tagged terminal, `plan_cli_chain` raises
       `ValueError("action verb integrity: ...")` naming the slug and both verbs, and each
       transport structures it (`_error_block` / `{"error": ...}` — mcp/server.py:38,
-      a2a.py:22). Adapter side: that payload passes through as a typed, message-preserving
-      error with ZERO reinference calls (assert the inference mock is not re-invoked).
+      a2a.py:22). Adapter side: that payload raises exactly `PlannerStructuredError` with
+      the message preserved verbatim, and ZERO reinference calls (assert the exact exception
+      type, the preserved message, and that the inference mock is not re-invoked).
 - **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
   guard; assert forwarded `goal_actions` + retained producer.
 - **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
