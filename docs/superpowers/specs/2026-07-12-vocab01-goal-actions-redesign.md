@@ -1,10 +1,13 @@
 # US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 — `goal_actions` Redesign
 
 **Date:** 2026-07-12
-**Status:** Design — revised after THREE Codex grounding passes. 3rd-pass fixes applied
-(disjoint tag sets §2.2, compound-goal start gate §2.6, slug-scoped final-position auth
-§2.7, shared-vocab contract §2.8). **A 4th Codex pass is the next action to confirm
-PLAN-READY before writing-plans.**
+**Status:** Design — revised after FOUR Codex grounding passes. 4th-pass fixes applied:
+§2.2 max-one-verb-per-live-terminal invariant + disambiguation (the disjoint-map-values claim
+was REFUTED — `send_mail`'s `notify,send` row matched both `email` and `notify`); §2.8/§3
+explicit planner-error decode + one-shot reinference on the adapter (the "reuse the existing
+port-tag retry loop" claim was REFUTED — that loop runs pre-planner and swallows structured
+errors). Prior 3rd-pass fixes (§2.6 start gate, §2.7 slug-scoped auth) were Codex-CONFIRMED
+sound. **A 5th Codex pass on these two folded fixes is the next gate before writing-plans.**
 **Repos touched:** `a2a-cli-registry` (planner, ops schema, tests), `hermes-adapter` (tag inference, discovery, tool schema, planner call, bypass guard)
 
 ---
@@ -74,11 +77,11 @@ Tag inference emits three lists instead of overloading two:
 - `goal_actions` — the terminal action verb(s) the goal demands (e.g. `email`). NEW.
   These are **intent-tag terms**, matched against terminals' `intent_tags`.
 
-### 2.2 Action → required-intent-tag map (tag-keyed, DISJOINT tag sets)
+### 2.2 Action → required-intent-tag map (tag-keyed, max-one-verb-per-terminal)
 The action verbs are matched to terminal intent tags via a single shared dict. Codex's 3rd
 pass found that overlapping tag sets re-introduce ambiguity: if `webhook` includes `notify`,
-then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. **The tag sets must be
-pairwise disjoint** so each live terminal satisfies at most one action verb:
+then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. Pairwise-disjoint tag
+sets are necessary but **NOT sufficient** — see the 4th-pass correction below:
 
 ```
 _ACTION_REQUIRES_TAG = {
@@ -91,13 +94,46 @@ _ACTION_REQUIRES_TAG = {
 ```
 
 A terminal satisfies action `a` iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is
-non-empty. **Disjointness invariant** (asserted by a unit test over the map + validated
-against live tags): no two values share a tag, so no terminal matches two verbs. Live check:
-`email → {send}` matches only `send_mail`; `webhook → {webhook}` and `notify → {notify}`
-match zero live terminals (correctly — none exist yet), so an `email` goal can never route
-to a webhook/notify terminal. An action verb absent from the map is a **hard
-inference-validation error** (one retry, then ValueError) — never silently dropped, never
-routed to a wrong terminal.
+non-empty.
+
+**4th-pass fix — the invariant is per-TERMINAL, not per-map-value (Codex REFUTED the
+disjoint-values claim).** The 3rd-pass text asserted "no two map values share a tag, so no
+terminal matches two verbs." That inference is false: map-value disjointness does not stop a
+single *multi-tagged* terminal from satisfying multiple verbs. Live counter-example —
+`send_mail`'s row is `intent_tags='notify,send'` (verified against `registry.db`,
+2026-07-12), so it matches BOTH `email` (via `send`) AND `notify` (via `notify`) even though
+`{send}` and `{notify}` are disjoint. A future `notify` goal would then route to `send_mail`,
+sending mail for a notification request — a real mis-route the moment a `notify` goal is
+issued (latent only because no `notify` goal is emitted today).
+
+The correct invariant is **max-one-verb-per-live-terminal**: for every live terminal T,
+`len([a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & T.intent_tags]) <= 1`.
+This is a runtime assertion over ACTUAL tags (not a property of the map alone), and it is the
+test that would have caught the send_mail double-match. Two ways to satisfy it, in order of
+preference:
+
+1. **Preferred — disambiguate at match time by tag specificity.** When a terminal matches
+   >1 verb, the verb whose required-tag set is the terminal's *most discriminating* tag wins.
+   For `send_mail`, `send` is unique to email-class terminals while `notify` is shared
+   vocabulary (3 live CLIs carry `notify`: `codex_ntfy_bridge`, `changelog_research`,
+   `sync-2` — none is a mail sender), so `email` wins over `notify`. Mechanism: rank verbs by
+   `-len({t for t in _ACTION_REQUIRES_TAG[a] if <#live terminals carrying t>} )` — i.e. the
+   verb keyed on the rarer tag. Deterministic; ties (equal rarity) are a hard error.
+2. **Simpler fallback — retag the data.** Backfill `send_mail.intent_tags` to drop `notify`
+   (leaving `send`), so the row matches only `email`. This makes the map-value disjointness
+   sufficient again, at the cost of one live-DB UPDATE (backup first, same runbook as AC-03).
+   Chosen only if the specificity rule proves fragile against a second terminal.
+
+The **invariant test** asserts max-one-verb-per-live-terminal over the live tag set (NOT
+merely pairwise-disjoint map values), and FAILS on the current `send_mail` row until the
+chosen disambiguation lands. This test is RED-first: it reproduces the double-match, then the
+fix makes it green.
+
+Live check (post-fix): `email → {send}` matches `send_mail` and, via the specificity rule,
+`send_mail` resolves to `email` only; `webhook → {webhook}` and `notify → {notify}` match
+zero live terminals (correctly — none exist yet). An action verb absent from the map is a
+**hard inference-validation error** (one retry, then ValueError) — never silently dropped,
+never routed to a wrong terminal.
 
 > Trade-off: keying `email` on `send` alone (dropping `notify`) means a future
 > notification-only mail CLI tagged `notify` but not `send` would not match `email`. That's
@@ -198,15 +234,43 @@ map. Validation lives entirely in the registry.**
   error** (`{"error": "unknown action verb: <v>; known: [...]"}`) via the existing
   ops error channel (ops_registry already returns string errors, e.g. the unknown-key
   path at ops_registry.py:101).
-- The adapter treats that structured error like any other planner failure: it surfaces it
-  and (if it wants a retry) re-invokes tag inference with the rejected verb named — reusing
-  the EXISTING vocab-reject retry loop pattern (`_infer_capability_tags`, cli_registry.py:
-  ~545-566), which already round-trips "these tags were rejected" back to the model. The
-  known-verbs list travels in the error payload, so the model gets the vocabulary without
-  the adapter hardcoding it.
+- **4th-pass fix — the "reuse the existing retry loop" claim is FALSE; a new decode +
+  reinference path is required (Codex REFUTED).** The 3rd-pass text claimed the adapter
+  reuses `_infer_capability_tags`'s vocab-reject loop. It cannot, for two verified code
+  reasons:
+  1. **Wrong path, wrong vocabulary.** `_infer_capability_tags`'s only retry is at
+     cli_registry.py:545-568 and fires on rejected **port tags**
+     (`goal_inputs | goal_outputs - vocab`) — it runs at line 826, strictly BEFORE the
+     planner is ever called (planner call ~line 899). It has no `goal_actions` awareness and
+     no hook on the planner-error path. It is structurally the wrong loop.
+  2. **The planner error is swallowed before the adapter can see the verb.** `_select_chain`
+     (cli_registry.py:668) passes the planner response through `_unwrap_mcp_json` (line 684),
+     which coerces a structured `{"error": ...}` object into a one-element list; `_select_chain`
+     then finds no usable chain and raises a **generic** `"no usable plan"` / `"no healthy
+     chain for goal"` (lines 686, 706), discarding the structured detail. The rejected verb
+     and known-verbs list never reach any caller, let alone the model.
+- **Required mechanism (explicit, new — not a reuse):**
+  1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
+     structured `{"error": "unknown action verb: <v>; known: [...]"}` payload BEFORE
+     `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
+     rather than letting it degrade to the generic "no healthy chain".
+  2. A NEW one-shot reinference step at the planner call site catches
+     `UnknownActionVerbError`, re-invokes tag inference with a corrective message naming the
+     rejected verb and the `known` list from the payload (mirroring the *shape* of the
+     545-568 corrective retry, but on the action-verb axis and on the planner-error path), and
+     re-calls `plan_cli_chain` once. A second failure raises (no infinite loop).
+  3. This may be factored as a small reusable "corrective reinference" helper that both the
+     existing port-tag retry and the new action-verb retry call — but that refactor is
+     optional; the load-bearing requirement is that the action-verb error is *decoded* and
+     *drives one reinference*, which no current code path does.
+- The registry side is unchanged from the 3rd-pass design: it owns `_ACTION_REQUIRES_TAG`,
+  validates, and emits the structured error. The known-verbs list still travels in the error
+  payload so the model gets the vocabulary without the adapter hardcoding it.
 - Net: `_ACTION_REQUIRES_TAG` exists in exactly one place (the planner). The adapter learns
-  the vocabulary at runtime from the registry's error payload. No duplication, no contract
-  test needed beyond "adapter surfaces the structured error + retries."
+  the vocabulary at runtime from the registry's error payload — but via a NEW decode +
+  reinference path, not the pre-existing port-tag loop. Contract test required: adapter
+  decodes the structured verb error into `UnknownActionVerbError` and drives exactly one
+  reinference (assert the corrective message names the rejected verb + known list).
 
 ---
 
@@ -215,12 +279,13 @@ map. Validation lives entirely in the registry.**
 | Unit | Responsibility | Change |
 |---|---|---|
 | `hermes_adapter/tools/cli_registry.py::_TAG_INFER_SYSTEM` | goal → 3 tag lists | Add `goal_actions` (intent-tag verbs); stop overloading `goal_outputs` for actions |
-| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation; adapter surfaces the structured error + retries via the existing vocab-reject loop) |
+| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation). Its 545-568 retry stays port-tag-only; the action-verb reinference is a SEPARATE new path (see decode row below), NOT this loop |
+| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)` — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
 | `hermes_adapter/tools/cli_registry.py` discovery (~843) | `output_term = goal_outputs[0]` | **Codex VERIFIED crash:** guard empty `goal_outputs`; when empty + `goal_actions` present, discover via the action term instead of `goal_outputs[0]`; restructure the logging/fallback/error branches that assume a non-empty output term |
-| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now) |
+| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
 | `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
 | `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
-| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), disjoint tag-keyed matching (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
+| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), tag-keyed matching with max-one-verb-per-live-terminal disambiguation (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
 | `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
 | `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** signature/logic; the planner wraps its result with the slug-scoped final-position relaxation (§2.7) — it does NOT receive a widened allow-set |
 | `core/graph/edges.py` | persisted edges | **Unchanged** (synthesis is planning-time only) |
@@ -276,19 +341,36 @@ map. Validation lives entirely in the registry.**
       silently dropped (§2.8);
   (g) pure-action goal (empty goal_outputs, non-empty goal_actions) starts at and returns
       the action terminal (§2.6);
-  (h) `_ACTION_REQUIRES_TAG` values are pairwise DISJOINT (§2.2 invariant) — assert over the
-      map itself AND that no live terminal matches two verbs;
+  (h) **max-one-verb-per-live-terminal (§2.2 invariant, 4th-pass — RED-first).** Assert that
+      for EVERY live terminal, at most one verb in `_ACTION_REQUIRES_TAG` matches its actual
+      `intent_tags`. This test MUST reproduce the current `send_mail` double-match
+      (`notify,send` → both `email` and `notify`) as RED, then pass once the disambiguation
+      (§2.2 specificity rule OR the retag) lands. A pairwise-disjoint-map-values check is
+      NECESSARY but explicitly NOT sufficient — the test asserts over live tags, not the map;
   (i) a compound goal does NOT admit an action terminal as a START (§2.6 gate) — only as a
       synthesized final hop after a producer;
   (j) slug-scoped final-position auth (§2.7): a `writes-fs` action terminal being the final
-      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded).
+      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded);
+  (k) **disambiguation resolves send_mail to `email`, not `notify` (§2.2).** With `send_mail`
+      tagged `notify,send`, a `notify` goal does NOT route to it, and an `email` goal does.
+- **Adapter decode + reinference (§2.8, 4th-pass — hermes-adapter)**: RED-first —
+  (l) a `plan_cli_chain` response carrying `{"error": "unknown action verb: <v>; known:[...]"}`
+      is decoded into `UnknownActionVerbError(verb, known)` BEFORE `_select_chain` flattens it
+      (currently it degrades to a generic "no healthy chain" — assert that is now typed);
+  (m) catching `UnknownActionVerbError` drives EXACTLY ONE corrective reinference whose
+      message names the rejected verb + the `known` list, then re-calls `plan_cli_chain` once;
+      a second failure raises (no loop).
 - **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
   guard; assert forwarded `goal_actions` + retained producer.
 - **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
 
 ## 6. Error handling
-- Tag inference emitting an out-of-map action verb → one-retry-then-ValueError (reuse
-  `_infer_capability_tags`'s vocab-reject mechanism, extended to `goal_actions`).
+- Tag inference emitting an out-of-map action verb: the REGISTRY validates and returns the
+  structured `{"error": "unknown action verb..."}`; the ADAPTER decodes it into
+  `UnknownActionVerbError` and drives one corrective reinference on the planner-error path
+  (§2.8, 4th-pass). This is NOT the pre-existing `_infer_capability_tags` port-tag loop
+  (which runs pre-planner and only handles `goal_inputs`/`goal_outputs`) — it is a new,
+  separate decode+reinference path. One reinference then raise.
 - Empty `goal_outputs` AND empty `goal_actions` → hard-fail (no goal at all), as today.
 - Empty `goal_outputs` WITH non-empty `goal_actions` → valid pure-action goal; discovery
   uses the action term (§3 discovery row).
