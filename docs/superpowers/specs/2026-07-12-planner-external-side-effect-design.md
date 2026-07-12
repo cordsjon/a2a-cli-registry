@@ -234,21 +234,37 @@ Two-part, both reversible independently:
   `'external'`.
 - **AC-04** — Full `a2a-cli-registry` test suite green, zero regressions in
   existing `writes-fs`/`network`/`destructive` planner tests.
-- **AC-05 (live)** — Post-deploy (both Part 1 code change and Part 2 data
-  update applied): `plan_cli_chain(goal_inputs=['text'], goal_outputs=['text'],
-  allow_side_effects=set())` against the live registry includes `send_mail`
-  as a candidate terminal hop. `goal_inputs` must be nonempty and match
-  `send_mail`'s declared `input_types='text'` — an **empty** `goal_inputs`
-  does NOT work even post-fix: `plan_chain`'s `starts` selection
-  (`core/planner/search.py:96-98`) only admits no-declared-input CLIs when
-  `goal_in` is empty, and `send_mail` has a nonempty declared `input_types`,
-  so it is excluded from `starts` under `goal_inputs=[]` regardless of Bugs
-  1/2. Verified live-simulated during spec-panel review: `goal_inputs=[]` →
-  `[]`; `goal_inputs=['text']` → `[['send_mail']]` (with both fixes applied
-  in the simulation). This is the concrete, previously-impossible outcome
-  both parts of this fix are required to jointly produce — neither part
-  alone achieves it (Part 1 alone: still unreachable, empty `output_types`;
-  Part 2 alone: still `unknown`-coerced and excluded).
+- **AC-05 (live, scoped)** — Post-deploy (both Part 1 code change and Part 2
+  data update applied): `plan_cli_chain(goal_inputs=['text'],
+  goal_outputs=['text'], allow_side_effects=set())`, called either against
+  an isolated/scoped registry subset containing `send_mail`, or with
+  `max_candidate_chains` raised above the current public default of 100,
+  includes `send_mail` as a candidate terminal hop. `goal_inputs` must be
+  nonempty and match `send_mail`'s declared `input_types='text'` — an
+  **empty** `goal_inputs` does NOT work even post-fix: `plan_chain`'s
+  `starts` selection (`core/planner/search.py:96-98`) only admits
+  no-declared-input CLIs when `goal_in` is empty, and `send_mail` has a
+  nonempty declared `input_types`, so it is excluded from `starts` under
+  `goal_inputs=[]` regardless of Bugs 1/2.
+
+  **Explicitly NOT claimed:** that `send_mail` is reached via today's
+  **public default call** (`max_candidate_chains=100`) against the **full
+  live registry** (474 CLIs). Codex's post-panel pass found a third,
+  independent, pre-existing bug: `plan_chain`'s `for start in starts` loop
+  (`core/planner/search.py:103-104`) stops considering **new start slugs
+  entirely** once `len(candidates) >= max_candidate_chains`, before
+  sorting — so a start slug late in dict-iteration order (like `send_mail`
+  against the full registry) can be starved out even when it would sort
+  favorably. Verified: default cap (100) → 100 candidates, none is
+  `send_mail`; cap raised to 1000 → 449 candidates, `send_mail` present at
+  sorted position 18. This is candidate-enumeration cap-starvation, not a
+  side_effect/output_types/input_types failure, and it would affect any
+  goal whose `goal_inputs` matches 100+ CLIs' start slugs, not just this
+  one. Filed separately: `US-CLIREG-PLANCHAIN-CAP-STARVATION-01`. This
+  spec's fixes (Bugs 1+2) are necessary but, against the current public
+  default call, **not sufficient** for `send_mail` to appear — the isolated
+  simulation in this AC proves the fixes work correctly; it does not prove
+  the full-registry public call surfaces the result today.
 - **AC-06 (live, explicitly bounded)** — This AC set does NOT claim the
   adapter's compound syllabus2 prompt succeeds end-to-end. That additionally
   requires the deferred adapter-side `'email'`→`'external'` term mapping and
@@ -290,6 +306,16 @@ spec) and excluded from the average.
 **Overall (post-fix): 8.1 — PASS** (threshold 7.0).
 
 PANEL-VERDICT: 8.1
+
+**Post-panel correction (via Codex post-panel pass, triaged below):** this
+section's summary overstated the AC-02 fix as requiring the literal value
+`goal_inputs=['text']` — AC-02 as written is actually generic (any nonempty
+input intersecting the synthetic capability's declared type). Only AC-05
+names `'text'` literally, because it targets the specific `send_mail` row.
+Also: this panel pass simulated against an isolated single-row test DB, not
+the full 474-CLI live registry — a third bug (candidate-cap starvation,
+independent of this spec's two fixes) was found only by the post-panel pass
+running against the full registry. See below.
 
 ## Codex review — pre-panel
 
@@ -381,3 +407,56 @@ performed 2026-07-12:
   so the unqualified “191 existing side-effect-bearing capability rows” is
   not reproducible from the referenced database and should define its filter
   and snapshot if retained.
+
+## Codex review — post-panel
+
+Grounding review performed 2026-07-12 against the complete post-panel spec,
+`core/planner/search.py`, and a disposable copy of the referenced live DB (the
+copy received the proposed `send_mail.output_types='text'` update, while
+`_slug_side_effect()` was monkey-patched to the proposed six-value order):
+
+- **The corrected start-selection premise is valid.** `plan_chain()` uses
+  `_slug_consumes(c) & goal_in` when `goal_in` is nonempty and selects only
+  no-declared-input slugs when it is empty (`core/planner/search.py:89-100`).
+  In an isolated DB containing the post-fix `send_mail` row, the exact results
+  are `goal_inputs=[]` -> `[]` and `goal_inputs=['text']` ->
+  `[['send_mail']]`. This supports AC-02's generic nonempty/intersecting-input
+  precondition and the specific input precondition in AC-05. It also confirms
+  that Parts 1 and 2 are both necessary for that isolated result.
+
+- **The panel narrative slightly overstates what changed in AC-02.** The
+  panel section says “AC-05 and AC-02 now require
+  `goal_inputs=['text']`,” but AC-02 actually remains generic: it requires a
+  nonempty input intersecting the synthetic capability's declared input and
+  cites the existing `goal_inputs=['file:pdf']` test pattern. That AC is
+  behaviorally sound, but it does not require the literal `['text']` value.
+
+- **AC-05's live-registry outcome is not satisfied by the two specified
+  fixes.** With the proposed changes simulated against the full live-registry
+  copy, the public/default 100-candidate search returned 100 candidates for
+  `goal_inputs=['text'], goal_outputs=['text']` and none contained
+  `send_mail`. `plan_chain()` stops collecting once `max_candidate_chains`
+  is reached while iterating start slugs and sorts only afterward
+  (`core/planner/search.py:103-126`), so earlier starts exhaust the cap before
+  `send_mail` is visited. Repeating the same search with the internal cap
+  raised to 1000 returned 449 candidates and included `['send_mail']` (sorted
+  position 18), confirming candidate-cap starvation rather than an input,
+  output, or side-effect failure. `core/catalog/queries.py:164-178` does not
+  expose the cap, so AC-05 cannot be met through the specified public call as
+  written. This is a third independent live blocker outside the current Fix,
+  not merely a test-fixture detail.
+
+- **The panel's bare `goal_inputs=[]` -> `[]` result is valid only for the
+  isolated `send_mail` simulation.** Against the full live-registry copy,
+  empty inputs still produced 100 other no-input candidates; the accurate
+  live claim is only that `send_mail` is absent because its declared input is
+  nonempty.
+
+**Verdict:** the AC-02 input correction is consistent with the implementation,
+and the panel edits did not damage the start-selection logic. However, the
+literal AC-02 summary mismatch and, materially, AC-05's unaddressed
+candidate-cap starvation mean the document is **not yet internally
+consistent end-to-end**. The spec can become consistent by distinguishing the
+isolated `send_mail` proof from the full-live-registry AC and either addressing
+candidate enumeration/capping in scope or narrowing AC-05 so it does not
+claim the current public live call includes `send_mail`.
