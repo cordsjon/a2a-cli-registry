@@ -130,6 +130,22 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     for e in session.exec(select(CliEdge)).all():
         adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
 
+    # §2.5: planning-time terminal edge synthesis — send_mail-class terminals
+    # have zero persisted incoming edges (edges.py:30 down-weights bare hub
+    # types). Synthesize (producer -> terminal, via H) IN MEMORY, scoped
+    # strictly to terminals matching a requested action; the general hub
+    # down-weight and the persisted CliEdge table are untouched.
+    if goal_actions:
+        for term in sorted(action_terminals):
+            term_in = _slug_consumes(caps[term])
+            for prod, prod_caps in caps.items():
+                if prod == term:
+                    continue
+                for hub in sorted(_slug_produces(prod_caps) & term_in):
+                    pairs = adjacency.setdefault(prod, [])
+                    if (term, hub) not in pairs:
+                        pairs.append((term, hub))
+
     goal_in, goal_out = set(goal_inputs), set(goal_outputs)
     # An empty goal_in means "no input constraint" (a query-only goal like
     # "list files" or "check status"). `_slug_consumes(c) & goal_in` is always

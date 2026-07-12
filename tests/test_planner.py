@@ -400,3 +400,30 @@ def test_more_than_one_action_verb_raises(db):
     with _pytest.raises(ValueError, match="multiple action verbs"):
         plan_chain(db, goal_inputs=["text"], goal_outputs=[],
                    goal_actions=["email", "webhook"])
+
+
+def test_compound_goal_reaches_mailer_with_zero_persisted_edges(db):
+    # spec §5 test (a) + §2.5: live send_mail has ZERO persisted incoming edges
+    # (edges.py down-weights bare hub types); synthesis must connect
+    # producer -> mailer at plan time. _mail_fleet adds NO CliEdge rows.
+    _mail_fleet(db)
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert any(c.slugs == ["report_gen", "mailer"] for c in chains)
+    # via_type preserved for hop tracing (§2.5)
+    two_hop = next(c for c in chains if c.slugs == ["report_gen", "mailer"])
+    assert two_hop.hops[1]["via_type"] == "text"
+
+
+def test_synthesis_does_not_create_chains_into_non_requested_terminals(db):
+    # spec §5 test (d): a 'webhook' terminal exists, only 'email' is requested —
+    # no chain may end in the webhook CLI.
+    _mail_fleet(db)
+    db.add(Cli(slug="webhooker", lang="python"))
+    db.add(Capability(cli_slug="webhooker", intent_tags="webhook", input_types="text",
+                      output_types="text", side_effect="external", confidence="declared"))
+    db.commit()
+    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        goal_actions=["email"])
+    assert chains, "email chain must still plan"
+    assert all("webhooker" not in c.slugs for c in chains)
