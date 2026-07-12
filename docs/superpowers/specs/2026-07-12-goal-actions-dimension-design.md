@@ -1,7 +1,9 @@
 # `goal_actions` Dimension — Planner Redesign (SPUN OUT of VOCAB-01)
 
 **Date:** 2026-07-12
-**Status:** Design — SPUN OUT into its own ticket (2026-07-12) after 5 Codex grounding passes.
+**Status:** Design — PLAN-READY as of 2026-07-12 15:05 CEST: the §2.2 blocking question was
+resolved by the AC-01 brainstorm (user decision: **retag**, see §2.2). SPUN OUT into its own
+ticket (2026-07-12) after 5 Codex grounding passes.
 The parent ticket US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 was **split**: its §2.2-independent
 slice (AC-02 send_mail reachability + AC-03 seed_anthropic_index backfill) ships separately
 (see `2026-07-12-vocab01-sideeffect-reachability-slice.md`); the entire `goal_actions`
@@ -11,14 +13,15 @@ dimension (§2.2–§2.8, AC-04/AC-05) lives here and is NOT plan-ready.
 - CONFIRMED sound: §2.6 compound-goal start gate, §2.7 slug-scoped final-position auth
   (4th pass), §2.8 adapter decode + one-shot reinference (5th pass — empirically verified the
   structured payload survives in `content[0].json` before flattening, retry bounded to one).
-- **OPEN — the blocking design question: §2.2 action→verb matching.** Refuted twice.
-  Attempt 1 (disjoint map values) and attempt 2 (rarer-tag tie-break) both fail because in the
-  LIVE registry (`~/.hermes/cli-registry.db`) `send_mail`=`notify,send` is the SOLE carrier of
-  BOTH `send` and `notify` — rarity is a 1–1 tie, so the tie-break can't resolve
-  `send_mail → email`. A multi-tagged terminal matching multiple action verbs needs a
-  deterministic resolution that the 2-attempt rule says must come from a fresh design pass,
-  not another patch. Candidate directions recorded in §2.2 (retag the data; explicit per-verb
-  priority order; resolve-over-single-verb invariant) — pick one via brainstorm before planning.
+- **RESOLVED 2026-07-12 (AC-01 brainstorm, user decision): §2.2 action→verb matching.**
+  Previously refuted twice: attempt 1 (disjoint map values) and attempt 2 (rarer-tag
+  tie-break) both fail because in the LIVE registry (`~/.hermes/cli-registry.db`)
+  `send_mail`=`notify,send` is the SOLE carrier of BOTH `send` and `notify` — rarity is a
+  1–1 tie. The brainstorm's live probe showed the ambiguity population is exactly ONE row
+  (of 475 CLIs, `send`:1, `notify`:1, `webhook`:0, `persist`:0 — `send_mail` is the sole
+  carrier of ANY map tag), so any runtime disambiguation mechanism would generalize from
+  n=1. **Decision: retag the data** (drop `notify` from `send_mail.intent_tags`) and make
+  any multi-match a hard error; no runtime resolution logic at all. Full rule in §2.2.
 
 > NOTE: the `registry.db` in THIS repo is a DIFFERENT dataset (474 CLIs, no `send_mail`, 3
 > `notify` CLIs) than the live `~/.hermes/cli-registry.db` the adapter plans against. Ground
@@ -124,31 +127,46 @@ issued (latent only because no `notify` goal is emitted today).
 The correct invariant is **max-one-verb-per-live-terminal**: for every live terminal T,
 `len([a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & T.intent_tags]) <= 1`.
 This is a runtime assertion over ACTUAL tags (not a property of the map alone), and it is the
-test that would have caught the send_mail double-match. Two ways to satisfy it, in order of
-preference:
+test that would have caught the send_mail double-match.
 
-1. **Preferred — disambiguate at match time by tag specificity.** When a terminal matches
-   >1 verb, the verb whose required-tag set is the terminal's *most discriminating* tag wins.
-   For `send_mail`, `send` is unique to email-class terminals while `notify` is shared
-   vocabulary (3 live CLIs carry `notify`: `codex_ntfy_bridge`, `changelog_research`,
-   `sync-2` — none is a mail sender), so `email` wins over `notify`. Mechanism: rank verbs by
-   `-len({t for t in _ACTION_REQUIRES_TAG[a] if <#live terminals carrying t>} )` — i.e. the
-   verb keyed on the rarer tag. Deterministic; ties (equal rarity) are a hard error.
-2. **Simpler fallback — retag the data.** Backfill `send_mail.intent_tags` to drop `notify`
-   (leaving `send`), so the row matches only `email`. This makes the map-value disjointness
-   sufficient again, at the cost of one live-DB UPDATE (backup first, same runbook as AC-03).
-   Chosen only if the specificity rule proves fragile against a second terminal.
+**DECIDED 2026-07-12 (AC-01 brainstorm, user decision): retag the data; multi-match is a
+hard error. No runtime disambiguation logic.** The earlier draft preferred a match-time
+specificity rule (rank verbs by the rarer required tag), but the live-DB probe collapsed its
+premise: its "3 live CLIs carry `notify`" figure came from the REPO `registry.db`; in the
+LIVE `~/.hermes/cli-registry.db` (475 CLIs) `send_mail` is the SOLE carrier of ANY map tag
+(`send`:1, `notify`:1, `webhook`:0, `persist`:0), so rarity is a 1–1 tie (Codex-refuted) and
+any runtime mechanism would be calibrated against a population of ONE. The decided design:
+
+1. **Retag (the fix).** Backfill `send_mail.intent_tags` `'notify,send'` → `'send'` in the
+   live DB (backup first, row-count-asserted UPDATE, re-read verify — same runbook as AC-03).
+   The row then matches only `email`, and map-value disjointness is again sufficient for the
+   invariant. Durability: `send_mail`'s cli row is `source_class='cli_audit'`,
+   `catalog_path='reconstructed-from-db'` — no on-disk manifest feeds it, so the DB row is
+   the operative source of truth; the only reintroduction path is a future cli-audit feed
+   re-run, which the invariant test below catches as RED.
+2. **Matching rule (deterministic, no resolution step).** A terminal satisfies action `a`
+   iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is non-empty. If any live terminal
+   matches MORE than one verb, that is a **hard error** (surfaced by the invariant test, and
+   asserted at plan time when action terminals are computed) — never a silent pick via
+   priority or specificity. Rationale: a global priority order or per-slug override map
+   would encode today's single example as universal law; deferring the mechanism until a
+   real second multi-tagged terminal exists means the decision is made against data, not
+   an n=1 guess. Rejected alternatives (recorded for the future RED case): static per-verb
+   priority (`email > notify`, mis-resolves a future pure notifier that also carries
+   `send`), per-slug `_TERMINAL_VERB_OVERRIDE` map (slug-keyed code that drifts from the
+   live DB).
 
 The **invariant test** asserts max-one-verb-per-live-terminal over the live tag set (NOT
 merely pairwise-disjoint map values), and FAILS on the current `send_mail` row until the
-chosen disambiguation lands. This test is RED-first: it reproduces the double-match, then the
-fix makes it green.
+retag lands. This test is RED-first: it reproduces the double-match, then the retag makes it
+green — and it remains the permanent tripwire that forces a fresh mechanism decision if a
+future terminal (or a feed re-run reintroducing `notify`) ever double-matches.
 
-Live check (post-fix): `email → {send}` matches `send_mail` and, via the specificity rule,
-`send_mail` resolves to `email` only; `webhook → {webhook}` and `notify → {notify}` match
-zero live terminals (correctly — none exist yet). An action verb absent from the map is a
-**hard inference-validation error** (one retry, then ValueError) — never silently dropped,
-never routed to a wrong terminal.
+Live check (post-retag): `email → {send}` matches `send_mail` and nothing else;
+`webhook → {webhook}` and `notify → {notify}` match zero live terminals (correctly — none
+exist yet; a `notify` goal plans no chain rather than mis-routing to mail). An action verb
+absent from the map is a **hard inference-validation error** (one retry, then ValueError) —
+never silently dropped, never routed to a wrong terminal.
 
 > Trade-off: keying `email` on `send` alone (dropping `notify`) means a future
 > notification-only mail CLI tagged `notify` but not `send` would not match `email`. That's
@@ -300,7 +318,7 @@ map. Validation lives entirely in the registry.**
 | `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
 | `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
 | `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
-| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), tag-keyed matching with max-one-verb-per-live-terminal disambiguation (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
+| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), tag-keyed matching with the max-one-verb-per-live-terminal invariant — multi-match is a hard error, no resolution logic; data-side retag is ordering step 0 (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
 | `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
 | `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** signature/logic; the planner wraps its result with the slug-scoped final-position relaxation (§2.7) — it does NOT receive a widened allow-set |
 | `core/graph/edges.py` | persisted edges | **Unchanged** (synthesis is planning-time only) |
@@ -359,15 +377,18 @@ map. Validation lives entirely in the registry.**
   (h) **max-one-verb-per-live-terminal (§2.2 invariant, 4th-pass — RED-first).** Assert that
       for EVERY live terminal, at most one verb in `_ACTION_REQUIRES_TAG` matches its actual
       `intent_tags`. This test MUST reproduce the current `send_mail` double-match
-      (`notify,send` → both `email` and `notify`) as RED, then pass once the disambiguation
-      (§2.2 specificity rule OR the retag) lands. A pairwise-disjoint-map-values check is
-      NECESSARY but explicitly NOT sufficient — the test asserts over live tags, not the map;
+      (`notify,send` → both `email` and `notify`) as RED, then pass once the §2.2 retag
+      lands. A pairwise-disjoint-map-values check is NECESSARY but explicitly NOT
+      sufficient — the test asserts over live tags, not the map. Live-DB assertions are
+      skipif-guarded (AC-02 probe pattern); a hermetic fixture twin asserts the
+      multi-match-is-hard-error path on a synthetic double-tagged terminal;
   (i) a compound goal does NOT admit an action terminal as a START (§2.6 gate) — only as a
       synthesized final hop after a producer;
   (j) slug-scoped final-position auth (§2.7): a `writes-fs` action terminal being the final
       hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded);
-  (k) **disambiguation resolves send_mail to `email`, not `notify` (§2.2).** With `send_mail`
-      tagged `notify,send`, a `notify` goal does NOT route to it, and an `email` goal does.
+  (k) **post-retag routing (§2.2).** With `send_mail` retagged to `send`, an `email` goal
+      routes to it and a `notify` goal does NOT (it matches zero live terminals and plans
+      no chain — asserted as no-chain, not as a mis-route to mail).
 - **Adapter decode + reinference (§2.8, 4th-pass — hermes-adapter)**: RED-first —
   (l) a `plan_cli_chain` response carrying `{"error": "unknown action verb: <v>; known:[...]"}`
       is decoded into `UnknownActionVerbError(verb, known)` BEFORE `_select_chain` flattens it
@@ -407,10 +428,15 @@ Explicitly OUT:
 ## 8. Ordering (Codex-corrected — atomic cross-repo deploy)
 Registry-side schema must deploy BEFORE the adapter forwards the new key, or
 `goal_actions` is rejected as an unknown input key (ops_registry.py:101):
+0. **Data prerequisite — the §2.2 retag:** backfill `send_mail.intent_tags`
+   `'notify,send'` → `'send'` in the LIVE `~/.hermes/cli-registry.db` (backup first,
+   row-count-asserted UPDATE, re-read verify — AC-03 runbook). Lands with the RED-first
+   invariant test (h): RED against the current row, GREEN after the UPDATE.
 1. **Registry first:** `plan_chain` semantics + `core/ops_registry.py` schema + wrapper.
-   Land + test in isolation (planner unit tests a–g green).
+   Land + test in isolation (planner unit tests a–k green).
 2. **Adapter atomically:** tag inference + empty-output discovery restructure + tool
    schema + planner call + bypass guard — all together (partial deploy = unknown-key
    rejection or discovery crash).
 3. AC-05 live E2E last.
-AC-02 and AC-03 are independent and can land first (they don't depend on the redesign).
+(The former "AC-02/AC-03 can land first" note is satisfied: both shipped 2026-07-12 via the
+split slice, a2a `e9df044`.)
