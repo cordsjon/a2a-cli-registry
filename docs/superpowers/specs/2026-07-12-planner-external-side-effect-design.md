@@ -223,7 +223,10 @@ Two-part, both reversible independently:
   a capability list whose only row has `side_effect='external'`.
 - **AC-02** — A single-row, `declared`, `external`-side-effect capability
   (with nonempty `output_types`, per the Testing note on Bug 2) is included
-  in `plan_chain`'s candidate hops with `allow_side_effects=set()` (no
+  in `plan_chain`'s candidate hops when called with matching `goal_inputs`
+  (nonempty, intersecting that capability's `input_types` — mirroring
+  `test_declared_writes_fs_still_allowed_by_default`'s `goal_inputs=["file:pdf"]`
+  pattern, not an empty `goal_inputs`) and `allow_side_effects=set()` (no
   opt-in required — matches `declared writes-fs` precedent for the
   single-row case).
 - **AC-03** — An `inferred`, `external`-side-effect capability is excluded
@@ -232,16 +235,61 @@ Two-part, both reversible independently:
 - **AC-04** — Full `a2a-cli-registry` test suite green, zero regressions in
   existing `writes-fs`/`network`/`destructive` planner tests.
 - **AC-05 (live)** — Post-deploy (both Part 1 code change and Part 2 data
-  update applied): `plan_cli_chain(goal_inputs=[], goal_outputs=['text'],
+  update applied): `plan_cli_chain(goal_inputs=['text'], goal_outputs=['text'],
   allow_side_effects=set())` against the live registry includes `send_mail`
-  as a candidate terminal hop. This is the concrete, previously-impossible
-  outcome both parts of this fix are required to jointly produce — neither
-  part alone achieves it (Part 1 alone: still unreachable, empty
-  `output_types`; Part 2 alone: still `unknown`-coerced and excluded).
+  as a candidate terminal hop. `goal_inputs` must be nonempty and match
+  `send_mail`'s declared `input_types='text'` — an **empty** `goal_inputs`
+  does NOT work even post-fix: `plan_chain`'s `starts` selection
+  (`core/planner/search.py:96-98`) only admits no-declared-input CLIs when
+  `goal_in` is empty, and `send_mail` has a nonempty declared `input_types`,
+  so it is excluded from `starts` under `goal_inputs=[]` regardless of Bugs
+  1/2. Verified live-simulated during spec-panel review: `goal_inputs=[]` →
+  `[]`; `goal_inputs=['text']` → `[['send_mail']]` (with both fixes applied
+  in the simulation). This is the concrete, previously-impossible outcome
+  both parts of this fix are required to jointly produce — neither part
+  alone achieves it (Part 1 alone: still unreachable, empty `output_types`;
+  Part 2 alone: still `unknown`-coerced and excluded).
 - **AC-06 (live, explicitly bounded)** — This AC set does NOT claim the
   adapter's compound syllabus2 prompt succeeds end-to-end. That additionally
   requires the deferred adapter-side `'email'`→`'external'` term mapping and
   the compound-goal bypass guard (separate tickets, not this spec).
+
+## sh:spec-panel review
+
+Experts: karl-wiegers, gojko-adzic, martin-fowler, lisa-crispin (default) +
+charity-majors (auto-selected: `cli`/`external` keywords). AI-production
+dimensions gate triggered (llm/prompt/model/pipeline keywords present).
+
+**Findings (grounded + refute-stage survivors), both auto-fixed above:**
+- Wiegers/testability: AC-05 as originally written used
+  `goal_inputs=[]`, which live-simulation proved returns `[]` even with both
+  fixes applied — `send_mail`'s nonempty declared `input_types` excludes it
+  from `plan_chain`'s `starts` set when `goal_in` is empty
+  (`core/planner/search.py:96-98`). Fixed: AC-05 and AC-02 now require
+  `goal_inputs=['text']` (matching `send_mail`'s declared input), verified
+  live-simulated to return `[['send_mail']]` post-fix.
+- Adzic/concrete-examples: AC-02's original wording didn't state the test's
+  required `goal_inputs` precondition explicitly. Fixed: AC-02 now names the
+  nonempty, intersecting `goal_inputs` requirement and cites the existing
+  `test_declared_writes_fs_still_allowed_by_default` pattern it mirrors.
+
+No findings survived refutation from Fowler (interface boundaries —
+`_hop_excluded` reuse confirmed clean, no new coupling), Crispin (test
+strategy proportional to risk — 3 unit tests + 1 live AC judged adequate for
+an S-effort planner change), or Majors (evidence-over-analogy — the spec
+already commits to a live probe rather than an assumed behavior; the probe's
+parameters were the only issue, now corrected and re-verified by live
+simulation during this review).
+
+**Scores:** clarity 8.5, completeness 7.5, testability 6.5→8.5 (post-fix),
+consistency 8.0, public-readiness 8.0. AI-production dimensions: only
+output-integrity meaningfully applies (8.0); isolation-enforcement and
+security-boundaries are N/A (no multi-agent or read-only claims in this
+spec) and excluded from the average.
+
+**Overall (post-fix): 8.1 — PASS** (threshold 7.0).
+
+PANEL-VERDICT: 8.1
 
 ## Codex review — pre-panel
 
