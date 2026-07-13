@@ -32,8 +32,12 @@ ensure_backend() {
       docker start "$PDF_CONTAINER" >/dev/null 2>&1 \
         || _die "failed to start existing container '$PDF_CONTAINER'" 4
     else
+      # Bind to localhost ONLY (not 0.0.0.0) so disabling login is safe —
+      # Stirling 2.14.2 enforces X-API-KEY on all ops; SECURITY_ENABLELOGIN=false
+      # drops that, acceptable only because the port is not LAN-reachable.
       docker run -d --name "$PDF_CONTAINER" --restart unless-stopped \
-        -p "$PDF_BACKEND_PORT:$PDF_BACKEND_PORT" -e "SERVER_PORT=$PDF_BACKEND_PORT" \
+        -p "127.0.0.1:$PDF_BACKEND_PORT:$PDF_BACKEND_PORT" \
+        -e "SERVER_PORT=$PDF_BACKEND_PORT" -e "SECURITY_ENABLELOGIN=false" \
         "$PDF_IMAGE" >/dev/null 2>&1 \
         || _die "failed to launch Stirling container ($PDF_IMAGE)" 4
     fi
