@@ -1,0 +1,127 @@
+#!/bin/sh
+# pdf-tools — PDF manipulation via a local Stirling PDF backend.
+# Verbs: split | compress | convert | redact | form-fill
+# NEVER generates PDFs (WeasyPrint/ReportLab own that) and NEVER merges
+# (SVG-PAINT pypdf owns that). See docs/specs/2026-07-13-*.
+#
+# Endpoints + field names are pinned from a live Stirling 2.14.2 instance
+# (docs/stirling-openapi-snapshot.json). Backend on portmgr port 9141.
+set -eu
+
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$HERE/lib/backend.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: pdf-tools <verb> <input.pdf> [options] -o <output>
+
+verbs:
+  split    <in.pdf> --pages <n[,n-m]> -o <out.pdf>     split after given pages
+  compress <in.pdf> [--level 1-9] -o <out.pdf>         shrink file size
+  convert  <in.pdf> [--to png|jpg] -o <out>            pdf -> image(s)
+  redact   <in.pdf> --words "<a,b>" -o <out.pdf>       true redaction (removes text)
+  form-fill <in.pdf> --data <fields.json> -o <out.pdf> fill AcroForm fields
+
+Stirling backend auto-starts on demand (Docker, port 9141).
+EOF
+  exit 2
+}
+
+# _run_op <endpoint> <out> <curl -F args...>
+# ensure backend, POST multipart, write output atomically, print path.
+_run_op() {
+  endpoint=$1; out=$2; shift 2
+  ensure_backend
+  tmp="$out.tmp.$$"
+  if curl -fsS -X POST "$PDF_BACKEND_URL$endpoint" "$@" -o "$tmp"; then
+    if [ ! -s "$tmp" ]; then rm -f "$tmp"; _die "empty response from $endpoint" 6; fi
+    mv -f "$tmp" "$out"
+    echo "$out"
+  else
+    rc=$?; rm -f "$tmp"; _die "Stirling op failed ($endpoint), curl rc=$rc" 6
+  fi
+}
+
+[ $# -ge 1 ] || usage
+cmd=$1; shift
+
+case "$cmd" in
+  split)
+    infile=""; pages=""; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      --pages) pages=$2; shift 2 ;;
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -n "$pages" ] && [ -n "$out" ] || usage
+    _run_op "/api/v1/general/split-pages" "$out" \
+      -F "fileInput=@$infile" -F "pageNumbers=$pages"
+    ;;
+
+  compress)
+    infile=""; level=5; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      --level) level=$2; shift 2 ;;
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -n "$out" ] || usage
+    _run_op "/api/v1/misc/compress-pdf" "$out" \
+      -F "fileInput=@$infile" -F "optimizeLevel=$level"
+    ;;
+
+  convert)
+    infile=""; to="png"; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      --to) to=$2; shift 2 ;;
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -n "$out" ] || usage
+    # dpi is required by the impl (NPE if null) despite not being flagged
+    # required in the OpenAPI schema; colorType likewise. singleOrMultiple
+    # 'single' => one image for the whole PDF.
+    _run_op "/api/v1/convert/pdf/img" "$out" \
+      -F "fileInput=@$infile" -F "imageFormat=$to" \
+      -F "singleOrMultiple=single" -F "dpi=150" -F "colorType=rgb"
+    ;;
+
+  redact)
+    infile=""; words=""; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      --words) words=$2; shift 2 ;;
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -n "$words" ] && [ -n "$out" ] || usage
+    _run_op "/api/v1/security/auto-redact" "$out" \
+      -F "fileInput=@$infile" -F "listOfText=$words" -F "convertPDFToImage=false"
+    ;;
+
+  form-fill)
+    infile=""; data=""; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      --data) data=$2; shift 2 ;;
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -f "$data" ] || _die "--data JSON not found: ${data:-<none>}" 2
+    [ -n "$out" ] || usage
+    # form/fill uses field name 'file' (not fileInput) + 'data' JSON string.
+    _run_op "/api/v1/form/fill" "$out" \
+      -F "file=@$infile" -F "data=<$data"
+    ;;
+
+  -h|--help|help) usage ;;
+  *) echo "pdf-tools: unknown verb '$cmd'" >&2; usage ;;
+esac
