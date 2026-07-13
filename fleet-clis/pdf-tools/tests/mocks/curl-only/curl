@@ -1,0 +1,5 @@
+#!/bin/sh
+# mock curl: always "unhealthy" (connection refused equivalent) -> non-zero.
+# Used with a scrubbed PATH so `docker` is genuinely absent and only this
+# curl exists — exercises the "backend down + no docker" branch.
+exit 7
