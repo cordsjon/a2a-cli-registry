@@ -27,16 +27,27 @@
 
 ## File Structure
 
+**RESOLVED (Task 0):** the fleet has NO flat CLI dir — CLIs live inside their owning projects (registry DB query 2026-07-13). Decision: `pdf-tools` is born in a NEW top-level dir of the registry repo, `fleet-clis/pdf-tools/` (distinct from `tools/`, which is the registry's internal Python plumbing). Keeps spec + plan + CLI versioned together on one branch. `<fleet>` below = `/Users/jcords-macmini/projects/a2a-cli-registry/fleet-clis`, `<fleet-repo>` = the registry repo.
+
 | File | Responsibility |
 |---|---|
-| `<fleet>/pdf-tools/pdf-tools` | The CLI executable (POSIX sh). Fleet dir, not the registry repo. Registry indexes it by absolute `path`. |
-| `<fleet>/pdf-tools/lib/backend.sh` | `ensure_backend()` + health-wait + idle-reap. Sourced by the CLI. |
-| `<fleet>/pdf-tools/README.md` | Usage, the 5 verbs, backend lifecycle, port note. |
-| `<fleet>/pdf-tools/tests/test_pdf_tools.bats` | bats tests for arg parsing, ensure_backend fail-paths, each verb (mocked curl). |
-| `<fleet>/pdf-tools/tests/fixtures/sample.pdf` | 3-page fixture PDF for split/convert tests. |
-| `demo/cli-audit/latest.json` (registry repo) | Append the `pdf-tools` feed entry (test scope). |
+| `fleet-clis/pdf-tools/pdf-tools` | The CLI executable (POSIX sh). Registry indexes it by absolute `path`. |
+| `fleet-clis/pdf-tools/lib/backend.sh` | `ensure_backend()` + health-wait + idle-reap. Sourced by the CLI. |
+| `fleet-clis/pdf-tools/README.md` | Usage, the 5 verbs, backend lifecycle, port note. |
+| `fleet-clis/pdf-tools/tests/test_pdf_tools.bats` | bats tests for arg parsing, ensure_backend fail-paths, each verb (mocked curl). |
+| `fleet-clis/pdf-tools/tests/fixtures/sample.pdf` | 3-page fixture PDF for split/convert tests. |
+| `fleet-clis/pdf-tools/docs/stirling-openapi-snapshot.json` | Pinned Stirling API (Task 0). |
+| `demo/cli-audit/latest.json` (registry repo) | Append the `pdf-tools-safe` + `pdf-tools-redact` feed entries (test scope). |
 
-`<fleet>` = the fleet root where loose CLIs live. **Task 0 resolves the exact path** — the golden feed uses `/g/<slug>` placeholders, which is not a real path. Do not guess; resolve it.
+### RESOLVED (Task 5 Step 0 — probe result): capability LIST is NOT supported
+
+`core/discovery/cli_audit_source.py:30-42` reads `entry["capability"]` as a single dict; a LIST throws `AttributeError` and aborts populate. The 1-entry→1-slug→1-capability-row shape is enforced in `discovery/base.py:14`, `cli_audit_source.py:43-49`, and `populate.py:55-64`. Adding list support ripples into planner cardinality assumptions — OUT OF SCOPE.
+
+**Decision: two slugs sharing one binary**, differentiated by subcommand:
+- **`pdf-tools-safe`** — `side_effect: "writes-fs"`, `confidence: "declared"` — split, compress, convert
+- **`pdf-tools-redact`** — `side_effect: "destructive"`, `confidence: "declared"` — redact, form-fill
+
+Both `path` at the same `fleet-clis/pdf-tools/pdf-tools` binary; the launch spec / description disambiguates which verbs each exposes. This preserves the side-effect gate (safe verbs flow unguarded; destructive require `allow_side_effects`) without the merged-single-row regression that would gate everything as destructive.
 
 ---
 
@@ -313,13 +324,7 @@ Expected: the 5 verbs only; no `generate`/`merge`.
 - Modify: `demo/cli-audit/latest.json` (registry repo — the feed)
 - Test: `tests/test_pdf_tools_registration.py` (registry repo)
 
-- [ ] **Step 0: VERIFY the loader accepts a capability LIST (blocking check)**
-
-The golden feed uses a single `capability` object; this plan needs two rows. Confirm the loader path handles a list before authoring the entry:
-```bash
-grep -n "capability" core/discovery/cli_audit_source.py core/populate.py core/capability/*.py
-```
-If `capability` is read as a single dict (`entry["capability"]` → one `CapabilityRecord`), then EITHER (a) the feed schema supports a list and populate iterates it, or (b) it does not. **If it does not, fall back to one merged row** with `intent_tags` = all 6 verbs and `side_effect: "destructive"` (the safe conservative default — everything gets gated, caller passes `allow_side_effects`), and log a follow-up to add per-verb side-effect granularity. Record which branch you took.
+- [x] **Step 0: RESOLVED — capability LIST unsupported, use two slugs** (probe 2026-07-13). `cli_audit_source.py:30-42` reads a single dict; a list crashes. Author TWO feed entries sharing one binary: `pdf-tools-safe` (writes-fs) and `pdf-tools-redact` (destructive). See File Structure "RESOLVED (Task 5 Step 0)".
 
 - [ ] **Step 1: Write the failing test**
 
@@ -339,24 +344,30 @@ def test_safe_verbs_included_unguarded(tmp_registry):
 
 - [ ] **Step 2: Run → FAIL** (entry not in feed yet).
 
-- [ ] **Step 3: Append the feed entry** (from spec §3.3, with `confidence:"declared"`):
+- [ ] **Step 3: Append the TWO feed entries** (two slugs, one binary — per Step 0 resolution):
 
 ```json
 {
-  "slug": "pdf-tools",
+  "slug": "pdf-tools-safe",
   "lang": "shell",
-  "path": "<fleet>/pdf-tools/pdf-tools",
-  "description": "PDF manipulation: split, redact, compress, form-fill, convert (Stirling-backed, local)",
+  "path": "/Users/jcords-macmini/projects/a2a-cli-registry/fleet-clis/pdf-tools/pdf-tools",
+  "description": "PDF manipulation (safe): split, compress, convert (Stirling-backed, local)",
   "not_standalone": false,
-  "capability": [
-    {"intent_tags":["split","compress","convert"],"input_types":["file:pdf"],
-     "output_types":["file:pdf","file:png","file:docx"],"side_effect":"writes-fs","confidence":"declared"},
-    {"intent_tags":["redact","fill","encrypt"],"input_types":["file:pdf"],
-     "output_types":["file:pdf"],"side_effect":"destructive","confidence":"declared"}
-  ]
+  "capability": {"intent_tags":["split","compress","convert"],"input_types":["file:pdf"],
+     "output_types":["file:pdf","file:png","file:docx"],"side_effect":"writes-fs","confidence":"declared"}
 }
 ```
-(If Task 5 Step 0 said single-row, use the merged fallback entry instead.)
+```json
+{
+  "slug": "pdf-tools-redact",
+  "lang": "shell",
+  "path": "/Users/jcords-macmini/projects/a2a-cli-registry/fleet-clis/pdf-tools/pdf-tools",
+  "description": "PDF manipulation (destructive): redact, form-fill (Stirling-backed, local)",
+  "not_standalone": false,
+  "capability": {"intent_tags":["redact","fill","encrypt"],"input_types":["file:pdf"],
+     "output_types":["file:pdf"],"side_effect":"destructive","confidence":"declared"}
+}
+```
 
 - [ ] **Step 4: Populate + probe, run tests to pass**
 
