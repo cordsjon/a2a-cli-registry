@@ -4,7 +4,7 @@
 
 **Goal:** Ship a self-contained `pdf-tools` shell CLI that fills the 5 PDF-manipulation gaps (split, redact, compress, form-fill, convert) via a self-managed local Stirling PDF Docker backend, and register it in the a2a-cli-registry so agents discover it on-demand.
 
-**Architecture:** A single POSIX-`sh` script (`lang: shell`, declaration-only — the registry has no shell adapter, it uses `stub_adapter`, so capability is declared in the feed, not probed by executing code). The script exposes 5 subcommands, each POSTing multipart to Stirling's REST API on **port 8091** (dagu holds 8080). `ensure_backend()` starts the container on demand with a bounded health-wait and never hangs. Registration is via a feed entry appended to the cli-audit JSON, then `populate` + `probe`. No PDF generation (WeasyPrint/ReportLab keep that); no merge (SVG-PAINT pypdf keeps that).
+**Architecture:** A single POSIX-`sh` script (`lang: shell`, declaration-only — the registry has no shell adapter, it uses `stub_adapter`, so capability is declared in the feed, not probed by executing code). The script exposes 5 subcommands, each POSTing multipart to Stirling's REST API on **port 9141** (dagu holds 8080). `ensure_backend()` starts the container on demand with a bounded health-wait and never hangs. Registration is via a feed entry appended to the cli-audit JSON, then `populate` + `probe`. No PDF generation (WeasyPrint/ReportLab keep that); no merge (SVG-PAINT pypdf keeps that).
 
 **Tech Stack:** POSIX sh, `curl`, `jq`, Docker (`stirlingtools/stirling-pdf`), Python (registry `populate`/`probe`), `bats` or shell-assertion tests.
 
@@ -15,7 +15,7 @@
 ## Pre-flight (read before Task 1)
 
 - **Grounded facts** (verified 2026-07-13, cite before trusting):
-  - Port 8080 is held by dagu (`lsof -iTCP:8080`). Use **8091**.
+  - **Port 9141 is portmgr-allocated** for service `stirling-pdf` (health `/api/v1/info/status`), issued 2026-07-13 via `POST http://localhost:9000/allocate`. NEVER hardcode a port from a bare `lsof` check — portmgr (`~/projects/00_portmgr/portmgr.db`, UNIQUE port) is the authority; an unregistered port is invisible to the health dashboard and collidable. To re-derive: `curl -s http://localhost:9000/allocations | jq .allocations["stirling-pdf"]`.
   - `file:pdf`, `file:png`, `file:docx` are already in `[vocabulary].registered` — `demo/config.toml:7`. No vocab edit needed.
   - Feed `confidence` defaults to `"declared"` when omitted — `core/discovery/cli_audit_source.py:41`. Only an explicit `"inferred"` gets pruned by `_hop_excluded` (`core/planner/search.py:71-74`). Set `confidence:"declared"` explicitly for self-documentation; never set `"inferred"`.
   - Feed entry required keys: `slug`, `lang`, `path` — `cli_audit_source.py:10`. Optional: `bucket`, `project`, `description`, `not_standalone`, `capability`.
@@ -67,21 +67,21 @@ sqlite3 /Users/jcords-macmini/.hermes/cli-registry.db \
 ```
 Expected: real absolute paths. Pick the common parent dir → that is `<fleet>`. Record it. If all paths are heterogeneous, choose `~/projects/<sensible>/pdf-tools` and note the decision.
 
-- [ ] **Step 2: Start Stirling on 8091**
+- [ ] **Step 2: Start Stirling on 9141**
 
 Run:
 ```bash
-docker run -d --name stirling-pdf --restart unless-stopped -p 8091:8091 \
-  -e SERVER_PORT=8091 stirlingtools/stirling-pdf:latest
+docker run -d --name stirling-pdf --restart unless-stopped -p 9141:9141 \
+  -e SERVER_PORT=9141 stirlingtools/stirling-pdf:latest
 ```
-Expected: a container id. (`SERVER_PORT` env re-homes Stirling off its internal 8080 to 8091 so host and container agree.)
+Expected: a container id. (`SERVER_PORT` env re-homes Stirling off its internal 8080 to 9141 so host and container agree.)
 
 - [ ] **Step 3: Wait for health, then capture the OpenAPI spec**
 
 Run:
 ```bash
-for i in $(seq 1 60); do curl -fsS http://localhost:8091/api/v1/info/status && break; sleep 2; done
-curl -fsS http://localhost:8091/v1/api-docs -o /tmp/stirling-openapi.json
+for i in $(seq 1 60); do curl -fsS http://localhost:9141/api/v1/info/status && break; sleep 2; done
+curl -fsS http://localhost:9141/v1/api-docs -o /tmp/stirling-openapi.json
 jq -r '.paths | keys[]' /tmp/stirling-openapi.json | grep -Ei 'split|compress|img|image|password|redact|form|fill'
 ```
 Expected: the exact endpoint paths for split, compress, pdf-to-image, add/remove-password, redact, fill-form. **Record each path + its multipart field names** (`jq '.paths["<path>"].post.requestBody' /tmp/stirling-openapi.json`). These are the ground truth for Tasks 2-4; do not use doc-site guesses.
@@ -113,7 +113,7 @@ git -C <fleet-repo> commit -- pdf-tools/docs/stirling-openapi-snapshot.json \
 
 ```bash
 # tests/test_pdf_tools.bats
-setup() { export PDF_BACKEND_URL="http://localhost:8091"; export PDF_BACKEND_TIMEOUT=4; }
+setup() { export PDF_BACKEND_URL="http://localhost:9141"; export PDF_BACKEND_TIMEOUT=4; }
 
 @test "ensure_backend fails fast and non-zero when docker is absent" {
   PATH="$BATS_TEST_DIRNAME/mocks/no-docker:$PATH"   # docker -> exit 127 shim
@@ -138,7 +138,7 @@ Expected: FAIL — `backend.sh` not found / functions undefined.
 
 ```sh
 # lib/backend.sh — POSIX sh
-: "${PDF_BACKEND_URL:=http://localhost:8091}"
+: "${PDF_BACKEND_URL:=http://localhost:9141}"
 : "${PDF_BACKEND_TIMEOUT:=60}"
 : "${PDF_IMAGE:=stirlingtools/stirling-pdf:latest}"
 
@@ -153,7 +153,7 @@ ensure_backend() {
   command -v docker >/dev/null 2>&1 || _die "Docker not found. Install Docker Desktop, then retry." 3
   if ! docker ps --format '{{.Names}}' | grep -qx stirling-pdf; then
     docker run -d --name stirling-pdf --restart unless-stopped \
-      -p 8091:8091 -e SERVER_PORT=8091 "$PDF_IMAGE" >/dev/null 2>&1 \
+      -p 9141:9141 -e SERVER_PORT=9141 "$PDF_IMAGE" >/dev/null 2>&1 \
       || _die "failed to start Stirling container" 4
   fi
   i=0
@@ -402,13 +402,13 @@ Expected: redact excluded unguarded, included guarded; split/compress/convert in
 ```bash
 docker rm -f stirling-pdf 2>/dev/null || true
 ../pdf-tools split fixtures/sample.pdf --pages 1-3 -o /tmp/e2e.pdf
-pdfinfo /tmp/e2e.pdf | grep Pages    # expect Pages: 3, container auto-started on 8091
+pdfinfo /tmp/e2e.pdf | grep Pages    # expect Pages: 3, container auto-started on 9141
 ```
 Expected: output produced from a cold start. Quote the result.
 
 - [ ] **Step 2: No-Docker fail path E2E** (AC-5): temporarily shadow docker with the no-docker mock, run a verb, assert non-zero + actionable message + no hang (wrap in `timeout 15`).
 
-- [ ] **Step 3: Write README** — the 5 verbs, examples, backend lifecycle, the 8091 port rationale, and "this CLI never generates PDFs (see WeasyPrint) and never merges (see SVG-PAINT)".
+- [ ] **Step 3: Write README** — the 5 verbs, examples, backend lifecycle, the 9141 port rationale, and "this CLI never generates PDFs (see WeasyPrint) and never merges (see SVG-PAINT)".
 
 - [ ] **Step 4: Decide idle-reaper** — if a simple `--reap-after N` background check is clean, add it + a test; else document the RAM trade-off ("~1-2GB JVM container stays warm until manually `docker stop stirling-pdf`") and defer to v1.1. Record the decision.
 

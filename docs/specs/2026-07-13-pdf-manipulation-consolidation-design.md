@@ -56,7 +56,7 @@ a2a-cli-registry  ──►  pdf-tools  (shell CLI, lang: shell)
                           │  ensure_backend()
                           ▼
                     Stirling PDF (Docker, headless)
-                    http://localhost:8091   ← NOT 8080 (dagu holds 8080)
+                    http://localhost:9141   ← portmgr-allocated (service stirling-pdf)
                           │  REST API
                           ▼
                     result written atomically to -o <path>
@@ -72,8 +72,8 @@ a2a-cli-registry  ──►  pdf-tools  (shell CLI, lang: shell)
 ### 3.2 Self-managed Stirling backend
 
 `ensure_backend()` on every invocation:
-1. `GET http://localhost:8091/api/v1/info/status` — if healthy, proceed.
-2. If down: `docker run -d --restart unless-stopped -p 8091:8091 stirlingtools/stirling-pdf` (restart policy → survives reboot).
+1. `GET http://localhost:9141/api/v1/info/status` — if healthy, proceed.
+2. If down: `docker run -d --restart unless-stopped -p 9141:9141 stirlingtools/stirling-pdf` (restart policy → survives reboot).
 3. Poll health up to `PDF_BACKEND_TIMEOUT` (default 60s). On timeout: fail with the last `docker logs` tail, **never hang** (ref: codex-stdin-hang lesson — bounded waits only).
 4. Run the op via REST; write output atomically (tempfile + `Path.replace` equivalent in shell: write to `$out.tmp`, `mv` on success).
 5. **Idle-reaper (optional, v1.1):** a background check tears the container down after `PDF_BACKEND_IDLE_MIN` idle minutes. v1 may leave it running; document the RAM cost.
@@ -124,7 +124,7 @@ The registry has **no hand-authored per-CLI manifest**. Registration path:
 
 1. Agent has a PDF task → registry `plan_cli_chain` with `producer_terms=["pdf","split",…]` ranks `pdf-tools`.
 2. Registry describes the CLI + args; agent invokes `pdf-tools <verb> … -o out.pdf`.
-3. CLI `ensure_backend()` → Stirling up on 8091.
+3. CLI `ensure_backend()` → Stirling up on 9141.
 4. CLI POSTs to the Stirling REST endpoint for that verb; streams result to `out.tmp`.
 5. On HTTP 200 + non-empty body: `mv out.tmp out.pdf`, print path, exit 0.
 6. Any failure: no partial output, exit non-zero, actionable message.
@@ -137,7 +137,7 @@ The registry has **no hand-authored per-CLI manifest**. Registration path:
 |---|---|
 | Docker not installed | Exit non-zero, message: how to install Docker. No hang. |
 | Backend not healthy within timeout | Exit non-zero with `docker logs` tail. No hang. |
-| Port 8091 already taken by non-Stirling | Detect, exit with clear message (do not assume it's ours). |
+| Port 9141 already taken by non-Stirling | Detect, exit with clear message (do not assume it's ours). |
 | Input file missing/not a PDF | Exit non-zero, no output written. |
 | Stirling returns non-200 or empty body | Exit non-zero, delete `.tmp`, surface Stirling error. |
 | `destructive` verb called without `allow_side_effects` at plan layer | Planner excludes it (registry behaviour, not CLI). |
@@ -148,7 +148,7 @@ The registry has **no hand-authored per-CLI manifest**. Registration path:
 
 **US-PDF-MANIP-01** — *As an agent in the fleet, I can split, redact, compress, form-fill, and locally convert a PDF via one discoverable CLI, so that document workflows complete locally without a permanently-mounted MCP server or a new generation silo.*
 
-- **AC-1 (self-start):** `pdf-tools split in.pdf --pages 1-3 -o out.pdf` with the backend **down** auto-starts Stirling on **8091** and produces `out.pdf`. Verified: command → `out.pdf` exists, is a valid 3-page PDF.
+- **AC-1 (self-start):** `pdf-tools split in.pdf --pages 1-3 -o out.pdf` with the backend **down** auto-starts Stirling on **9141** and produces `out.pdf`. Verified: command → `out.pdf` exists, is a valid 3-page PDF.
 - **AC-2 (five gap verbs):** `split`, `redact`, `compress`, `form-fill`, `convert` each succeed against Stirling's REST API with **atomic** output writes (no partial file on failure). Verified per verb.
 - **AC-3 (discoverable):** after `populate` + `probe`, `search_cli_catalog` returns `pdf-tools` for a "pdf" query and `plan_cli_chain` with `producer_terms=["pdf"]` ranks it. Verified: op output shows the slug.
 - **AC-4 (side-effect gate, both directions):** `redact`/`form-fill` are **excluded** from an unguarded plan and **included** only with `allow_side_effects`; AND `split`/`compress`/`convert` are **included** in an unguarded plan (proving `confidence: declared` correctly prevents the `writes-fs` inferred-exclusion path in `search.py:71-74`). Verified via `plan_cli_chain` calls covering both the guarded and unguarded cases — a regression that re-inferred the safe verbs would fail this AC, not pass silently.
