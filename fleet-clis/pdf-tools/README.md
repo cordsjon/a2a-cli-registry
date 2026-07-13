@@ -63,6 +63,22 @@ planner's side-effect gate must treat safe and destructive verbs differently:
 So `redact`/`form-fill` are excluded from an unguarded plan and included only
 when the caller passes `allow_side_effects=["destructive"]`.
 
+### Reproducing the registry state on a new machine
+
+The live feed (`demo/cli-audit/latest.json`) and `registry.db` are **gitignored
+generated state** — the two `pdf-tools` entries and the `registry.db`
+`not_standalone` migration do **not** travel with git. The committed
+source-of-truth is `seed/feed-entries.json`; apply it (idempotent) with:
+
+```sh
+sh fleet-clis/pdf-tools/seed/apply.sh
+```
+
+This resolves the binary path, ensures the `not_standalone` column exists
+(backing up `registry.db` first), allocates the `stirling-pdf` port via portmgr
+(if reachable), upserts both entries into the live feed, and runs `populate`.
+Re-running is a safe no-op.
+
 ## Tests
 
 Dependency-free POSIX shell harness (no bats):

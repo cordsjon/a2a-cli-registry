@@ -1,0 +1,33 @@
+{
+  "_comment": "Committed source-of-truth for the pdf-tools registry entries. The live feed (demo/cli-audit/latest.json) and registry.db are gitignored generated state, so these entries do NOT travel with git. Apply them on any machine with `sh fleet-clis/pdf-tools/seed/apply.sh`. Two slugs share one binary because the feed loader binds one capability row per slug (a capability LIST crashes cli_audit_source.py:30-42); the split keeps the planner's side-effect gate meaningful (safe verbs unguarded, destructive require allow_side_effects). Path is resolved at apply time — do not hardcode it here.",
+  "entries": [
+    {
+      "slug": "pdf-tools-safe",
+      "lang": "shell",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "PDF manipulation (safe): split, compress, convert (Stirling-backed, local)",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["split", "compress", "convert"],
+        "input_types": ["file:pdf"],
+        "output_types": ["file:pdf", "file:png", "file:docx"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "pdf-tools-redact",
+      "lang": "shell",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "PDF manipulation (destructive): redact, form-fill (Stirling-backed, local)",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["redact", "fill", "encrypt"],
+        "input_types": ["file:pdf"],
+        "output_types": ["file:pdf"],
+        "side_effect": "destructive",
+        "confidence": "declared"
+      }
+    }
+  ]
+}
