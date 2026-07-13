@@ -1,0 +1,2733 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/jcords-macmini/projects/a2a-cli-registry
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f5625-31d5-7e53-93d8-025194f03266
+--------
+user
+# tenet-bypass: repurpose — 4th-pass prompt (.codex-pass4-prompt.md) exists; this is a scoped 5th-pass variant targeting only the two folded fixes, not a duplicate of that broad pass
+
+You are performing a FIFTH grounding pass on a design spec. SCOPE IS NARROW: the 4th pass
+returned NOT-PLAN-READY with exactly TWO holes. Both have now been folded (commit 711d73b).
+Your ONLY job is to confirm each fold actually closes its hole against the live code. Do NOT
+re-review §2.6, §2.7, terminal-edge synthesis, the plumbing table, or any other already-
+confirmed section — those were CONFIRMED sound in pass 4. Focus only on the two items below.
+End with a single verdict line.
+
+## The spec to review
+
+`docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md` (read §2.2 and §2.8 in
+full, plus §3 table rows for `_infer_capability_tags`, `_unwrap_mcp_json`/`_select_chain`,
+and the planner call; plus §5 tests (h)(k)(l)(m) and §6).
+
+## Code to ground against
+
+- This repo: `core/planner/search.py` (matching + terminal predicate), and the live
+  `registry.db` for actual `intent_tags` (the `capability` table).
+- Sibling repo `~/.hermes/hermes-adapter`: `hermes_adapter/tools/cli_registry.py`
+  (`_infer_capability_tags` ~501-568, `_unwrap_mcp_json` ~573, `_select_chain` ~668,
+  the `plan_cli_chain` call site ~899-905).
+
+## Fold 1 — §2.2 max-one-verb-per-live-terminal (was: false disjoint-map-values claim)
+
+The 4th pass proved `send_mail` (live `intent_tags='notify,send'`) matches BOTH `email:{send}`
+AND `notify:{notify}` even though the map values are disjoint. The fold:
+- Replaced the invariant with **max-one-verb-per-LIVE-terminal** (a runtime assertion over
+  actual tags, not map-value disjointness).
+- Added a disambiguation rule: when a terminal matches >1 verb, the verb keyed on the rarer
+  tag wins (so `send_mail` → `email`, since `send` is rarer than the shared `notify`).
+- Test (h) is now RED-first, reproducing the double-match; test (k) asserts a `notify` goal
+  does NOT route to send_mail.
+
+CONFIRM: (a) Is the new invariant actually correct and does it CATCH the send_mail
+double-match (vs. the old map-only check that missed it)? (b) Is the specificity/rarer-tag
+disambiguation rule well-defined and deterministic — any tie or edge case where it fails to
+pick a single verb? (c) Does the rule correctly resolve `send_mail`→`email` given the LIVE
+tag distribution (how many live terminals carry `send` vs `notify`)? Verify against
+registry.db. (d) Any NEW hole the fold introduces?
+
+## Fold 2 — §2.8 explicit decode + reinference (was: false "reuse existing loop" claim)
+
+The 4th pass proved the "reuse `_infer_capability_tags`'s vocab-reject loop" claim false: that
+loop runs pre-planner (line 826, before the ~899 planner call), handles only port tags, and
+`_select_chain` swallows any structured planner error into a generic "no healthy chain"
+(686/706). The fold:
+- Adds an explicit decode: `_unwrap_mcp_json`/`_select_chain` must detect the structured
+  `{"error": "unknown action verb: <v>; known:[...]"}` payload BEFORE flattening and raise a
+  typed `UnknownActionVerbError(verb, known)`.
+- Adds a NEW one-shot reinference at the planner call site catching that error, re-inferring
+  with the rejected verb + known list named, re-calling `plan_cli_chain` once, then raising.
+- Tests (l)(m) cover the decode and the single reinference.
+
+CONFIRM: (a) Does the decode point (`_unwrap_mcp_json` vs the call site) actually sit BEFORE
+the generic-error raise, so the structured payload is still intact when decoded? (b) Is the
+one-shot reinference correctly bounded (exactly one, then raise — no loop)? (c) Does the
+registry side actually EMIT the structured `{"error": ...}` in the shape the adapter decodes
+(check the ops error channel / where plan_cli_chain would return it)? (d) Any NEW hole?
+
+## Output format (REQUIRED)
+
+Prose findings on ONLY these two folds, then end with EXACTLY ONE final line:
+
+`PLAN-READY`
+
+or
+
+`NOT-PLAN-READY`
+
+If NOT-PLAN-READY, precede it with a numbered list naming the specific remaining hole in one
+of the two folds, with the concrete code/data fact that contradicts the fold.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’m using the superpowers workflow to ground this narrowly against the specified live code and database, and I’ll limit findings to the two folds.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jcords-macmini/.codex/superpowers/skills/using-superpowers/SKILL.md" in /Users/jcords-macmini/projects/a2a-cli-registry
+ succeeded in 0ms:
+---
+name: using-superpowers
+description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
+---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Superpowers skills override default system prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (CLAUDE.md, GEMINI.md, AGENTS.md, direct requests) — highest priority
+2. **Superpowers skills** — override default system behavior where they conflict
+3. **Default system prompt** — lowest priority
+
+If CLAUDE.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "always use TDD," follow the user's instructions. The user is in control.
+
+## How to Access Skills
+
+**In Claude Code:** Use the `Skill` tool. When you invoke a skill, its content is loaded and presented to you—follow it directly. Never use the Read tool on skill files.
+
+**In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from installed plugins. The `skill` tool works the same as Claude Code's `Skill` tool.
+
+**In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads skill metadata at session start and activates the full content on demand.
+
+**In other environments:** Check your platform's documentation for how skills are loaded.
+
+## Platform Adaptation
+
+Skills use Claude Code tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
+
+# Using Skills
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should invoke the skill to check. If an invoked skill turns out to be wrong for the situation, you don't need to use it.
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to EnterPlanMode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke Skill tool" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create TodoWrite todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to EnterPlanMode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create TodoWrite todo per item" -> "Follow skill exactly";
+}
+```
+
+## Red Flags
+
+These thoughts mean STOP—you're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (brainstorming, debugging) - these determine HOW to approach the task
+2. **Implementation skills second** (frontend-design, mcp-builder) - these guide execution
+
+"Let's build X" → brainstorming first, then implementation skills.
+"Fix this bug" → debugging first, then domain-specific skills.
+
+## Skill Types
+
+**Rigid** (TDD, debugging): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (patterns): Adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "rg --files -g 'AGENTS.md' -g 'CLAUDE.md' -g 'docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md' -g 'core/planner/search.py' -g 'registry.db' . .. ~/.hermes/hermes-adapter 2>/dev/null | sort -u
+rg -n '"'^#{1,4} (2'"\\.2|2\\.8|3\\b|5\\b|6\\b)|_infer_capability_tags|_unwrap_mcp_json|_select_chain|plan_cli_chain|test \\((h|k|l|m)\\)' docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
+rg -n 'intent_tags|terminal|error|unknown action|plan_cli_chain|match' core/planner/search.py
+rg -n '_infer_capability_tags|_unwrap_mcp_json|_select_chain|plan_cli_chain|UnknownActionVerbError|no healthy chain|error' ~/.hermes/hermes-adapter/hermes_adapter/tools/cli_registry.py" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 222ms:
+../00_Governance/CLAUDE.md
+../00_Governance/wiki-convergence/CLAUDE.md
+../00_Research/35_AIRLINE-UX-AUDIT/CLAUDE.md
+../10_STEUB-usecases/CLAUDE.md
+../10_Sidequest/CLAUDE.md
+../10_agentflow-demo/CLAUDE.md
+../10_fastapi-local-template/fastapi-local-template/CLAUDE.md
+../15_LookingGlass/CLAUDE.md
+../15_SAAS/20_PosterEngine/CLAUDE.md
+../20_CONSIGLIERE/CLAUDE.md
+../20_CONSIGLIERE/financial-services-ref/CLAUDE.md
+../20_Skills/CLAUDE.md
+../25_Hardware/70_XPERIA_SOA/CLAUDE.md
+../25_Hardware/71_XPERIA_VIZ/CLAUDE.md
+../25_Hardware/72_SONY_RESEARCH/CLAUDE.md
+../30_OpenSandboxPipeline/CLAUDE.md
+../30_SERVICES/firecrawl/AGENTS.md
+../30_SERVICES/firecrawl/CLAUDE.md
+../30_SVG-PAINT/CLAUDE.md
+../30_SVG-PAINT/docs/session-archive/AGENTS.md
+../30_briefing-publisher/CLAUDE.md
+../50_Excelbridge/CLAUDE.md
+../50_KETO/CLAUDE.md
+../60_skillengineering/CLAUDE.md
+../70_ASSET-ENGINE/CLAUDE.md
+../75_Coaching/10_Consulting/ai-consulting/CLAUDE.md
+../75_Coaching/10_Consulting/syllabus-2.0/CLAUDE.md
+../80_HermesAndroid/hermes_vscode/CLAUDE.md
+../AGENTS.md
+../a2a-cli-registry/registry.db
+../claude-usage-systray/CLAUDE.md
+../cli-printing-press/AGENTS.md
+../cli-printing-press/CLAUDE.md
+../cli-printing-press/testdata/golden/expected/generate-golden-api-rich-auth/printing-press-rich-auth/AGENTS.md
+../cli-printing-press/testdata/golden/expected/generate-golden-api/printing-press-golden/AGENTS.md
+../cli-printing-press/testdata/golden/expected/generate-learn-loop-api/learn-loop-example/AGENTS.md
+../homer/AGENTS.md
+../page-agent/AGENTS.md
+../page-agent/CLAUDE.md
+../page-agent/packages/website/AGENTS.md
+./core/planner/search.py
+./docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
+./registry.db
+80:### 2.2 Action → required-intent-tag map (tag-keyed, max-one-verb-per-terminal)
+199:owns resolution**: `plan_chain`/`plan_cli_chain` gain `goal_actions`; the adapter passes
+223:### 2.8 Shared action-vocab contract — no cross-repo duplication (3rd-pass fix)
+230:  `plan_cli_chain` (the existing MCP `_mcp_call` path). It performs no action-verb
+232:- The registry's `plan_cli_chain` op validates each action verb against
+239:  reuses `_infer_capability_tags`'s vocab-reject loop. It cannot, for two verified code
+241:  1. **Wrong path, wrong vocabulary.** `_infer_capability_tags`'s only retry is at
+246:  2. **The planner error is swallowed before the adapter can see the verb.** `_select_chain`
+247:     (cli_registry.py:668) passes the planner response through `_unwrap_mcp_json` (line 684),
+248:     which coerces a structured `{"error": ...}` object into a one-element list; `_select_chain`
+253:  1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
+255:     `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
+261:     re-calls `plan_cli_chain` once. A second failure raises (no infinite loop).
+277:## 3. Components & boundaries (all plumbing enumerated — Codex found 5 omissions)
+282:| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation). Its 545-568 retry stays port-tag-only; the action-verb reinference is a SEPARATE new path (see decode row below), NOT this loop |
+283:| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)` — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
+285:| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
+286:| `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
+287:| `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
+289:| `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
+326:## 5. Testing strategy
+357:  (l) a `plan_cli_chain` response carrying `{"error": "unknown action verb: <v>; known:[...]"}`
+358:      is decoded into `UnknownActionVerbError(verb, known)` BEFORE `_select_chain` flattens it
+361:      message names the rejected verb + the `known` list, then re-calls `plan_cli_chain` once;
+367:## 6. Error handling
+371:  (§2.8, 4th-pass). This is NOT the pre-existing `_infer_capability_tags` port-tag loop
+94:    # case — permanently unreachable. Only match no-declared-input CLIs when
+46:# usage data (see the hop-count log in _select_chain below).
+90:            "gateway agent. Call this only after plan_cli_chain has produced a plan. "
+98:                    "description": "The plan id returned by a prior plan_cli_chain call.",
+170:                "error": (
+184:            "error": status_body.get("error") or "gateway run failed",
+248:                "error": f"gateway POST /v1/runs returned HTTP {resp.status_code}",
+254:            # error out of the never-raises contract (review finding 1).
+255:            return _stamp({"status": "failed", "error": "gateway POST /v1/runs returned a non-JSON body"})
+257:            return _stamp({"status": "failed", "error": "gateway did not return a run_id"})
+262:        return _stamp({"status": "timeout", "error": f"exec gateway breaker open: {e}"})
+264:        return _stamp({"status": "timeout", "error": f"gateway unreachable: {type(e).__name__}: {e}"})
+275:            return _stamp({"status": "timeout", "error": f"gateway poll failed: {type(e).__name__}: {e}"})
+284:                    "error": (
+314:        "error": f"gateway run {run_id} did not reach a terminal state within {max_polls} polls",
+334:        return json.dumps({"status": "failed", "error": "execute_cli_plan: 'command' is required"})
+337:    # command that has no plan_id from a prior plan_cli_chain. This is a soft nudge
+338:    # folded into the round — the model is told to plan first, not hard-errored —
+346:                "execute_cli_plan requires a plan_id from a prior plan_cli_chain "
+347:                "call. Call plan_cli_chain first, then execute the returned plan."
+361:        return json.dumps({"status": "failed", "error": "tool-output budget exceeded"})
+390:        "name": "plan_cli_chain",
+448:        raise RuntimeError(f"cli-registry MCP {tool_name} returned an error result")
+462:        return json.dumps({"status": "error", "error": f"{tool_name} failed: {e}"})
+465:        return json.dumps({"status": "error", "error": "tool-output budget exceeded"})
+474:async def handle_plan_cli_chain(args: dict, budget: OutputBudget) -> str:
+475:    return await _dispatch("plan_cli_chain", args, budget)
+501:async def _infer_capability_tags(goal: str, vocab: set[str] | None = None) -> dict:
+573:def _unwrap_mcp_json(raw: str) -> list:
+578:    search_cli_catalog / plan_cli_chain return lists. A singular dict is
+581:    Anything else (parse error, unexpected shape) yields []."""
+602:    results = _unwrap_mcp_json(catalog_json)
+642:    # file:md, then plan_cli_chain can never route through it).
+659:        for row in _unwrap_mcp_json(raw):
+668:def _select_chain(plan_json: str) -> list[str]:
+676:    plan_cli_chain), NOT re-derived against a second, narrower candidate set.
+684:    chains = _unwrap_mcp_json(plan_json)
+686:        raise ValueError("no usable plan: plan_cli_chain returned no chains")
+706:        raise ValueError("no healthy chain for goal")
+759:    rows = _unwrap_mcp_json(raw)
+810:        return json.dumps({"status": "failed", "error": "run_cli_command: 'goal' is required"})
+826:        tags = await _infer_capability_tags(goal, vocab=full_vocab)
+828:        logger.debug("run_cli_command step1 infer failed", extra={"error": str(e)})
+829:        return json.dumps({"status": "failed", "error": f"could not infer capabilities: {e}"})
+857:            logger.debug("run_cli_command step2 discovery failed", extra={"query": output_term, "error": str(e)})
+858:            return json.dumps({"status": "failed", "error": f"discovery failed: {e}"})
+865:                           "error": f"no CLI catalog entries for inferred capabilities: {sorted(tags['goal_outputs'] + tags['goal_inputs'])}"})
+875:    #    plan_cli_chain/_select_chain. A missing full_vocab (step-0 fetch
+883:                               "error": f"inferred capability not in registry vocabulary: {sorted(unknown)}"})
+886:    #    BYPASS: plan_cli_chain plans from the tags alone — it never receives
+899:            plan_json = await _mcp_call("plan_cli_chain", {
+905:            chain = _select_chain(plan_json)
+907:            logger.debug("run_cli_command step4 plan/select failed", extra={"error": str(e)})
+908:            return json.dumps({"status": "failed", "error": str(e)})
+924:            return json.dumps({"status": "failed", "error": "tool-output budget exceeded"})
+938:                             extra={"slug": slug, "hop": i, "error": str(e)})
+941:                    "error": f"could not resolve command for {slug} (hop {i}/{len(chain)}): {e}",
+954:                failure["error"] = (
+956:                    f"{result.get('error') or result.get('reason') or result.get('status')}"
+989:    (PLAN_CLI_CHAIN_SCHEMA, handle_plan_cli_chain, "plan_cli_chain"),
+
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' ../AGENTS.md
+sed -n '60,280p' docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
+sed -n '277,380p' docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md" in /Users/jcords-macmini/projects/a2a-cli-registry
+ succeeded in 0ms:
+# Agent Instructions (Projects Workspace)
+
+When you are doing **code review** or **refactoring** work anywhere under this `projects/` tree:
+
+1. After you prepare a non-trivial patch, get a **2nd opinion from Gemini CLI** by running:
+   - `/Users/jcords-macmini/projects/00_devhub/tools/gemini-chain review` (in the target git repo), or
+   - `/Users/jcords-macmini/projects/00_devhub/tools/gemini-chain review --staged` (if reviewing staged changes).
+2. Incorporate the high-signal feedback (bugs, risks, tests), and explicitly note any major disagreements.
+
+If the change contains or might contain **secrets** (keys/tokens/credentials), do **not** send it to Gemini; ask the user how to proceed.
+
+
+---
+
+## 2. Design: the `goal_actions` dimension (tag-keyed, revised)
+
+Model the action as its own goal dimension, distinct from the produced artifact, and
+match action terminals by their **intent tags**, not their side_effect enum. The second
+Codex pass refuted enum-based matching (`email`/`notify`/`webhook` all collapse to
+`external`; `file_write` matches all 32 live `writes-fs` CLIs) — the side_effect enum
+says *how dangerous* a hop is, not *what action* it performs. Intent tags carry the
+action identity: live `send_mail` is uniquely tagged `notify,send`.
+
+### 2.1 Data-flow change
+Tag inference emits three lists instead of overloading two:
+- `goal_inputs` — capability tags the user already has (unchanged).
+- `goal_outputs` — the **produced artifact only** (e.g. the report `text`). For a pure
+  action goal with no artifact, this MAY now be empty (see §2.5 back-compat + plumbing).
+- `goal_actions` — the terminal action verb(s) the goal demands (e.g. `email`). NEW.
+  These are **intent-tag terms**, matched against terminals' `intent_tags`.
+
+### 2.2 Action → required-intent-tag map (tag-keyed, max-one-verb-per-terminal)
+The action verbs are matched to terminal intent tags via a single shared dict. Codex's 3rd
+pass found that overlapping tag sets re-introduce ambiguity: if `webhook` includes `notify`,
+then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. Pairwise-disjoint tag
+sets are necessary but **NOT sufficient** — see the 4th-pass correction below:
+
+```
+_ACTION_REQUIRES_TAG = {
+    "email":      {"send"},       # send_mail carries notify,send -> 'send' is its
+                                  #   discriminating tag ('notify' is shared vocabulary)
+    "notify":     {"notify"},     # a pure-notification terminal (none live today)
+    "webhook":    {"webhook"},    # requires the specific 'webhook' tag, NOT 'notify'
+    "file_write": {"persist"},    # a fs-writing terminal tagged 'persist' (none live today)
+}
+```
+
+A terminal satisfies action `a` iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is
+non-empty.
+
+**4th-pass fix — the invariant is per-TERMINAL, not per-map-value (Codex REFUTED the
+disjoint-values claim).** The 3rd-pass text asserted "no two map values share a tag, so no
+terminal matches two verbs." That inference is false: map-value disjointness does not stop a
+single *multi-tagged* terminal from satisfying multiple verbs. Live counter-example —
+`send_mail`'s row is `intent_tags='notify,send'` (verified against `registry.db`,
+2026-07-12), so it matches BOTH `email` (via `send`) AND `notify` (via `notify`) even though
+`{send}` and `{notify}` are disjoint. A future `notify` goal would then route to `send_mail`,
+sending mail for a notification request — a real mis-route the moment a `notify` goal is
+issued (latent only because no `notify` goal is emitted today).
+
+The correct invariant is **max-one-verb-per-live-terminal**: for every live terminal T,
+`len([a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & T.intent_tags]) <= 1`.
+This is a runtime assertion over ACTUAL tags (not a property of the map alone), and it is the
+test that would have caught the send_mail double-match. Two ways to satisfy it, in order of
+preference:
+
+1. **Preferred — disambiguate at match time by tag specificity.** When a terminal matches
+   >1 verb, the verb whose required-tag set is the terminal's *most discriminating* tag wins.
+   For `send_mail`, `send` is unique to email-class terminals while `notify` is shared
+   vocabulary (3 live CLIs carry `notify`: `codex_ntfy_bridge`, `changelog_research`,
+   `sync-2` — none is a mail sender), so `email` wins over `notify`. Mechanism: rank verbs by
+   `-len({t for t in _ACTION_REQUIRES_TAG[a] if <#live terminals carrying t>} )` — i.e. the
+   verb keyed on the rarer tag. Deterministic; ties (equal rarity) are a hard error.
+2. **Simpler fallback — retag the data.** Backfill `send_mail.intent_tags` to drop `notify`
+   (leaving `send`), so the row matches only `email`. This makes the map-value disjointness
+   sufficient again, at the cost of one live-DB UPDATE (backup first, same runbook as AC-03).
+   Chosen only if the specificity rule proves fragile against a second terminal.
+
+The **invariant test** asserts max-one-verb-per-live-terminal over the live tag set (NOT
+merely pairwise-disjoint map values), and FAILS on the current `send_mail` row until the
+chosen disambiguation lands. This test is RED-first: it reproduces the double-match, then the
+fix makes it green.
+
+Live check (post-fix): `email → {send}` matches `send_mail` and, via the specificity rule,
+`send_mail` resolves to `email` only; `webhook → {webhook}` and `notify → {notify}` match
+zero live terminals (correctly — none exist yet). An action verb absent from the map is a
+**hard inference-validation error** (one retry, then ValueError) — never silently dropped,
+never routed to a wrong terminal.
+
+> Trade-off: keying `email` on `send` alone (dropping `notify`) means a future
+> notification-only mail CLI tagged `notify` but not `send` would not match `email`. That's
+> the correct bias — an `email` goal should reach a *sending* terminal, and `notify` stays
+> reserved for the distinct `notify` action. Revisit the map when a second `external`
+> terminal is registered (the map is the single place to update).
+
+### 2.3 Artifact-vs-confirmation resolution (Codex REFUTED the naive predicate)
+Codex's fatal finding: `send_mail` both consumes AND outputs `text`, so a naive
+`produces goal_out` test lets a one-hop `send_mail` satisfy `goal_out=text` even when
+`text` meant the report artifact. Resolution: **the artifact hop and the action hop must
+be distinct path positions.** The terminal predicate becomes:
+
+- `artifact_met = (not goal_out) or any(hop BEFORE the final hop produces goal_out)`
+- `action_met  = for every a in goal_actions, the FINAL hop's intent_tags satisfy a
+                  (per §2.2) AND the final hop is NOT the sole artifact producer`
+- A path is terminal iff `artifact_met AND action_met` (when `goal_actions` non-empty).
+- When `goal_actions` is empty, the rule is exactly today's (`any hop produces goal_out`),
+  byte-identical — the new clauses are gated behind non-empty `goal_actions`.
+
+So a compound goal REQUIRES ≥2 distinct hops: a producer emits `goal_out`, then a
+tag-matched terminal acts. A single dual-capable CLI does NOT short-circuit a compound
+goal (the artifact must come from an earlier hop). This removes the §2.3 ambiguity the
+first draft's "one CLI both produces and acts" clause created.
+
+### 2.4 Terminal short-circuit edit (search.py:112-116)
+The current unconditional `continue` after appending a candidate (search.py:114) prevents
+expansion from any hop producing `goal_out`. Change: when `goal_actions` is non-empty and
+`action_met` is FALSE for the current path, do **not** append-and-`continue` — fall
+through to neighbor expansion so the producer's edges (including the synthesized terminal
+edge, §2.5) are followed. Append-as-candidate only when `artifact_met AND action_met`.
+This is a localized predicate + control-flow edit, not a BFS rewrite (Codex: VERIFIED
+feasible).
+
+### 2.5 Planning-time terminal edge synthesis (no persisted-table change)
+`plan_chain` builds `adjacency` from the persisted `CliEdge` table (search.py:84-87) —
+Codex VERIFIED. To reach `send_mail` (which has zero persisted incoming edges), synthesize
+adjacency entries **in-memory, at plan time**, before BFS: for each producer P whose
+outputs intersect a hub type H, and each terminal T satisfying some `goal_action` (§2.2),
+add `(P, T, H)` to `adjacency[P]` if `H ∈ P.outputs ∩ T.inputs`. Scoped strictly to
+terminals matching a requested action — the general hub down-weight (edges.py:30) is
+untouched for all other pairs, so the 192-text-CLI explosion does not reopen. `via_type`
+is preserved (= H) for hop tracing. The persisted `CliEdge` table and `compute_edges` are
+**not** modified.
+
+### 2.6 Start-selection for pure-action goals (Codex VERIFIED gap; 3rd-pass narrowed)
+A pure action with empty `goal_inputs` AND empty `goal_outputs` still cannot start at
+`send_mail`: empty inputs select only no-input CLIs (search.py:97-100), but
+`send_mail.input_types='text'`. Resolution: **only when `goal_outputs` is empty** (a pure
+action with no artifact to produce first), the start set additionally includes any terminal
+satisfying a requested action, regardless of its declared inputs.
+
+**3rd-pass fix — gate on `not goal_out`, NOT merely `goal_actions` non-empty.** Codex found
+that admitting action terminals as starts for a *compound* goal (non-empty `goal_outputs`)
+is unsafe: with two matching terminals, terminal A's confirmation `text` output could be
+consumed as the "artifact" feeding terminal B, falsely satisfying the compound predicate.
+So for a compound goal the action terminal is reachable ONLY as a synthesized final hop
+(§2.5) downstream of a real producer — never as a start. Pure-action (empty `goal_outputs`)
+is the only case that admits an action terminal as a start.
+
+### 2.7 Self-authorization — SLUG-scoped, final-position only (3rd-pass fix)
+The adapter can't pre-resolve enums without duplicating the action map, so **the planner
+owns resolution**: `plan_chain`/`plan_cli_chain` gain `goal_actions`; the adapter passes
+`goal_actions` verbatim and does NOT pre-resolve enums.
+
+**3rd-pass fix — do NOT union the terminal's enum into a class-wide `allow_side_effects`.**
+Codex found that unioning e.g. `writes-fs` (a `file_write` terminal's enum) into
+`allow_side_effects` would globally admit all 32 live inferred `writes-fs` CLIs as valid
+mid-chain hops — a security regression. Instead, self-authorization is **slug-scoped and
+final-position-only**:
+
+- The planner computes `action_terminals: set[str]` = the exact slugs matched to a
+  requested action (§2.2).
+- `_hop_excluded` is consulted as today for every hop with the caller's (unmodified)
+  `allow_side_effects`. The ONLY relaxation: a hop is additionally allowed if it is in
+  `action_terminals` AND it is the FINAL hop of the path being evaluated. No other hop, and
+  no other CLI of the same enum class, gains authorization.
+- Mechanism: pass `action_terminals` + a `is_final` flag into the exclusion check at the
+  terminal-evaluation site (search.py:110-116), rather than mutating the shared
+  `allow_side_effects` set. `_hop_excluded`'s existing signature/logic is unchanged; the
+  planner wraps it: `excluded = _hop_excluded(caps, allow) and not (is_final and slug in
+  action_terminals)`.
+- Explicit caller `allow_side_effects` remains class-wide (an operator opting into
+  `writes-fs` accepts that blast radius knowingly) — only the *implicit action
+  self-authorization* is slug-scoped.
+
+### 2.8 Shared action-vocab contract — no cross-repo duplication (3rd-pass fix)
+Codex flagged that the spec had the planner own `_ACTION_REQUIRES_TAG` while implying the
+adapter must validate `goal_actions` against it and retry — with no mechanism, that forces
+a duplicated map across two repos. Resolution: **the adapter does NOT own or duplicate the
+map. Validation lives entirely in the registry.**
+
+- The adapter's tag inference emits `goal_actions` and forwards them **verbatim** to
+  `plan_cli_chain` (the existing MCP `_mcp_call` path). It performs no action-verb
+  validation of its own.
+- The registry's `plan_cli_chain` op validates each action verb against
+  `_ACTION_REQUIRES_TAG` (the single owner). An unknown verb returns a **structured op
+  error** (`{"error": "unknown action verb: <v>; known: [...]"}`) via the existing
+  ops error channel (ops_registry already returns string errors, e.g. the unknown-key
+  path at ops_registry.py:101).
+- **4th-pass fix — the "reuse the existing retry loop" claim is FALSE; a new decode +
+  reinference path is required (Codex REFUTED).** The 3rd-pass text claimed the adapter
+  reuses `_infer_capability_tags`'s vocab-reject loop. It cannot, for two verified code
+  reasons:
+  1. **Wrong path, wrong vocabulary.** `_infer_capability_tags`'s only retry is at
+     cli_registry.py:545-568 and fires on rejected **port tags**
+     (`goal_inputs | goal_outputs - vocab`) — it runs at line 826, strictly BEFORE the
+     planner is ever called (planner call ~line 899). It has no `goal_actions` awareness and
+     no hook on the planner-error path. It is structurally the wrong loop.
+  2. **The planner error is swallowed before the adapter can see the verb.** `_select_chain`
+     (cli_registry.py:668) passes the planner response through `_unwrap_mcp_json` (line 684),
+     which coerces a structured `{"error": ...}` object into a one-element list; `_select_chain`
+     then finds no usable chain and raises a **generic** `"no usable plan"` / `"no healthy
+     chain for goal"` (lines 686, 706), discarding the structured detail. The rejected verb
+     and known-verbs list never reach any caller, let alone the model.
+- **Required mechanism (explicit, new — not a reuse):**
+  1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
+     structured `{"error": "unknown action verb: <v>; known: [...]"}` payload BEFORE
+     `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
+     rather than letting it degrade to the generic "no healthy chain".
+  2. A NEW one-shot reinference step at the planner call site catches
+     `UnknownActionVerbError`, re-invokes tag inference with a corrective message naming the
+     rejected verb and the `known` list from the payload (mirroring the *shape* of the
+     545-568 corrective retry, but on the action-verb axis and on the planner-error path), and
+     re-calls `plan_cli_chain` once. A second failure raises (no infinite loop).
+  3. This may be factored as a small reusable "corrective reinference" helper that both the
+     existing port-tag retry and the new action-verb retry call — but that refactor is
+     optional; the load-bearing requirement is that the action-verb error is *decoded* and
+     *drives one reinference*, which no current code path does.
+- The registry side is unchanged from the 3rd-pass design: it owns `_ACTION_REQUIRES_TAG`,
+  validates, and emits the structured error. The known-verbs list still travels in the error
+  payload so the model gets the vocabulary without the adapter hardcoding it.
+- Net: `_ACTION_REQUIRES_TAG` exists in exactly one place (the planner). The adapter learns
+  the vocabulary at runtime from the registry's error payload — but via a NEW decode +
+  reinference path, not the pre-existing port-tag loop. Contract test required: adapter
+  decodes the structured verb error into `UnknownActionVerbError` and drives exactly one
+  reinference (assert the corrective message names the rejected verb + known list).
+
+---
+
+## 3. Components & boundaries (all plumbing enumerated — Codex found 5 omissions)
+
+| Unit | Responsibility | Change |
+|---|---|---|
+## 3. Components & boundaries (all plumbing enumerated — Codex found 5 omissions)
+
+| Unit | Responsibility | Change |
+|---|---|---|
+| `hermes_adapter/tools/cli_registry.py::_TAG_INFER_SYSTEM` | goal → 3 tag lists | Add `goal_actions` (intent-tag verbs); stop overloading `goal_outputs` for actions |
+| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation). Its 545-568 retry stays port-tag-only; the action-verb reinference is a SEPARATE new path (see decode row below), NOT this loop |
+| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)` — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
+| `hermes_adapter/tools/cli_registry.py` discovery (~843) | `output_term = goal_outputs[0]` | **Codex VERIFIED crash:** guard empty `goal_outputs`; when empty + `goal_actions` present, discover via the action term instead of `goal_outputs[0]`; restructure the logging/fallback/error branches that assume a non-empty output term |
+| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
+| `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
+| `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
+| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), tag-keyed matching with max-one-verb-per-live-terminal disambiguation (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
+| `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
+| `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** signature/logic; the planner wraps its result with the slug-scoped final-position relaxation (§2.7) — it does NOT receive a widened allow-set |
+| `core/graph/edges.py` | persisted edges | **Unchanged** (synthesis is planning-time only) |
+
+---
+
+## 4. Acceptance criteria (reconstituted)
+
+- **AC-01** — DONE (`3a78aa8`): declared-`external` recognition + `send_mail.output_types`
+  live backfill. Documents the enum-recognition mechanism. No further work.
+- **AC-02** — Verification test: `send_mail` reachable at the DEFAULT cap. Codex flagged a
+  tiny fixture insufficient — use either the exact live-row probe OR a fixture with 100+
+  competing candidates, asserting presence at `max_candidate_chains=100`.
+- **AC-03** — Backfill `seed_anthropic_index` in the live DB (backup first, atomic UPDATE):
+  `side_effect='writes-fs'`, `input_types='path'`, `output_types=''`, `confidence='inferred'`.
+  (Codex: `path` is real vocab per capability_repair.py:27; `declared` is NOT grounded —
+  keep `inferred`.) Verify: exact affected-row count == 1, re-read matches, and
+  `_hop_excluded(row, set())` == True (writes-fs excluded by default) / == False when
+  `allow_side_effects={'writes-fs'}`.
+- **AC-04** — Reproduce FIRST: a handler test showing a compound goal string handed to
+  `run_cli_command` gets its producer sub-goal swallowed by the `len(healthy)==1` bypass
+  (cli_registry.py:893). Then the guard: bypass defers to the planner when `goal_actions`
+  is non-empty AND a produce artifact (`goal_outputs`) is also present. Assert the exact
+  planner arguments (`goal_actions` forwarded) AND the exact selected chain (producer
+  retained), not merely that the bypass didn't fire (Codex UNCERTAIN otherwise). RED-first.
+- **AC-05** — Live E2E, single attempt, `--max-time 600`. A real producer→`send_mail`
+  2-hop chain plans and executes. Codex-hardened proof of handoff: because every hop is
+  injected with the ORIGINAL goal (cli_registry.py:944) independent of prior stdout, the
+  unique token MUST be one **generated by hop 1 at runtime and absent from the goal
+  string** — its appearance in the received mail body is the only proof hop-1 output
+  actually reached hop-2. Assert exact ordered selected slugs via explicit instrumentation
+  (the success response returns stdout/exit code, not the chain — cli_registry.py:964 — so
+  the plan step must log or return the selected slug order for the test to observe). No
+  blind re-send on exit-124.
+
+---
+
+## 5. Testing strategy
+
+- **AC-02**: pure unit; 100+-contention fixture OR live-row probe. Deterministic.
+- **AC-03**: no unit test (data fix). Verification = row-count + re-read + `_hop_excluded`
+  assertions. Backup is rollback.
+- **`goal_actions` planner logic**: RED-first unit tests in `tests/test_planner.py`:
+  (a) compound goal (`goal_outputs=['text'], goal_actions=['email']`) plans a 2-hop
+  producer→send_mail chain, producer strictly before send_mail;
+  (b) a plain producer does NOT short-circuit when `goal_actions` is set;
+  (c) `goal_actions=[]` produces byte-identical output to today (regression guard);
+  (d) the terminal-edge synthesis does NOT create chains into non-requested side-effect
+      terminals (e.g. a `network` terminal when only `email` was requested);
+  (e) a dual-capable CLI (produces goal_out AND has the action tag) does NOT satisfy a
+      compound goal in ONE hop (artifact must precede action, §2.3);
+  (f) an unknown action verb (not in `_ACTION_REQUIRES_TAG`) returns a structured error, not
+      silently dropped (§2.8);
+  (g) pure-action goal (empty goal_outputs, non-empty goal_actions) starts at and returns
+      the action terminal (§2.6);
+  (h) **max-one-verb-per-live-terminal (§2.2 invariant, 4th-pass — RED-first).** Assert that
+      for EVERY live terminal, at most one verb in `_ACTION_REQUIRES_TAG` matches its actual
+      `intent_tags`. This test MUST reproduce the current `send_mail` double-match
+      (`notify,send` → both `email` and `notify`) as RED, then pass once the disambiguation
+      (§2.2 specificity rule OR the retag) lands. A pairwise-disjoint-map-values check is
+      NECESSARY but explicitly NOT sufficient — the test asserts over live tags, not the map;
+  (i) a compound goal does NOT admit an action terminal as a START (§2.6 gate) — only as a
+      synthesized final hop after a producer;
+  (j) slug-scoped final-position auth (§2.7): a `writes-fs` action terminal being the final
+      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded);
+  (k) **disambiguation resolves send_mail to `email`, not `notify` (§2.2).** With `send_mail`
+      tagged `notify,send`, a `notify` goal does NOT route to it, and an `email` goal does.
+- **Adapter decode + reinference (§2.8, 4th-pass — hermes-adapter)**: RED-first —
+  (l) a `plan_cli_chain` response carrying `{"error": "unknown action verb: <v>; known:[...]"}`
+      is decoded into `UnknownActionVerbError(verb, known)` BEFORE `_select_chain` flattens it
+      (currently it degrades to a generic "no healthy chain" — assert that is now typed);
+  (m) catching `UnknownActionVerbError` drives EXACTLY ONE corrective reinference whose
+      message names the rejected verb + the `known` list, then re-calls `plan_cli_chain` once;
+      a second failure raises (no loop).
+- **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
+  guard; assert forwarded `goal_actions` + retained producer.
+- **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
+
+## 6. Error handling
+- Tag inference emitting an out-of-map action verb: the REGISTRY validates and returns the
+  structured `{"error": "unknown action verb..."}`; the ADAPTER decodes it into
+  `UnknownActionVerbError` and drives one corrective reinference on the planner-error path
+  (§2.8, 4th-pass). This is NOT the pre-existing `_infer_capability_tags` port-tag loop
+  (which runs pre-planner and only handles `goal_inputs`/`goal_outputs`) — it is a new,
+  separate decode+reinference path. One reinference then raise.
+- Empty `goal_outputs` AND empty `goal_actions` → hard-fail (no goal at all), as today.
+- Empty `goal_outputs` WITH non-empty `goal_actions` → valid pure-action goal; discovery
+  uses the action term (§3 discovery row).
+- Mid-chain hop failure → existing abort-with-partial_output (already shipped `7bd49d5`).
+
+## 7. Scope boundaries (YAGNI)
+Explicitly OUT:
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The first fold’s key risk is now sharply defined: whether “rarer tag” is specified as an implementable total rule, not merely described informally. I’m checking that alongside the exact live tag counts and the registry-to-adapter error envelope.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,190p' core/planner/search.py
+sed -n '1,180p' core/ops_registry.py
+rg -n 'def plan_cli_chain|plan_chain\\(' core/catalog/queries.py core -g '*.py'
+sed -n '340,470p' ~/.hermes/hermes-adapter/hermes_adapter/tools/cli_registry.py
+sed -n '490,720p' ~/.hermes/hermes-adapter/hermes_adapter/tools/cli_registry.py
+sed -n '800,925p' ~/.hermes/hermes-adapter/hermes_adapter/tools/cli_registry.py
+sqlite3 registry.db \".schema capability\"
+sqlite3 -header -column registry.db \"SELECT slug, intent_tags, side_effect, input_types, output_types FROM capability WHERE instr(',' || replace(intent_tags, ' ', '') || ',', ',send,') > 0 OR instr(',' || replace(intent_tags, ' ', '') || ',', ',notify,') > 0 ORDER BY slug;\"
+sqlite3 -header -column registry.db \"WITH RECURSIVE split(slug, tag, rest) AS (SELECT slug, '', replace(coalesce(intent_tags,''),' ','') || ',' FROM capability UNION ALL SELECT slug, substr(rest,1,instr(rest,',')-1), substr(rest,instr(rest,',')+1) FROM split WHERE rest <> '') SELECT tag, count(DISTINCT slug) AS live_terminals FROM split WHERE tag IN ('send','notify') GROUP BY tag ORDER BY tag;\"" in /Users/jcords-macmini/projects/a2a-cli-registry
+ exited 1 in 0ms:
+# core/planner/search.py
+from collections import deque
+from dataclasses import dataclass, field
+from sqlmodel import select
+from core.models import Capability, CliEdge
+
+# excluded-by-default side-effect classes (fail-UNSAFE): destructive + unknown
+_UNSAFE_DEFAULT = {"destructive", "unknown"}
+_CONFIDENCE_RANK = {"declared": 0, "inferred": 1}   # lower rank = higher confidence
+
+
+@dataclass(order=False)
+class Chain:
+    slugs: list[str]
+    length: int
+    side_effect_count: int
+    min_confidence_rank: int       # max over hops of _CONFIDENCE_RANK (worst hop)
+    hops: list[dict] = field(default_factory=list)
+
+    def sort_key(self):
+        # length asc, side-effect count asc, min-confidence DESC (rank asc since
+        # lower rank = higher confidence), slug-sequence asc (final tiebreak)
+        return (self.length, self.side_effect_count, self.min_confidence_rank, tuple(self.slugs))
+
+
+def _cap_index(session):
+    idx = {}
+    for c in session.exec(select(Capability)).all():
+        idx.setdefault(c.cli_slug, []).append(c)
+    return idx
+
+
+def _slug_side_effect(caps_for_slug) -> str:
+    order = ["destructive", "unknown", "network", "external", "writes-fs", "none"]
+    present = {c.side_effect for c in caps_for_slug}
+    for level in order:
+        if level in present:
+            return level
+    return "unknown"
+
+
+def _slug_confidence_rank(caps_for_slug) -> int:
+    return max(_CONFIDENCE_RANK.get(c.confidence, 1) for c in caps_for_slug)
+
+
+def _hop_excluded(caps_for_slug, allow_side_effects) -> bool:
+    """Fail-UNSAFE prune decision for a single hop (slug). A hop is excluded if:
+      - its worst side_effect is in {destructive, unknown} and that class is NOT
+        allowed, OR
+      - it carries an INFERRED side_effect with real blast radius (non-"none")
+        that is NOT in allow_side_effects. An inferred side_effect is unverified,
+        so it must fail UNSAFE (spec §8, lines 34/228). An inferred "none" hop
+        has no blast radius and is always allowed (confidence alone never excludes).
+    The operator override is unified on allow_side_effects: opting into a
+    side-effect CLASS accepts that blast radius whether declared or inferred.
+    """
+    se = _slug_side_effect(caps_for_slug)
+    if se == "none":
+        return False
+    excluded = _UNSAFE_DEFAULT - allow_side_effects
+    if se in excluded:
+        return True
+    # writes-fs / network: excluded by default only when INFERRED and not allowed.
+    if se in allow_side_effects:
+        return False
+    # is the (non-none, non-unsafe-default) side_effect carried by an inferred cap?
+    for c in caps_for_slug:
+        if c.side_effect == se and _CONFIDENCE_RANK.get(c.confidence, 1) >= 1:
+            return True
+    return False
+
+
+def _slug_produces(caps_for_slug) -> set[str]:
+    return {p for c in caps_for_slug for p in c.output_types.split(",") if p}
+
+
+def _slug_consumes(caps_for_slug) -> set[str]:
+    return {p for c in caps_for_slug for p in c.input_types.split(",") if p}
+
+
+def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
+               max_chain_depth=4, max_candidate_chains=100):
+    allow_side_effects = set(allow_side_effects or [])
+    caps = _cap_index(session)
+    adjacency = {}
+    for e in session.exec(select(CliEdge)).all():
+        adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
+
+    goal_in, goal_out = set(goal_inputs), set(goal_outputs)
+    # An empty goal_in means "no input constraint" (a query-only goal like
+    # "list files" or "check status"). `_slug_consumes(c) & goal_in` is always
+    # empty/falsy when goal_in is empty, which used to make EVERY CLI —
+    # including the ones with input_types="" that exist specifically for this
+    # case — permanently unreachable. Only match no-declared-input CLIs when
+    # goal_in is empty; a CLI with a real declared input type still requires
+    # the caller to name it (goal_in non-empty and intersecting).
+    if goal_in:
+        starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
+    else:
+        starts = [s for s, c in caps.items() if not _slug_consumes(c)]
+    candidates = []
+
+    for start in starts:
+        # BFS state: (path, visited, hops). Cycle guard via visited set.
+        q = deque([([start], {start}, [])])
+        while q:
+            path, visited, hops = q.popleft()
+            tail = path[-1]
+            # fail-UNSAFE prune: destructive/unknown OR inferred-side-effect
+            if _hop_excluded(caps[tail], allow_side_effects):
+                continue
+            if _slug_produces(caps[tail]) & goal_out:
+                candidates.append(_finalize(path, caps, hops))
+                continue
+            if len(path) >= max_chain_depth:
+                continue
+            for (nxt, via) in adjacency.get(tail, []):
+                if nxt in visited:
+                    continue                       # cycle guard
+                q.append((path + [nxt], visited | {nxt},
+                          hops + [{"from": tail, "to": nxt, "via_type": via}]))
+
+    candidates.sort(key=lambda c: c.sort_key())
+    return candidates[:max_candidate_chains]
+
+
+def _finalize(path, caps, hop_trace) -> Chain:
+    se_count = sum(1 for s in path if _slug_side_effect(caps[s]) != "none")
+    min_conf = max(_slug_confidence_rank(caps[s]) for s in path)
+    hops = []
+    for i, s in enumerate(path):
+        se = _slug_side_effect(caps[s])
+        conf = "inferred" if _slug_confidence_rank(caps[s]) else "declared"
+        prov = f"{se} ({conf}{', unverified' if conf == 'inferred' else ''})"
+        hop = {"slug": s, "side_effect": se, "provenance": prov}
+        if i > 0:
+            edge = hop_trace[i - 1]
+            hop["from"] = edge["from"]
+            hop["to"] = edge["to"]
+            hop["via_type"] = edge["via_type"]
+        hops.append(hop)
+    return Chain(slugs=path, length=len(path), side_effect_count=se_count,
+                 min_confidence_rank=min_conf, hops=hops)
+from dataclasses import dataclass
+from typing import Callable
+from core.catalog import queries
+from core.playbooks import queries as playbook_queries
+from core.playbooks import resolve as playbook_resolve
+
+
+@dataclass(frozen=True)
+class Op:
+    canonical_id: str                  # snake_case
+    handler: Callable
+    input_schema: dict
+
+    @property
+    def a2a_skill(self) -> str:        # kebab-case
+        return self.canonical_id.replace("_", "-")
+
+    @property
+    def mcp_tool(self) -> str:         # snake_case (== canonical)
+        return self.canonical_id
+
+
+_STR_ARRAY = {"type": "array", "items": {"type": "string"}}
+
+OPS = [
+    Op("search_cli_catalog", queries.search_clis,
+       {"type": "object", "properties": {"query": {"type": "string"}}}),
+    Op("describe_cli", queries.describe_cli,
+       {"type": "object",
+        "properties": {"slug": {"type": "string"},
+                       "include_launch_spec": {"type": "boolean"}},
+        "required": ["slug"]}),
+    Op("get_cli_health", queries.cli_health,
+       {"type": "object", "properties": {"slug": {"type": "string"}}, "required": ["slug"]}),
+    Op("get_cli_graph", queries.cli_graph,
+       {"type": "object", "properties": {}}),
+    Op("plan_cli_chain", queries.plan_cli_chain,
+       {"type": "object", "properties": {
+           "goal_inputs": _STR_ARRAY, "goal_outputs": _STR_ARRAY,
+           "allow_side_effects": _STR_ARRAY},
+        "required": ["goal_inputs", "goal_outputs"]}),
+    Op("list_playbooks", playbook_queries.list_playbooks,
+       {"type": "object", "properties": {"query": {"type": "string"}}}),
+    Op("suggest_playbook", playbook_queries.suggest_playbook,
+       {"type": "object",
+        "properties": {"goal": {"type": "string"},
+                       "limit": {"type": "integer"}},
+        "required": ["goal"]}),
+    Op("resolve_playbook", playbook_resolve.resolve_playbook,
+       {"type": "object",
+        "properties": {"slug": {"type": "string"}},
+        "required": ["slug"]}),
+]
+
+
+def a2a_skill_ids():
+    return [o.a2a_skill for o in OPS]
+
+
+def mcp_tool_ids():
+    return [o.mcp_tool for o in OPS]
+
+
+def op_by_mcp_tool(name: str) -> Op:
+    for o in OPS:
+        if o.mcp_tool == name:
+            return o
+    raise KeyError(name)
+
+
+def op_by_a2a_skill(name: str) -> Op:
+    for o in OPS:
+        if o.a2a_skill == name:
+            return o
+    raise KeyError(name)
+
+
+# ---------------------------------------------------------------------------
+# Shared input validator (used by both A2A and MCP surfaces)
+# ---------------------------------------------------------------------------
+
+_JSON_SCHEMA_TYPE_MAP: dict[str, type | tuple] = {
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def validate_input(op: "Op", arguments: dict) -> "str | None":
+    """Validate *arguments* against op.input_schema: unknown keys, missing
+    required keys, AND basic JSON-Schema type checks. Returns an error string
+    or None if valid."""
+    properties = op.input_schema.get("properties", {})
+    allowed = set(properties.keys())
+    required = set(op.input_schema.get("required", []))
+    given = set(arguments.keys())
+
+    unknown = given - allowed
+    if unknown:
+        return f"unknown input keys: {sorted(unknown)}"
+
+    missing = required - given
+    if missing:
+        return f"missing required input keys: {sorted(missing)}"
+
+    for key, value in arguments.items():
+        prop_schema = properties.get(key, {})
+        expected_type_name = prop_schema.get("type")
+        if expected_type_name is None:
+            continue  # no type constraint declared — skip
+        python_type = _JSON_SCHEMA_TYPE_MAP.get(expected_type_name)
+        if python_type is None:
+            continue  # unknown JSON-schema type — skip
+        # bool is a subclass of int in Python; reject it for "integer" and "number"
+        if expected_type_name in ("integer", "number") and isinstance(value, bool):
+            return (
+                f"input '{key}' must be {expected_type_name}"
+                f" (got {type(value).__name__})"
+            )
+        if not isinstance(value, python_type):
+            return (
+                f"input '{key}' must be {expected_type_name}"
+                f" (got {type(value).__name__})"
+            )
+
+    return None
+core/catalog/queries.py:164:def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
+core/catalog/queries.py:164:def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
+core/planner/search.py:81:def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
+    # execute before planning. Defense-in-depth alongside the gateway approval gate.
+    plan_id = args.get("plan_id")
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        return json.dumps({
+            "status": "denied",
+            "reason": (
+                "execute_cli_plan requires a plan_id from a prior plan_cli_chain "
+                "call. Call plan_cli_chain first, then execute the returned plan."
+            ),
+        })
+
+    base_url = resolve_exec_gateway_url(hermes_cfg)
+    api_key = hermes_cfg.gateway_api_key
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as client:
+        result = await run_on_gateway(
+            command.strip(), base_url=base_url, client=client, api_key=api_key
+        )
+
+    out = json.dumps(result)
+    out_bytes = len(out.encode("utf-8"))
+    if budget.would_exceed(out_bytes):
+        return json.dumps({"status": "failed", "error": "tool-output budget exceeded"})
+    budget.charge(out_bytes)
+    return out
+
+
+# === AC-02: discovery/plan tools dispatched to the cli-registry MCP (:9113/mcp/) ===
+
+SEARCH_CLI_CATALOG_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "search_cli_catalog",
+        "description": (
+            "Search the CLI registry for tools matching a query. Returns matching "
+            "CLIs with slug, language, description, and health. Use this to discover "
+            "which CLI can do a task before planning a chain."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Free-text search over the CLI catalog."},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+PLAN_CLI_CHAIN_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "plan_cli_chain",
+        "description": (
+            "Plan a chain of CLI invocations from required input capabilities to "
+            "desired output capabilities. Returns candidate chains (slugs, length, "
+            "hops with health). The registry plans over a capability graph, so pass "
+            "capability tags in <category>:<subtype> form (e.g. 'file:svg', 'file:png'), "
+            "not free text and not snake_case compounds. Call execute_cli_plan with a "
+            "chosen chain to run it."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal_inputs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Capability tags you already have (chain entry points).",
+                },
+                "goal_outputs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Capability tags you want produced (chain goals).",
+                },
+                "allow_side_effects": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: side-effect classes permitted in the chain.",
+                },
+            },
+            "required": ["goal_inputs", "goal_outputs"],
+        },
+    },
+}
+
+_MCP_TIMEOUT_S = 30.0
+
+
+async def _mcp_call(tool_name: str, arguments: dict) -> str:
+    """Dispatch one tool call to the cli-registry MCP and return its text payload.
+
+    Uses the MCP streamable-HTTP protocol (initialize -> tools/call) via the
+    official SDK, so the stateful session/SSE handshake (F7) is handled for us.
+    Bearer + URL come from config (resolve_cli_registry_token / cli_registry_url).
+    Isolated as a module-level seam so handlers are testable without a live MCP.
+    """
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    from hermes_adapter.config import hermes_cfg, resolve_cli_registry_token
+
+    url = hermes_cfg.cli_registry_url
+    token = resolve_cli_registry_token(hermes_cfg)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    async with streamablehttp_client(url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, arguments)
+    if getattr(result, "isError", False):
+        raise RuntimeError(f"cli-registry MCP {tool_name} returned an error result")
+    parts = []
+    for block in getattr(result, "content", []) or []:
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
+async def _dispatch(tool_name: str, args: dict, budget: OutputBudget) -> str:
+    """Shared handler body for the discovery/plan tools."""
+    try:
+        payload = await _mcp_call(tool_name, args)
+    except Exception as e:  # noqa: BLE001 — surfaced to the model, never crashes the round
+        return json.dumps({"status": "error", "error": f"{tool_name} failed: {e}"})
+    out_bytes = len(payload.encode("utf-8"))
+    if budget.would_exceed(out_bytes):
+        return json.dumps({"status": "error", "error": "tool-output budget exceeded"})
+    budget.charge(out_bytes)
+    return payload
+
+
+async def handle_search_cli_catalog(args: dict, budget: OutputBudget) -> str:
+    "For an ACTION goal whose point is a side effect rather than a produced file "
+    "(e.g. 'send an email', 'post a webhook', 'write X to a file') there is likewise "
+    "no output artifact — the command returns a confirmation, not a file. Use 'text' "
+    "as goal_outputs for that confirmation, and put the action in side_effects. "
+    "goal_outputs must never be empty, even for pure side-effect goals. "
+    "side_effects = side-effect classes the goal explicitly asks for (e.g. email, file_write). "
+    "No prose, no code fences."
+)
+_TAG_INFER_MAX_TOKENS = 128
+
+
+async def _infer_capability_tags(goal: str, vocab: set[str] | None = None) -> dict:
+    """Goal -> {goal_inputs, goal_outputs, side_effects}. Raises ValueError if the
+    model output is unparseable or names no output capability (never fabricates).
+
+    If `vocab` is supplied (the registry's real <category>:<subtype> tags), any
+    inferred tag outside it triggers one retry that tells the model exactly which
+    tags were rejected; still out-of-vocab after the retry raises ValueError.
+    `vocab=None` skips the check (e.g. registry vocab fetch failed upstream) —
+    the caller degrades to the pre-fix unconstrained behavior rather than
+    hard-failing on an unrelated outage."""
+    from hermes_adapter.config import hermes_cfg
+    from hermes_adapter.loop import _API_ROUTER_URL, _call_gateway as _fn
+
+    headers = {"Content-Type": "application/json"}
+
+    async def _call(user_msg: str) -> dict:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as client:
+            content, _usage = await _fn(
+                client, _API_ROUTER_URL, headers,
+                _TAG_INFER_SYSTEM, user_msg, hermes_cfg.model, _TAG_INFER_MAX_TOKENS, 1.0,
+            )
+        try:
+            data = json.loads(content.strip())
+        except (json.JSONDecodeError, AttributeError) as e:
+            raise ValueError(f"tag inference returned non-JSON: {e}") from e
+        gi = data.get("goal_inputs") or []
+        go = data.get("goal_outputs") or []
+        se = data.get("side_effects") or []
+        if not isinstance(go, list) or not go:
+            raise ValueError("tag inference produced no goal_outputs")
+        # The model is instructed to return tag strings, but nothing enforces that
+        # shape — coerce here so every downstream consumer (set(), sorted()) can
+        # trust a flat list of strings instead of raising on stray dict/list tags.
+        gi = [t for t in gi if isinstance(t, str)]
+        go = [t for t in go if isinstance(t, str)]
+        se = [t for t in se if isinstance(t, str)]
+        if not go:
+            raise ValueError("tag inference produced no valid string goal_outputs")
+        return {"goal_inputs": gi, "goal_outputs": go, "side_effects": se}
+
+    tags = await _call(goal)
+    if vocab is None:
+        return tags
+
+    rejected = (set(tags["goal_inputs"]) | set(tags["goal_outputs"])) - vocab
+    if not rejected:
+        return tags
+
+    retry_msg = (
+        f"{goal}\n\nYour previous answer used these tags, which do not exist in "
+        f"the registry: {sorted(rejected)}. Choose ONLY from this exact vocabulary: "
+        f"{sorted(vocab)}."
+    )
+    tags = await _call(retry_msg)
+    rejected = (set(tags["goal_inputs"]) | set(tags["goal_outputs"])) - vocab
+    if rejected:
+        # The registry vocab is an I/O-PORT vocabulary (text, file:pdf, json...),
+        # not an action vocabulary — so action/terminal goals ("send mail", "post
+        # webhook") legitimately infer domain tags with no port equivalent. After
+        # one corrective retry, QUARANTINE the still-rejected tags (drop them)
+        # rather than hard-failing the hop, mirroring admit_ports' populate-time
+        # behavior. Only fail if quarantine leaves no valid goal_outputs at all —
+        # that means the inference was genuinely unusable, not just port-less.
+        tags["goal_inputs"] = [t for t in tags["goal_inputs"] if t in vocab]
+        tags["goal_outputs"] = [t for t in tags["goal_outputs"] if t in vocab]
+        if not tags["goal_outputs"]:
+            raise ValueError(
+                f"tag inference produced only out-of-vocab tags after retry: {sorted(rejected)}"
+            )
+    return tags
+
+
+def _unwrap_mcp_json(raw: str) -> list:
+    """Return the result list from an MCP tool payload.
+
+    Live registry shape: {"content": [{"type": "json", "json": [...]}]}.
+    describe_cli returns content[0].json as a SINGLE object (not a list);
+    search_cli_catalog / plan_cli_chain return lists. A singular dict is
+    normalized to a one-element list so callers handle one shape.
+    Legacy/test flat shape: {"results"|"clis"|"chains"|"steps": [...]}.
+    Anything else (parse error, unexpected shape) yields []."""
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if isinstance(data, dict):
+        content = data.get("content")
+        if isinstance(content, list) and content:
+            inner = content[0].get("json") if isinstance(content[0], dict) else None
+            if isinstance(inner, list):
+                return inner
+            if isinstance(inner, dict):
+                return [inner]
+            return []
+        for key in ("results", "clis", "chains", "steps"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return []
+
+
+def _candidate_slugs(catalog_json: str) -> tuple[set[str], set[str]]:
+    results = _unwrap_mcp_json(catalog_json)
+    all_slugs, healthy = set(), set()
+    for c in results:
+        if not isinstance(c, dict):
+            continue
+        slug = c.get("slug")
+        if not slug:
+            continue
+        all_slugs.add(slug)
+        status = c.get("health_status", c.get("health", ""))
+        if str(status).lower() in ("ok", "healthy"):
+            healthy.add(slug)
+    return all_slugs, healthy
+
+
+_FULL_VOCAB_TTL_S = 300  # registry composition changes rarely; avoid a 474-CLI
+                         # describe_cli fan-out on every run_cli_command call
+_full_vocab_cache: dict[str, Any] = {"value": None, "expires_at": 0.0}
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+async def _full_catalog_vocab() -> set[str]:
+    """Registry-wide capability vocabulary (US-CLIREG-VOCAB-GROUND-01, AC-01).
+
+    Sourced the same way as _candidate_vocab (describe_cli fan-out), but over
+    the FULL unfiltered catalog (query="") instead of a tag-narrowed one, and
+    cached for _FULL_VOCAB_TTL_S — computing this fresh on every request would
+    mean hundreds of describe_cli round-trips per call."""
+    if _full_vocab_cache["value"] is not None and _now() < _full_vocab_cache["expires_at"]:
+        return _full_vocab_cache["value"]
+    catalog_json = await _mcp_call("search_cli_catalog", {"query": ""})
+    raw_vocab = await _candidate_vocab(catalog_json)
+    # core/vocabulary.py's admit() quarantines unregistered ports into an
+    # "unverified:" namespace and excludes them from edges/planning
+    # (is_edge_eligible) — describe_cli still surfaces them as capabilities,
+    # so offering them to the model just reproduces the original bug (it
+    # picks the semantically obvious unverified:file:markdown over the real
+    # file:md, then plan_cli_chain can never route through it).
+    vocab = {tag for tag in raw_vocab if not tag.startswith("unverified:")}
+    _full_vocab_cache["value"] = vocab
+    _full_vocab_cache["expires_at"] = _now() + _FULL_VOCAB_TTL_S
+    return vocab
+
+
+async def _candidate_vocab(catalog_json: str) -> set[str]:
+    """Capability vocabulary for the discovered CLIs, sourced from describe_cli
+    (catalog rows carry no capabilities). Union of input_types + output_types."""
+    slugs, _ = _candidate_slugs(catalog_json)
+    vocab: set[str] = set()
+    for slug in slugs:
+        try:
+            raw = await _mcp_call("describe_cli", {"slug": slug})
+        except Exception:  # noqa: BLE001 — a slug we can't describe just adds no vocab
+            continue
+        for row in _unwrap_mcp_json(raw):
+            if not isinstance(row, dict):
+                continue
+            for cap in row.get("capabilities") or []:
+                for k in ("input_types", "output_types"):
+                    vocab.update(cap.get(k) or [])
+    return vocab
+
+
+def _select_chain(plan_json: str) -> list[str]:
+    """Pick the ordered slug chain to run from the plan.
+
+    Selects the shortest chain whose hops are ALL healthy, subject to a hop
+    cap (_MAX_HOPS_PER_CHAIN). Pure/sync — no I/O; the caller resolves each
+    slug to a command via _resolve_command.
+
+    Healthiness is read from each hop's own `health_status` (as reported by
+    plan_cli_chain), NOT re-derived against a second, narrower candidate set.
+    A prior version also required `set(slugs) <= healthy_slugs`, where
+    `healthy_slugs` came from search_cli_catalog(query=goal_outputs[0]) — a
+    catalog narrowed to the OUTPUT type. A hop slug can be a real, healthy CLI
+    that simply never matches that output-scoped query (e.g. a generic
+    file-listing CLI as the first hop of a text-output goal), so that check
+    wrongly rejected every chain built on it — surfacing as "no healthy
+    single-CLI chain for goal" despite a valid, healthy chain existing."""
+    chains = _unwrap_mcp_json(plan_json)
+    if not chains:
+        raise ValueError("no usable plan: plan_cli_chain returned no chains")
+
+    def _all_healthy(ch: dict) -> bool:
+        hops = ch.get("hops") or []
+        slugs = ch.get("slugs") or []
+        if not slugs or not hops:
+            return False
+        # US-CLIREG-MULTIHOP-CHAIN-01 (Codex review): the original check only
+        # verified every HOP entry present was healthy, never that every SLUG
+        # had a corresponding hop entry at all. A planner response with fewer
+        # hop-health records than slugs would silently let an unchecked slug
+        # through. Multi-hop execution actually runs every slug in the chain,
+        # so this gap is no longer inert.
+        if len(hops) != len(slugs):
+            return False
+        return all(str(h.get("health_status", "")).lower() in ("ok", "healthy") for h in hops)
+
+    healthy_chains = sorted((ch for ch in chains if isinstance(ch, dict) and _all_healthy(ch)),
+                            key=lambda ch: len(ch.get("slugs") or []))
+    if not healthy_chains:
+        raise ValueError("no healthy chain for goal")
+    best = healthy_chains[0]
+    slugs = best.get("slugs") or []
+    if len(slugs) > _MAX_HOPS_PER_CHAIN:
+        raise ValueError(f"chain too long ({len(slugs)} hops, max {_MAX_HOPS_PER_CHAIN}): {slugs}")
+    logger.debug("run_cli_command chain selected", extra={"hop_count": len(slugs)})
+    return slugs
+
+
+def _frame_handoff(prev_output: str) -> str:
+    """Wrap a prior hop's stdout as inert DATA for the next hop's dispatch,
+    truncated to _MAX_HANDOFF_CHARS. Does not eliminate prompt-injection risk
+    (run_on_gateway hands this to an opaque gateway agent, not a typed
+    subprocess call) but bounds the blast radius and gives the gateway agent
+    an explicit signal to discount the content as instructions.
+
+async def handle_run_cli_command(args: dict, budget: OutputBudget) -> str:
+    """Fused discover -> infer-tags -> plan -> execute (spec US-CLIREG-PLAN-HOP-01).
+
+    The command run on the gateway is lifted verbatim from the plan; it is never
+    synthesized by the model or the inference call. Handler-level failures return
+    {status:failed}; execution outcomes pass through run_on_gateway unchanged.
+    """
+    goal = args.get("goal")
+    if not isinstance(goal, str) or not goal.strip():
+        return json.dumps({"status": "failed", "error": "run_cli_command: 'goal' is required"})
+    goal = goal.strip()
+    logger.debug("run_cli_command step0 start", extra={"goal": goal})
+
+    # 0) fetch the registry-wide vocabulary so inference is constrained to tags
+    # that actually exist (US-CLIREG-VOCAB-GROUND-01, AC-01). A fetch failure
+    # degrades to unconstrained inference (vocab=None) rather than failing the
+    # whole request on an unrelated registry outage.
+    try:
+        full_vocab = await _full_catalog_vocab()
+    except Exception:  # noqa: BLE001
+        full_vocab = None
+    logger.debug("run_cli_command step0 vocab", extra={"vocab_size": len(full_vocab) if full_vocab else 0})
+
+    # 1) infer capability tags (LLM) — MOVED FIRST so discovery can search by tag
+    try:
+        tags = await _infer_capability_tags(goal, vocab=full_vocab)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("run_cli_command step1 infer failed", extra={"error": str(e)})
+        return json.dumps({"status": "failed", "error": f"could not infer capabilities: {e}"})
+    logger.debug("run_cli_command step1 tags", extra={"goal_inputs": tags["goal_inputs"],
+                                                        "goal_outputs": tags["goal_outputs"],
+                                                        "side_effects": tags["side_effects"]})
+
+    # 2) discover, scoped to the inferred capability. For a SIDE-EFFECT goal
+    # ('send email', 'post webhook') goal_outputs is the generic confirmation
+    # tag 'text', which matches ~200 CLIs and buries the one terminal CLI that
+    # actually performs the action — the planner then grabs an irrelevant
+    # top-ranked 'text' CLI (verify_potx/analyze_layouts). The side_effect term
+    # ('email') is the discriminating signal that surfaces the action CLI
+    # uniquely, so prefer it when present and it yields candidates; fall back to
+    # goal_outputs[0] otherwise (query goals, transform goals).
+    side_effect_term = tags["side_effects"][0] if tags.get("side_effects") else None
+    output_term = tags["goal_outputs"][0]
+    all_slugs, healthy, query_term = set(), set(), output_term
+    if side_effect_term:
+        try:
+            se_catalog = await _mcp_call("search_cli_catalog", {"query": side_effect_term})
+            se_all, se_healthy = _candidate_slugs(se_catalog)
+        except Exception:  # noqa: BLE001 — fall through to the output-term search
+            se_all, se_healthy = set(), set()
+        if se_all:
+            all_slugs, healthy, query_term = se_all, se_healthy, side_effect_term
+    if not all_slugs:
+        try:
+            catalog_json = await _mcp_call("search_cli_catalog", {"query": output_term})
+        except Exception as e:  # noqa: BLE001
+            logger.debug("run_cli_command step2 discovery failed", extra={"query": output_term, "error": str(e)})
+            return json.dumps({"status": "failed", "error": f"discovery failed: {e}"})
+        all_slugs, healthy = _candidate_slugs(catalog_json)
+    logger.debug("run_cli_command step2 candidates", extra={"query": query_term,
+                                                              "all_slugs": sorted(all_slugs),
+                                                              "healthy": sorted(healthy)})
+    if not all_slugs:
+        return json.dumps({"status": "failed",
+                           "error": f"no CLI catalog entries for inferred capabilities: {sorted(tags['goal_outputs'] + tags['goal_inputs'])}"})
+
+    # 3) vocab guard — validated against the FULL registry vocabulary (step 0),
+    #    not _candidate_vocab(catalog_json) (US-CLIREG-VOCAB-SCOPE-01). The
+    #    step-2 catalog is narrowed to goal_outputs[0] alone, so on any
+    #    transform goal (input type != output type) a real goal_inputs tag
+    #    belongs to a CLI that never entered that narrowed candidate set and
+    #    would be falsely rejected as "not in registry vocabulary". "Is this
+    #    tag real?" is a registry-wide question (full_vocab answers it); "can
+    #    a discovered CLI route this?" is answered downstream by step 4's
+    #    plan_cli_chain/_select_chain. A missing full_vocab (step-0 fetch
+    #    failure) skips this guard rather than hard-failing on it.
+    if full_vocab is not None:
+        inferred = set(tags["goal_inputs"]) | set(tags["goal_outputs"])
+        unknown = inferred - full_vocab
+        if unknown:
+            logger.debug("run_cli_command step3 vocab reject", extra={"unknown": sorted(unknown)})
+            return json.dumps({"status": "failed",
+                               "error": f"inferred capability not in registry vocabulary: {sorted(unknown)}"})
+
+    # 4) plan + select the healthy chain (single- or multi-hop, up to the cap).
+    #    BYPASS: plan_cli_chain plans from the tags alone — it never receives
+    #    step-2's narrowed candidates, so for a side-effect goal it re-ranks
+    #    the ~200-CLI generic-'text' pool and returns an irrelevant chain even
+    #    though discovery already isolated the one action CLI. When the
+    #    side-effect discovery yielded exactly one healthy slug there is
+    #    nothing left to plan: that slug IS the 1-hop chain. Ambiguous
+    #    (0 or 2+ healthy) or output-term discovery still goes to the planner.
+    if side_effect_term and query_term == side_effect_term and len(healthy) == 1:
+        chain = [next(iter(healthy))]
+        logger.debug("run_cli_command step4 planner bypassed",
+                     extra={"chain": chain, "query": query_term})
+    else:
+        try:
+            plan_json = await _mcp_call("plan_cli_chain", {
+                "goal_inputs": tags["goal_inputs"],
+                "goal_outputs": tags["goal_outputs"],
+                "allow_side_effects": tags["side_effects"],
+            })
+            logger.debug("run_cli_command step4 plan", extra={"plan_json": plan_json})
+            chain = _select_chain(plan_json)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("run_cli_command step4 plan/select failed", extra={"error": str(e)})
+            return json.dumps({"status": "failed", "error": str(e)})
+    logger.debug("run_cli_command step4 selected", extra={"chain": chain})
+
+    # 5-6) resolve + execute each hop in sequence, framing hop N's stdout into
+    # hop N+1's dispatch input. A 1-slug chain runs this loop exactly once
+    # with prev_output=None, so dispatch_input == command — identical to the
+    # pre-fix single-hop behavior.
+    from hermes_adapter.config import hermes_cfg, resolve_exec_gateway_url
+
+    def _budgeted(payload: dict) -> str:
+        """Serialize + budget-check any response this loop returns — success
+        or failure. The first design draft only budget-checked the success
+        path, leaving every failure return unchecked."""
+        out = json.dumps(payload)
+        out_bytes = len(out.encode("utf-8"))
+        if budget.would_exceed(out_bytes):
+            return json.dumps({"status": "failed", "error": "tool-output budget exceeded"})
+        budget.charge(out_bytes)
+CREATE TABLE capability (
+	id INTEGER NOT NULL, 
+	cli_slug VARCHAR NOT NULL, 
+	intent_tags VARCHAR NOT NULL, 
+	input_types VARCHAR NOT NULL, 
+	output_types VARCHAR NOT NULL, 
+	side_effect VARCHAR NOT NULL, 
+	confidence VARCHAR NOT NULL, provenance TEXT, description_provenance TEXT, sanity_ok INTEGER, sanity_reason TEXT, sanity_checked_at REAL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(cli_slug) REFERENCES cli (slug)
+);
+Error: in prepare, no such column: slug
+  SELECT slug, intent_tags, side_effect, input_types, output_types FROM capabili
+         ^--- error here
+Error: in prepare, no such column: slug
+  WITH RECURSIVE split(slug, tag, rest) AS (SELECT slug, '', replace(coalesce(in
+                                     error here ---^
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sqlite3 -header -column registry.db \"SELECT cli_slug, intent_tags, side_effect, input_types, output_types FROM capability WHERE instr(',' || replace(intent_tags, ' ', '') || ',', ',send,') > 0 OR instr(',' || replace(intent_tags, ' ', '') || ',', ',notify,') > 0 ORDER BY cli_slug;\"
+sqlite3 -header -column registry.db \"WITH RECURSIVE split(cli_slug, tag, rest) AS (SELECT cli_slug, '', replace(coalesce(intent_tags,''),' ','') || ',' FROM capability UNION ALL SELECT cli_slug, substr(rest,1,instr(rest,',')-1), substr(rest,instr(rest,',')+1) FROM split WHERE rest <> '') SELECT tag, count(DISTINCT cli_slug) AS live_slugs FROM split WHERE tag IN ('send','notify') GROUP BY tag ORDER BY tag;\"
+sed -n '130,195p' core/catalog/queries.py
+rg -n 'validate_input\\(|content.*json|isError|error.*validate|op\\.handler|handler\\(' core tests -g '*.py'
+rg -n 'unknown input keys|validation|isError|CallToolResult|content' core -g '*.py'
+git show --stat --oneline 711d73b
+git show --format=fuller --no-ext-diff 711d73b -- docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md" in /Users/jcords-macmini/projects/a2a-cli-registry
+ succeeded in 0ms:
+cli_slug            intent_tags                                       side_effect  input_types  output_types
+------------------  ------------------------------------------------  -----------  -----------  ------------
+changelog_research  parse,embed,retrieve,classify,store,notify,clean  writes-fs    path,str     path,text   
+codex_ntfy_bridge   poll,notify                                       network      path                     
+sync-2              read,embed,upsert,notify                          network      path                     
+tag     live_slugs
+------  ----------
+notify  3         
+    edges_by_slug = {}
+    for e in session.exec(select(CliEdge)).all():
+        edges_by_slug.setdefault(e.from_slug, []).append(e)
+
+    out = []
+    for c in sorted(clis, key=lambda x: ((x.project or ""), x.slug)):
+        caps = caps_by_slug.get(c.slug, [])
+        if len(caps) > 1:
+            raise ValueError(
+                f"OKF export: CLI {c.slug!r} has {len(caps)} capability rows; "
+                "v1 exports one capability per CLI")
+        cap = caps[0] if caps else None
+        capability = None
+        if cap is not None:
+            capability = {
+                "intent_tags": sorted(t for t in cap.intent_tags.split(",") if t),
+                "input_types": sorted(t for t in cap.input_types.split(",") if t),
+                "output_types": sorted(t for t in cap.output_types.split(",") if t),
+                "side_effect": cap.side_effect,
+                "confidence": cap.confidence,
+            }
+        edges = sorted(
+            ({"to": e.to_slug, "via": e.via_type} for e in edges_by_slug.get(c.slug, [])),
+            key=lambda d: (d["to"], d["via"]),
+        )
+        out.append({
+            "slug": c.slug, "lang": c.lang, "project": c.project, "path": c.path,
+            "updated_at": c.updated_at, "description": c.description or "",  # normalise NULL -> "" for OKF consumers
+            "health_status": _norm_health(c.health_status),
+            "capability": capability, "edges": edges,
+        })
+    return out
+
+
+def plan_cli_chain(session, goal_inputs, goal_outputs, allow_side_effects=None):
+    chains = _plan(session, goal_inputs, goal_outputs, allow_side_effects or [])
+    health_by_slug = {}
+
+    def _health(slug):
+        if slug not in health_by_slug:
+            c = session.get(Cli, slug)
+            health_by_slug[slug] = _norm_health(c.health_status) if c else "unknown"
+        return health_by_slug[slug]
+
+    out = []
+    for ch in chains:
+        hops = [{**hop, "health_status": _health(hop["slug"])} for hop in ch.hops]
+        out.append({"slugs": ch.slugs, "length": ch.length,
+                    "side_effect_count": ch.side_effect_count, "hops": hops})
+    return out
+core/ops_registry.py:92:def validate_input(op: "Op", arguments: dict) -> "str | None":
+core/mcp/http.py:76:def _make_handler(session, op):
+core/mcp/http.py:84:    Why not `def handler(arguments: dict)` or `def handler(**arguments)`:
+core/mcp/http.py:103:    def handler(**arguments):
+core/mcp/http.py:170:        handler = _make_handler(session, op)
+core/mcp/server.py:17:    Returns an error string or None. Delegates to shared validate_input in ops_registry."""
+core/mcp/server.py:23:    return {"content": [{"type": "json", "json": {"error": msg}}]}
+core/mcp/server.py:37:        payload = op.handler(session, **arguments)
+core/mcp/server.py:41:    return {"content": [{"type": "json", "json": payload}]}
+core/server/a2a.py:6:def _validate_input(op, input_dict: dict):
+core/server/a2a.py:17:        err = _validate_input(op, input_dict)
+core/server/a2a.py:21:            result = op.handler(session, **input_dict)
+tests/test_mcp.py:15:    assert out["content"][0]["type"] == "json"   # structured content, capability data inside
+tests/test_mcp_http.py:90:    `def handler(arguments: dict)`, FastMCP advertised
+tests/test_mcp_http.py:148:        assert result.get("isError") is not True
+tests/playbooks/test_ops_registration.py:8:    assert validate_input(op, {}) == "missing required input keys: ['goal']"
+tests/playbooks/test_ops_registration.py:9:    assert validate_input(op, {"goal": "x"}) is None
+tests/playbooks/test_ops_registration.py:15:    assert validate_input(op, {"query": "etsy"}) is None
+tests/playbooks/test_ops_registration.py:16:    assert validate_input(op, {"bogus": 1}) == "unknown input keys: ['bogus']"
+tests/test_e2e.py:30:    mcp = call_mcp_tool(db, "search_cli_catalog", {"query": ""})["content"][0]["json"]
+tests/playbooks/test_resolve.py:61:    assert validate_input(op, {}) == "missing required input keys: ['slug']"
+tests/playbooks/test_resolve.py:62:    assert validate_input(op, {"slug": "svg-pub"}) is None
+tests/test_remediation_hermes.py:31:        return {"choices": [{"message": {"content": json.dumps([
+tests/test_remediation_hermes.py:113:        return {"choices": [{"message": {"content": json.dumps([
+tests/test_remediation_hermes.py:161:        return {"choices": [{"message": {"content": json.dumps([])}}]}
+tests/test_remediation_hermes.py:177:        return {"choices": [{"message": {"content": json.dumps([])}}]}
+core/remediation/hermes_adapter.py:86:                {"role": "system", "content":
+core/remediation/hermes_adapter.py:92:                {"role": "user", "content": msg},
+core/remediation/hermes_adapter.py:98:    def _extract_json(content: str):
+core/remediation/hermes_adapter.py:102:        fence and may prepend prose, so a bare json.loads(content) fails on the
+core/remediation/hermes_adapter.py:107:        text = (content or "").strip()
+core/remediation/hermes_adapter.py:123:        content = resp["choices"][0]["message"]["content"]
+core/remediation/hermes_adapter.py:124:        items = self._extract_json(content)  # raises on non-JSON -> caught as parse failure
+core/ops_registry.py:103:        return f"unknown input keys: {sorted(unknown)}"
+core/okf/frontmatter.py:13:    "content_hash", "enriched_against", "okf_version",
+core/okf/frontmatter.py:141:def split_doc(content: str):
+core/okf/frontmatter.py:142:    if not content.startswith("---\n"):
+core/okf/frontmatter.py:144:    rest = content[4:]
+core/okf/frontmatter.py:155:def content_hash(*, concept_id, slug, lang, project, resource,
+core/okf/serialize.py:8:from core.okf.frontmatter import join_doc, split_doc, content_hash
+core/okf/serialize.py:76:        chash = content_hash(
+core/okf/serialize.py:94:        fm["content_hash"] = chash
+core/mcp/http.py:6:against the op's input_schema and returns a structured content block.
+core/mcp/http.py:64:                        "headers": [(b"content-type", b"text/plain")]})
+core/mcp/server.py:3:A catalogued CLI's output_types are result *content*, NOT a declared tool
+core/mcp/server.py:22:    """Return a structured error in the same content-block shape as success."""
+core/mcp/server.py:23:    return {"content": [{"type": "json", "json": {"error": msg}}]}
+core/mcp/server.py:40:    # structured JSON content block — capability model appears INSIDE as data
+core/mcp/server.py:41:    return {"content": [{"type": "json", "json": payload}]}
+core/capability/infer.py:108:    "overwrite contents",
+core/notifier/bus.py:140:    def post(self, url: str, *, content: bytes, headers: dict, timeout: float):
+core/notifier/bus.py:145:            url, content=content, headers=headers, timeout=timeout,
+core/notifier/bus.py:171:    ``.post(url, *, content, headers, timeout)``.  The default transport
+core/notifier/bus.py:188:            content=body,
+core/announcer/announcer.py:51:                content=body_bytes,
+711d73b docs: apply 4th Codex pass fixes to goal_actions spec
+ .../2026-07-12-vocab01-goal-actions-redesign.md    | 142 ++++++++++++++++-----
+ 1 file changed, 112 insertions(+), 30 deletions(-)
+commit 711d73baa55f342fe8e82e17404eee5172294620
+Author:     Jonas Cords <jonas.cords@gmail.com>
+AuthorDate: Sun Jul 12 13:44:10 2026 +0200
+Commit:     Jonas Cords <jonas.cords@gmail.com>
+CommitDate: Sun Jul 12 13:44:10 2026 +0200
+
+    docs: apply 4th Codex pass fixes to goal_actions spec
+    
+    Codex 4th pass verdict NOT-PLAN-READY, 2 holes verified against live code:
+    
+    - 2.2 disjoint-map-values claim REFUTED: send_mail's live row
+      (intent_tags='notify,send') matches BOTH email:{send} and notify:{notify}
+      despite the map values being disjoint. Replaced with the correct
+      max-one-verb-per-LIVE-terminal invariant + a specificity-based
+      disambiguation rule (rarer tag wins -> send_mail resolves to email).
+      Test (h) is now RED-first, reproducing the double-match.
+    
+    - 2.8 'reuse the existing vocab-reject retry loop' REFUTED: that loop
+      (_infer_capability_tags 545-568) runs pre-planner and only handles port
+      tags; _select_chain swallows structured errors into a generic 'no healthy
+      chain'. Added an explicit decode path (UnknownActionVerbError) + one-shot
+      reinference on the planner-error path, with section-3 table rows + tests.
+    
+    2.6 start gate and 2.7 slug-scoped auth were Codex-CONFIRMED sound.
+    Header status -> FOUR passes; next gate is a 5th pass on these two folds.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+diff --git a/docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md b/docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
+index 42da447..a820864 100644
+--- a/docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
++++ b/docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md
+@@ -1,10 +1,13 @@
+ # US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01 — `goal_actions` Redesign
+ 
+ **Date:** 2026-07-12
+-**Status:** Design — revised after THREE Codex grounding passes. 3rd-pass fixes applied
+-(disjoint tag sets §2.2, compound-goal start gate §2.6, slug-scoped final-position auth
+-§2.7, shared-vocab contract §2.8). **A 4th Codex pass is the next action to confirm
+-PLAN-READY before writing-plans.**
++**Status:** Design — revised after FOUR Codex grounding passes. 4th-pass fixes applied:
++§2.2 max-one-verb-per-live-terminal invariant + disambiguation (the disjoint-map-values claim
++was REFUTED — `send_mail`'s `notify,send` row matched both `email` and `notify`); §2.8/§3
++explicit planner-error decode + one-shot reinference on the adapter (the "reuse the existing
++port-tag retry loop" claim was REFUTED — that loop runs pre-planner and swallows structured
++errors). Prior 3rd-pass fixes (§2.6 start gate, §2.7 slug-scoped auth) were Codex-CONFIRMED
++sound. **A 5th Codex pass on these two folded fixes is the next gate before writing-plans.**
+ **Repos touched:** `a2a-cli-registry` (planner, ops schema, tests), `hermes-adapter` (tag inference, discovery, tool schema, planner call, bypass guard)
+ 
+ ---
+@@ -74,11 +77,11 @@ Tag inference emits three lists instead of overloading two:
+ - `goal_actions` — the terminal action verb(s) the goal demands (e.g. `email`). NEW.
+   These are **intent-tag terms**, matched against terminals' `intent_tags`.
+ 
+-### 2.2 Action → required-intent-tag map (tag-keyed, DISJOINT tag sets)
++### 2.2 Action → required-intent-tag map (tag-keyed, max-one-verb-per-terminal)
+ The action verbs are matched to terminal intent tags via a single shared dict. Codex's 3rd
+ pass found that overlapping tag sets re-introduce ambiguity: if `webhook` includes `notify`,
+-then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. **The tag sets must be
+-pairwise disjoint** so each live terminal satisfies at most one action verb:
++then `send_mail` (tagged `notify,send`) falsely satisfies `webhook`. Pairwise-disjoint tag
++sets are necessary but **NOT sufficient** — see the 4th-pass correction below:
+ 
+ ```
+ _ACTION_REQUIRES_TAG = {
+@@ -91,13 +94,46 @@ _ACTION_REQUIRES_TAG = {
+ ```
+ 
+ A terminal satisfies action `a` iff `_ACTION_REQUIRES_TAG[a] & terminal.intent_tags` is
+-non-empty. **Disjointness invariant** (asserted by a unit test over the map + validated
+-against live tags): no two values share a tag, so no terminal matches two verbs. Live check:
+-`email → {send}` matches only `send_mail`; `webhook → {webhook}` and `notify → {notify}`
+-match zero live terminals (correctly — none exist yet), so an `email` goal can never route
+-to a webhook/notify terminal. An action verb absent from the map is a **hard
+-inference-validation error** (one retry, then ValueError) — never silently dropped, never
+-routed to a wrong terminal.
++non-empty.
++
++**4th-pass fix — the invariant is per-TERMINAL, not per-map-value (Codex REFUTED the
++disjoint-values claim).** The 3rd-pass text asserted "no two map values share a tag, so no
++terminal matches two verbs." That inference is false: map-value disjointness does not stop a
++single *multi-tagged* terminal from satisfying multiple verbs. Live counter-example —
++`send_mail`'s row is `intent_tags='notify,send'` (verified against `registry.db`,
++2026-07-12), so it matches BOTH `email` (via `send`) AND `notify` (via `notify`) even though
++`{send}` and `{notify}` are disjoint. A future `notify` goal would then route to `send_mail`,
++sending mail for a notification request — a real mis-route the moment a `notify` goal is
++issued (latent only because no `notify` goal is emitted today).
++
++The correct invariant is **max-one-verb-per-live-terminal**: for every live terminal T,
++`len([a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & T.intent_tags]) <= 1`.
++This is a runtime assertion over ACTUAL tags (not a property of the map alone), and it is the
++test that would have caught the send_mail double-match. Two ways to satisfy it, in order of
++preference:
++
++1. **Preferred — disambiguate at match time by tag specificity.** When a terminal matches
++   >1 verb, the verb whose required-tag set is the terminal's *most discriminating* tag wins.
++   For `send_mail`, `send` is unique to email-class terminals while `notify` is shared
++   vocabulary (3 live CLIs carry `notify`: `codex_ntfy_bridge`, `changelog_research`,
++   `sync-2` — none is a mail sender), so `email` wins over `notify`. Mechanism: rank verbs by
++   `-len({t for t in _ACTION_REQUIRES_TAG[a] if <#live terminals carrying t>} )` — i.e. the
++   verb keyed on the rarer tag. Deterministic; ties (equal rarity) are a hard error.
++2. **Simpler fallback — retag the data.** Backfill `send_mail.intent_tags` to drop `notify`
++   (leaving `send`), so the row matches only `email`. This makes the map-value disjointness
++   sufficient again, at the cost of one live-DB UPDATE (backup first, same runbook as AC-03).
++   Chosen only if the specificity rule proves fragile against a second terminal.
++
++The **invariant test** asserts max-one-verb-per-live-terminal over the live tag set (NOT
++merely pairwise-disjoint map values), and FAILS on the current `send_mail` row until the
++chosen disambiguation lands. This test is RED-first: it reproduces the double-match, then the
++fix makes it green.
++
++Live check (post-fix): `email → {send}` matches `send_mail` and, via the specificity rule,
++`send_mail` resolves to `email` only; `webhook → {webhook}` and `notify → {notify}` match
++zero live terminals (correctly — none exist yet). An action verb absent from the map is a
++**hard inference-validation error** (one retry, then ValueError) — never silently dropped,
++never routed to a wrong terminal.
+ 
+ > Trade-off: keying `email` on `send` alone (dropping `notify`) means a future
+ > notification-only mail CLI tagged `notify` but not `send` would not match `email`. That's
+@@ -198,15 +234,43 @@ map. Validation lives entirely in the registry.**
+   error** (`{"error": "unknown action verb: <v>; known: [...]"}`) via the existing
+   ops error channel (ops_registry already returns string errors, e.g. the unknown-key
+   path at ops_registry.py:101).
+-- The adapter treats that structured error like any other planner failure: it surfaces it
+-  and (if it wants a retry) re-invokes tag inference with the rejected verb named — reusing
+-  the EXISTING vocab-reject retry loop pattern (`_infer_capability_tags`, cli_registry.py:
+-  ~545-566), which already round-trips "these tags were rejected" back to the model. The
+-  known-verbs list travels in the error payload, so the model gets the vocabulary without
+-  the adapter hardcoding it.
++- **4th-pass fix — the "reuse the existing retry loop" claim is FALSE; a new decode +
++  reinference path is required (Codex REFUTED).** The 3rd-pass text claimed the adapter
++  reuses `_infer_capability_tags`'s vocab-reject loop. It cannot, for two verified code
++  reasons:
++  1. **Wrong path, wrong vocabulary.** `_infer_capability_tags`'s only retry is at
++     cli_registry.py:545-568 and fires on rejected **port tags**
++     (`goal_inputs | goal_outputs - vocab`) — it runs at line 826, strictly BEFORE the
++     planner is ever called (planner call ~line 899). It has no `goal_actions` awareness and
++     no hook on the planner-error path. It is structurally the wrong loop.
++  2. **The planner error is swallowed before the adapter can see the verb.** `_select_chain`
++     (cli_registry.py:668) passes the planner response through `_unwrap_mcp_json` (line 684),
++     which coerces a structured `{"error": ...}` object into a one-element list; `_select_chain`
++     then finds no usable chain and raises a **generic** `"no usable plan"` / `"no healthy
++     chain for goal"` (lines 686, 706), discarding the structured detail. The rejected verb
++     and known-verbs list never reach any caller, let alone the model.
++- **Required mechanism (explicit, new — not a reuse):**
++  1. `_unwrap_mcp_json` (or a thin wrapper at the `plan_cli_chain` call site) must detect a
++     structured `{"error": "unknown action verb: <v>; known: [...]"}` payload BEFORE
++     `_select_chain` flattens it, and raise a typed `UnknownActionVerbError(verb, known)`
++     rather than letting it degrade to the generic "no healthy chain".
++  2. A NEW one-shot reinference step at the planner call site catches
++     `UnknownActionVerbError`, re-invokes tag inference with a corrective message naming the
++     rejected verb and the `known` list from the payload (mirroring the *shape* of the
++     545-568 corrective retry, but on the action-verb axis and on the planner-error path), and
++     re-calls `plan_cli_chain` once. A second failure raises (no infinite loop).
++  3. This may be factored as a small reusable "corrective reinference" helper that both the
++     existing port-tag retry and the new action-verb retry call — but that refactor is
++     optional; the load-bearing requirement is that the action-verb error is *decoded* and
++     *drives one reinference*, which no current code path does.
++- The registry side is unchanged from the 3rd-pass design: it owns `_ACTION_REQUIRES_TAG`,
++  validates, and emits the structured error. The known-verbs list still travels in the error
++  payload so the model gets the vocabulary without the adapter hardcoding it.
+ - Net: `_ACTION_REQUIRES_TAG` exists in exactly one place (the planner). The adapter learns
+-  the vocabulary at runtime from the registry's error payload. No duplication, no contract
+-  test needed beyond "adapter surfaces the structured error + retries."
++  the vocabulary at runtime from the registry's error payload — but via a NEW decode +
++  reinference path, not the pre-existing port-tag loop. Contract test required: adapter
++  decodes the structured verb error into `UnknownActionVerbError` and drives exactly one
++  reinference (assert the corrective message names the rejected verb + known list).
+ 
+ ---
+ 
+@@ -215,12 +279,13 @@ map. Validation lives entirely in the registry.**
+ | Unit | Responsibility | Change |
+ |---|---|---|
+ | `hermes_adapter/tools/cli_registry.py::_TAG_INFER_SYSTEM` | goal → 3 tag lists | Add `goal_actions` (intent-tag verbs); stop overloading `goal_outputs` for actions |
+-| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation; adapter surfaces the structured error + retries via the existing vocab-reject loop) |
++| `hermes_adapter/tools/cli_registry.py::_infer_capability_tags` | parse model JSON | Parse `goal_actions`; allow empty `goal_outputs` when `goal_actions` present. Does NOT validate action verbs against the map (§2.8 — registry owns validation). Its 545-568 retry stays port-tag-only; the action-verb reinference is a SEPARATE new path (see decode row below), NOT this loop |
++| `hermes_adapter/tools/cli_registry.py::_unwrap_mcp_json` / `_select_chain` (573, 668) | flatten planner response | **4th-pass NEW (Codex REFUTED reuse):** detect a structured `{"error": "unknown action verb..."}` payload BEFORE flattening and raise typed `UnknownActionVerbError(verb, known)` — currently it coerces the error to a 1-elem list and `_select_chain` raises a generic "no healthy chain" (686/706), swallowing the verb |
+ | `hermes_adapter/tools/cli_registry.py` discovery (~843) | `output_term = goal_outputs[0]` | **Codex VERIFIED crash:** guard empty `goal_outputs`; when empty + `goal_actions` present, discover via the action term instead of `goal_outputs[0]`; restructure the logging/fallback/error branches that assume a non-empty output term |
+-| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now) |
++| `hermes_adapter/tools/cli_registry.py` planner call (~899-903) | pass tags to planner | Forward `goal_actions`; STOP pre-resolving `allow_side_effects` from side_effects (planner owns resolution now). **4th-pass NEW:** catch `UnknownActionVerbError`, run ONE corrective reinference naming the rejected verb + `known` list, re-call `plan_cli_chain` once, then raise (§2.8) |
+ | `hermes_adapter/tools/cli_registry.py` tool schema (~387) | MCP tool input schema | **Codex VERIFIED omission:** add `goal_actions` to `plan_cli_chain` tool properties |
+ | `core/ops_registry.py` (~37, 101) | op input schema + unknown-key rejection | **Codex VERIFIED omission:** add `goal_actions` to the `plan_cli_chain` Op schema `properties`, else validation rejects it as an unknown key (ops_registry.py:101) |
+-| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), disjoint tag-keyed matching (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
++| `core/planner/search.py::plan_chain` | chain enumeration | `goal_actions` param, `_ACTION_REQUIRES_TAG` (validate verbs, §2.8), tag-keyed matching with max-one-verb-per-live-terminal disambiguation (§2.2), tag-keyed terminal predicate (§2.3), short-circuit edit (§2.4), terminal edge synthesis (§2.5), action-terminal starts gated on empty `goal_outputs` (§2.6), slug-scoped final-position self-authorization (§2.7) |
+ | `core/catalog/queries.py::plan_cli_chain` | public wrapper | Thread `goal_actions` through; return structured error for unknown action verb (§2.8) |
+ | `core/planner/search.py::_hop_excluded` | hop prune | **Unchanged** signature/logic; the planner wraps its result with the slug-scoped final-position relaxation (§2.7) — it does NOT receive a widened allow-set |
+ | `core/graph/edges.py` | persisted edges | **Unchanged** (synthesis is planning-time only) |
+@@ -276,19 +341,36 @@ map. Validation lives entirely in the registry.**
+       silently dropped (§2.8);
+   (g) pure-action goal (empty goal_outputs, non-empty goal_actions) starts at and returns
+       the action terminal (§2.6);
+-  (h) `_ACTION_REQUIRES_TAG` values are pairwise DISJOINT (§2.2 invariant) — assert over the
+-      map itself AND that no live terminal matches two verbs;
++  (h) **max-one-verb-per-live-terminal (§2.2 invariant, 4th-pass — RED-first).** Assert that
++      for EVERY live terminal, at most one verb in `_ACTION_REQUIRES_TAG` matches its actual
++      `intent_tags`. This test MUST reproduce the current `send_mail` double-match
++      (`notify,send` → both `email` and `notify`) as RED, then pass once the disambiguation
++      (§2.2 specificity rule OR the retag) lands. A pairwise-disjoint-map-values check is
++      NECESSARY but explicitly NOT sufficient — the test asserts over live tags, not the map;
+   (i) a compound goal does NOT admit an action terminal as a START (§2.6 gate) — only as a
+       synthesized final hop after a producer;
+   (j) slug-scoped final-position auth (§2.7): a `writes-fs` action terminal being the final
+-      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded).
++      hop does NOT admit other `writes-fs` CLIs as mid-chain hops (they stay excluded);
++  (k) **disambiguation resolves send_mail to `email`, not `notify` (§2.2).** With `send_mail`
++      tagged `notify,send`, a `notify` goal does NOT route to it, and an `email` goal does.
++- **Adapter decode + reinference (§2.8, 4th-pass — hermes-adapter)**: RED-first —
++  (l) a `plan_cli_chain` response carrying `{"error": "unknown action verb: <v>; known:[...]"}`
++      is decoded into `UnknownActionVerbError(verb, known)` BEFORE `_select_chain` flattens it
++      (currently it degrades to a generic "no healthy chain" — assert that is now typed);
++  (m) catching `UnknownActionVerbError` drives EXACTLY ONE corrective reinference whose
++      message names the rejected verb + the `known` list, then re-calls `plan_cli_chain` once;
++      a second failure raises (no loop).
+ - **AC-04**: RED-first handler test in hermes-adapter reproducing the swallow, then the
+   guard; assert forwarded `goal_actions` + retained producer.
+ - **AC-05**: live, single attempt, runtime-token-in-mail-body assertion.
+ 
+ ## 6. Error handling
+-- Tag inference emitting an out-of-map action verb → one-retry-then-ValueError (reuse
+-  `_infer_capability_tags`'s vocab-reject mechanism, extended to `goal_actions`).
++- Tag inference emitting an out-of-map action verb: the REGISTRY validates and returns the
++  structured `{"error": "unknown action verb..."}`; the ADAPTER decodes it into
++  `UnknownActionVerbError` and drives one corrective reinference on the planner-error path
++  (§2.8, 4th-pass). This is NOT the pre-existing `_infer_capability_tags` port-tag loop
++  (which runs pre-planner and only handles `goal_inputs`/`goal_outputs`) — it is a new,
++  separate decode+reinference path. One reinference then raise.
+ - Empty `goal_outputs` AND empty `goal_actions` → hard-fail (no goal at all), as today.
+ - Empty `goal_outputs` WITH non-empty `goal_actions` → valid pure-action goal; discovery
+   uses the action term (§3 discovery row).
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sqlite3 -header -column registry.db \"SELECT c.slug, c.health_status, cap.intent_tags, cap.input_types, cap.output_types, cap.side_effect, cap.confidence FROM cli c LEFT JOIN capability cap ON cap.cli_slug=c.slug WHERE c.slug LIKE '%mail%' OR cap.intent_tags LIKE '%send%' ORDER BY c.slug;\"
+sqlite3 registry.db \"SELECT count(*) FROM cli; SELECT count(*) FROM capability;\"
+sed -n '1,130p' core/mcp/server.py
+sed -n '1,215p' core/mcp/http.py
+rg -n 'send_mail|notify,send' . -g '"'!docs/superpowers/specs/2026-07-12-vocab01-goal-actions-redesign.md'"' -g '"'!*.md'"'" in /Users/jcords-macmini/projects/a2a-cli-registry
+ succeeded in 0ms:
+474
+474
+# core/mcp/server.py
+"""MCP surface. The capability model maps to each tool's INPUT schema only.
+A catalogued CLI's output_types are result *content*, NOT a declared tool
+outputSchema (category-error fix). Transport is Streamable HTTP, mounted on the
+same ASGI app as REST+A2A; auth composes with the A2A bearer."""
+from core.ops_registry import OPS, op_by_mcp_tool, validate_input as _validate_input_shared
+
+
+def build_mcp_tools() -> list[dict]:
+    return [{"name": o.mcp_tool, "description": o.canonical_id,
+             "inputSchema": o.input_schema} for o in OPS]
+    # deliberately NO outputSchema keyed off output_types
+
+
+def _validate_arguments(op, arguments: dict):
+    """Validate argument keys and types against op.input_schema.
+    Returns an error string or None. Delegates to shared validate_input in ops_registry."""
+    return _validate_input_shared(op, arguments)
+
+
+def _error_block(msg: str) -> dict:
+    """Return a structured error in the same content-block shape as success."""
+    return {"content": [{"type": "json", "json": {"error": msg}}]}
+
+
+def call_mcp_tool(session, name: str, arguments: dict) -> dict:
+    try:
+        op = op_by_mcp_tool(name)
+    except KeyError:
+        return _error_block(f"unknown tool: {name}")
+
+    err = _validate_arguments(op, arguments)
+    if err:
+        return _error_block(err)
+
+    try:
+        payload = op.handler(session, **arguments)
+    except (TypeError, ValueError) as exc:
+        return _error_block(f"invalid input: {exc}")
+    # structured JSON content block — capability model appears INSIDE as data
+    return {"content": [{"type": "json", "json": payload}]}
+"""MCP served over Streamable HTTP, mounted on the same ASGI app as REST+A2A.
+
+Tools are rendered from the SHARED op registry (core.ops_registry.OPS) — the
+exact same set the in-process MCP surface (core.mcp.server) exposes — so the two
+can never drift. Each tool forwards to call_mcp_tool, which validates input
+against the op's input_schema and returns a structured content block.
+
+Transport security: DNS-rebinding protection stays ON. Allowed hosts are derived
+from A2A_BASE_URL (default http://localhost:8080) plus localhost variants and
+"testserver" (the synthetic Host header used by FastAPI TestClient). This replaces
+the old host="0.0.0.0" workaround, which disabled DNS-rebinding protection entirely.
+"""
+import inspect
+import os
+import warnings
+from typing import Any
+from urllib.parse import urlparse
+
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from pydantic.json_schema import PydanticJsonSchemaWarning
+
+from core.ops_registry import OPS
+from core.mcp.server import call_mcp_tool
+
+
+class _Unset:
+    """Sentinel for 'argument not supplied by the client'.
+
+    Distinct from None so an explicit None can never be confused with omission.
+    Kept out of the advertised inputSchema (its non-serializable default is
+    suppressed below), so the schema stays clean.
+    """
+    def __repr__(self) -> str:  # pragma: no cover - cosmetic
+        return "<unset>"
+
+
+_MISSING = _Unset()
+
+# JSON-schema "type" -> Python annotation, so FastMCP's func_metadata introspects
+# a real per-op signature (top-level params) instead of a single 'arguments' blob.
+_TYPE_MAP = {
+    "string": str, "array": list, "object": dict,
+    "integer": int, "number": float, "boolean": bool,
+}
+
+
+def _bearer_gate(asgi_app):
+    """Wrap an ASGI app so requests without a valid bearer token get 401.
+
+    Mirrors core.server.app._require_token: expected token from env
+    A2A_BEARER_TOKEN; missing env or wrong/missing token -> 401.
+    """
+    async def _gated(scope, receive, send):
+        if scope["type"] != "http":
+            await asgi_app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        auth = headers.get(b"authorization", b"").decode()
+        expected = os.environ.get("A2A_BEARER_TOKEN")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+        if not expected or token != expected:
+            await send({"type": "http.response.start", "status": 401,
+                        "headers": [(b"content-type", b"text/plain")]})
+            await send({"type": "http.response.body", "body": b"Unauthorized"})
+            return
+        await asgi_app(scope, receive, send)
+    return _gated
+
+
+def mcp_tool_names() -> list[str]:
+    """The MCP tool names this HTTP surface serves — straight from the registry."""
+    return [op.mcp_tool for op in OPS]
+
+
+def _make_handler(session, op):
+    """Return an MCP tool handler bound to *op* and *session*.
+
+    The handler advertises the op's REAL top-level parameters (derived from
+    op.input_schema) so a normal MCP client can call e.g.
+    `search_cli_catalog {"query":"x"}` with TOP-LEVEL keys — matching the
+    in-process call_mcp_tool surface (core/mcp/server.py).
+
+    Why not `def handler(arguments: dict)` or `def handler(**arguments)`:
+    mcp 1.28.0's func_metadata introspects the signature. A single
+    `arguments: dict` param makes FastMCP advertise
+    {"required":["arguments"],...} — forcing clients to NEST under
+    {"arguments":{...}}. `**arguments` is advertised by func_metadata as a
+    single required STRING param named 'arguments' — also uncallable with
+    top-level keys. So we build an explicit signature from input_schema.
+
+    Optional params get the _MISSING sentinel as default; omitted ones are
+    stripped before forwarding, so call_mcp_tool receives ONLY the keys the
+    client actually sent — identical to the prior pass-through behavior.
+    NB: mcp 1.28.0 func_metadata rejects param names starting with '_', so the
+    parameters are the op's real schema keys (none start with '_').
+    """
+    op_name = op.mcp_tool
+    schema = op.input_schema
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+
+    def handler(**arguments):
+        clean = {k: v for k, v in arguments.items() if v is not _MISSING}
+        # call_mcp_tool re-validates clean against the op's real input_schema.
+        return call_mcp_tool(session, op_name, clean)
+
+    # Name the handler after the op so FastMCP's func_metadata titles the
+    # advertised inputSchema "<op_name>Arguments" instead of the generic
+    # "handlerArguments", and so each registered handler has a distinct
+    # __name__ (no cross-op collision in logging/introspection).
+    handler.__name__ = op_name
+    handler.__qualname__ = op_name
+
+    params = []
+    for pname, pschema in props.items():
+        annotation = _TYPE_MAP.get(pschema.get("type"), Any)
+        if pname in required:
+            params.append(inspect.Parameter(
+                pname, inspect.Parameter.KEYWORD_ONLY, annotation=annotation))
+        else:
+            params.append(inspect.Parameter(
+                pname, inspect.Parameter.KEYWORD_ONLY,
+                annotation=annotation, default=_MISSING))
+    handler.__signature__ = inspect.Signature(params)
+    handler.__annotations__ = {p.name: p.annotation for p in params}
+    return handler
+
+
+def _mcp_transport_security() -> TransportSecuritySettings:
+    """Build TransportSecuritySettings with DNS-rebinding protection ON.
+
+    Allowed hosts are derived from A2A_BASE_URL plus localhost variants and
+    "testserver" (FastAPI TestClient's synthetic Host header).
+    """
+    base = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
+    host = urlparse(base).netloc or "localhost:8080"
+    # host already equals "localhost:8080" when A2A_BASE_URL is the default,
+    # so no hardcoded duplicate — stale over-allowance on non-default ports removed.
+    allowed = [host, "localhost", "127.0.0.1", "testserver"]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed,
+        # base's origin is already captured by f"http://{host}" / f"https://{host}".
+        allowed_origins=[f"http://{host}", f"https://{host}"],
+    )
+
+
+def build_mcp_app(session):
+    """Build a Streamable-HTTP ASGI app exposing every registry op as an MCP tool.
+
+    *session* is captured by each tool handler. In v1.0 a single session is held
+    open for the server's lifetime (see the serve command / mount_mcp).
+
+    streamable_http_path="/" so that when this app is mounted at /mcp by the
+    host FastAPI app, Starlette strips the /mcp prefix and the sub-app correctly
+    handles the resulting "/" path.
+
+    DNS-rebinding protection is kept ON via transport_security; allowed hosts are
+    derived from A2A_BASE_URL (see _mcp_transport_security).
+    """
+    server = FastMCP(
+        "a2a-cli-registry",
+        streamable_http_path="/",
+        transport_security=_mcp_transport_security(),
+    )
+
+    for op in OPS:
+        name = op.mcp_tool
+        handler = _make_handler(session, op)
+
+        # The handler carries an explicit per-op signature (built from
+        # input_schema) so FastMCP advertises the op's REAL top-level params —
+        # callable as `tool {"query":"x"}`, NOT `{"arguments":{...}}`.
+        # Suppress only the cosmetic PydanticJsonSchemaWarning about the
+        # non-serializable _MISSING default (it is intentionally excluded from
+        # the advertised schema, keeping inputSchema clean).
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", PydanticJsonSchemaWarning)
+            server.add_tool(handler, name=name, description=f"Registry op: {name}")
+
+    return server.streamable_http_app()
+
+
+def mount_mcp(app, mcp_app):
+    """Mount a pre-built MCP app at /mcp behind bearer auth.
+
+    The CALLER (create_app) must wire mcp_app.router.lifespan_context into the
+    parent FastAPI lifespan before calling this — otherwise the session manager
+    never starts and every MCP call 500s.
+    """
+    app.mount("/mcp", _bearer_gate(mcp_app))
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:149:> `send_mail`-class CLIs at all.
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:153:`send_mail`'s live capability row (`~/.hermes/cli-registry.db`) is correctly
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:172:**never** select `send_mail` as a chain hop — not a vocabulary-matching
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:181:`send_mail`'s problem is NOT missing/empty capability data (it's fully
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:241:   (like `send_mail`) is always allowed regardless of `allow_side_effects`;
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:249:   - `test_declared_external_side_effect_always_allowed` — a `send_mail`-shaped
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:297:  `send_mail`-shaped) is included in `plan_chain`'s candidate hops with
+./docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log:307:  exclude `send_mail` now includes it as a candidate hop when its
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "find ~/.hermes -maxdepth 3 -type f \\( -name 'registry.db' -o -name 'cli-registry.db' \\) -print
+for db in ~/.hermes/cli-registry.db ~/.hermes/registry.db; do if [ -f \""'$db" ]; then sqlite3 -header -column "$db" "SELECT cli_slug, intent_tags, side_effect, input_types, output_types FROM capability WHERE cli_slug='"'send_mail' OR instr(',' || replace(intent_tags, ' ', '') || ',', ',send,') > 0 OR instr(',' || replace(intent_tags, ' ', '') || ',', ',notify,') > 0 ORDER BY cli_slug;\"; sqlite3 -header -column \""'$db" "WITH RECURSIVE split(cli_slug, tag, rest) AS (SELECT cli_slug, '"'', replace(coalesce(intent_tags,''),' ','') || ',' FROM capability UNION ALL SELECT cli_slug, substr(rest,1,instr(rest,',')-1), substr(rest,instr(rest,',')+1) FROM split WHERE rest <> '') SELECT tag, count(DISTINCT cli_slug) AS live_slugs FROM split WHERE tag IN ('send','notify') GROUP BY tag ORDER BY tag;\"; fi; done
+sed -n '130,210p' docs/superpowers/specs/2026-07-12-planner-external-side-effect-design-duo-20260712-075006/codex-phase1.stderr.log" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 807ms:
+/Users/jcords-macmini/.hermes/cli-registry.db
+cli_slug   intent_tags  side_effect  input_types  output_types
+---------  -----------  -----------  -----------  ------------
+send_mail  notify,send  external     text         text        
+tag     live_slugs
+------  ----------
+notify  1         
+send    1         
+- For *open questions inherited*: search the spec for "Q1", "Q2", etc.
+- For *repo conventions*: read `/Users/jcords-macmini/projects/a2a-cli-registry/CLAUDE.md` and `/Users/jcords-macmini/projects/a2a-cli-registry/KNOWN_PATTERNS.md`.
+
+## 7. What this collector did NOT check
+
+- Function names, CLI sub-commands, and config keys (`escalation.to`, `schema_version` etc.) — these are spec-internal JSON schema fields, not external artifacts; no existence check applies.
+- External URLs and resources.
+- Path placeholders containing `<...>` or `...` — filtered out as noise.
+- Whether file *contents* match the spec's claims about them. Only file existence is verified.
+- Imports / call sites of cited code paths (would require an LSP or wider grep).
+
+If a reviewer needs any of these, they should request explicitly.
+
+## SPEC.md (/Users/jcords-macmini/projects/a2a-cli-registry/docs/superpowers/specs/2026-07-12-planner-external-side-effect-design.md)
+
+# Planner: Recognize `external` Side-Effect Class — Design
+
+> **US-CLIREG-PLANNER-SIDEEFFECT-VOCAB-01** (BACKLOG Ideation, narrowed scope —
+> see "Scope narrowing" below). Root-cause fix so `plan_cli_chain` can select
+> `send_mail`-class CLIs at all.
+
+## Problem
+
+`send_mail`'s live capability row (`~/.hermes/cli-registry.db`) is correctly
+hand-declared: `side_effect='external', confidence='declared'`. But
+`core/planner/search.py`'s `_slug_side_effect()` only recognizes a closed
+5-value order list:
+
+```python
+def _slug_side_effect(caps_for_slug) -> str:
+    order = ["destructive", "unknown", "network", "writes-fs", "none"]
+    present = {c.side_effect for c in caps_for_slug}
+    for level in order:
+        if level in present:
+            return level
+    return "unknown"          # <-- 'external' falls through to here
+```
+
+Any `side_effect` value not in `order` (including `'external'`) silently
+degrades to `"unknown"`. `_hop_excluded()` then treats the hop as the
+fail-unsafe `unknown` class, excluded by default regardless of what
+`allow_side_effects` the caller passes. Net effect: `plan_cli_chain` can
+**never** select `send_mail` as a chain hop — not a vocabulary-matching
+problem at the `allow_side_effects` term level, but a silent value-coercion
+bug one layer below it.
+
+## Scope narrowing (this session)
+
+The original ticket bundled three concerns. Live investigation
+(2026-07-12) found part of its premise stale — `seed_anthropic_index` really
+does still have empty `input_types`/`output_types` in the live DB, but
+`send_mail`'s problem is NOT missing/empty capability data (it's fully
+declared). Per user decision, this design covers **only** the `side_effect`
+vocabulary-recognition bug. Deferred, separate tickets:
+
+- Bridging hermes-adapter's free-form LLM-inferred `side_effects` terms
+  (e.g. `'email'`) to the registry's closed `side_effect` enum — a
+  different mechanism (adapter-side term vs. registry-side class), not
+  addressed here.
+- `seed_anthropic_index` capability I/O backfill — unrelated CLI, unrelated
+  gap (empty type data vs. unrecognized value).
+- The adapter's single-candidate bypass silently skipping a producer hop on
+  compound goals — separate mechanism (`hermes-adapter/cli_registry.py`
+  `handle_run_cli_command`), not a registry planner change.
+
+**Related, not overlapping:** `US-CLIREG-SIDEEFFECT-GUARD-01` (BACKLOG,
+State: Ready) is the inverse problem — the adapter's vocab guard doesn't
+*reject* hallucinated/out-of-vocab side-effect tags before they reach
+`plan_cli_chain`. That ticket is about rejecting bad values earlier; this
+one is about correctly recognizing a good, already-declared value. Fixing
+this design doesn't satisfy that ticket's ACs or vice versa.
+
+## Fix
+
+Hand-declared values only — do not touch the automated LLM-fallback
+backfill's vocabulary (`tools/capability_llm_fallback.py`'s `_SIDE_EFFECTS`
+stays 5-value). Rationale: no evidence yet that other CLIs need
+auto-*inferred* `external` classification, and changing the LLM fallback's
+prompt risks reclassifying some subset of the 191 existing side-effect-bearing
+capability rows. Minimal, reversible.
+
+
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '120,175p' tests/test_mcp_http.py
+sed -n '1,70p' tests/test_mcp.py
+rg -n 'plan_cli_chain' tests/test_mcp.py tests/test_mcp_http.py tests/test_ops_registry.py tests/test_planner.py
+sed -n '1,140p' tests/test_mcp_http.py
+sed -n '1,80p' core/server/a2a.py" in /Users/jcords-macmini/projects/a2a-cli-registry
+ succeeded in 0ms:
+            "/mcp/",
+            headers=_mcp_headers({"mcp-session-id": sid}),
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+        )
+        tools = {
+            t["name"]: t
+            for m in _parse_sse(listed.text) if "result" in m
+            for t in m["result"].get("tools", [])
+        }
+        schema = tools["search_cli_catalog"]["inputSchema"]
+        # The headline bug advertised required==["arguments"]; assert it's gone.
+        assert schema.get("required") != ["arguments"]
+        assert "query" in schema.get("properties", {})
+
+        # 4) tools/call with TOP-LEVEL args must succeed (not a validation error)
+        called = client.post(
+            "/mcp/",
+            headers=_mcp_headers({"mcp-session-id": sid}),
+            json={
+                "jsonrpc": "2.0", "method": "tools/call", "id": 3,
+                "params": {"name": "search_cli_catalog",
+                           "arguments": {"query": ""}},
+            },
+        )
+        results = [m for m in _parse_sse(called.text) if "result" in m]
+        assert results, f"no result in tools/call response: {called.text!r}"
+        result = results[0]["result"]
+        # Top-level call SUCCEEDED: no MCP-level error, no validation error text.
+        assert result.get("isError") is not True
+        blob = json.dumps(result)
+        assert "Field required" not in blob
+        assert "validation error" not in blob.lower()
+import jsonschema
+from core.mcp.server import build_mcp_tools, call_mcp_tool
+from core.models import Cli, Capability
+
+
+def test_tool_schema_is_valid_jsonschema_input_only():
+    tools = build_mcp_tools()
+    plan = next(t for t in tools if t["name"] == "plan_cli_chain")
+    jsonschema.Draft7Validator.check_schema(plan["inputSchema"])
+    assert "outputSchema" not in plan            # output_types are NOT a tool output-schema
+
+
+def test_result_is_structured_content_block(db, spawn_spy):
+    out = call_mcp_tool(db, "search_cli_catalog", {"query": ""})
+    assert out["content"][0]["type"] == "json"   # structured content, capability data inside
+    assert spawn_spy == []                        # describe-only on MCP path too
+
+
+def test_unknown_tool_returns_structured_error(db):
+    out = call_mcp_tool(db, "no_such_tool", {})
+    # must NOT raise — must return the same content-block shape with an error key
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    assert "error" in block["json"]
+    assert "no_such_tool" in block["json"]["error"]
+
+
+def test_unknown_argument_returns_structured_error(db):
+    # "search_cli_catalog" accepts only "query"; passing an unexpected key must
+    # return a structured error rather than letting TypeError leak out of handler
+    out = call_mcp_tool(db, "search_cli_catalog", {"query": "", "injected_key": "bad"})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    assert "error" in block["json"]
+    assert "injected_key" in block["json"]["error"]
+
+
+def test_mcp_wrong_type_arg_returns_structured_error(db):
+    """Wrong-type arg (int instead of list for goal_inputs) is now caught by schema
+    type validation BEFORE the handler runs — returns a structured error block
+    mentioning the type problem."""
+    out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": 42, "goal_outputs": ["text"]})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    error_msg = block["json"].get("error", "")
+    assert error_msg, f"expected error key, got: {block['json']}"
+    # tightened: must mention the field name and the type problem
+    assert "goal_inputs" in error_msg, f"error should mention field name: {error_msg}"
+    assert "array" in error_msg or "int" in error_msg, (
+        f"error should mention type info: {error_msg}"
+    )
+
+
+def test_wrong_type_arg_rejected(db):
+    """search_cli_catalog with query=123 (int instead of str) is rejected by schema
+    validation and returns a structured error — NOT a success and NOT an uncaught exception."""
+    out = call_mcp_tool(db, "search_cli_catalog", {"query": 123})
+    assert "content" in out
+    block = out["content"][0]
+    assert block["type"] == "json"
+    error_msg = block["json"].get("error", "")
+    assert error_msg, f"expected error, got success: {block['json']}"
+    assert "query" in error_msg
+    assert "string" in error_msg or "int" in error_msg
+
+
+def test_correct_type_arg_accepted(db):
+tests/test_ops_registry.py:11:    op = op_by_mcp_tool("plan_cli_chain")
+tests/test_ops_registry.py:13:    assert op.mcp_tool == "plan_cli_chain"
+tests/test_ops_registry.py:18:    assert op.canonical_id == "plan_cli_chain"
+tests/test_ops_registry.py:19:    assert op.mcp_tool == "plan_cli_chain"
+tests/test_mcp.py:8:    plan = next(t for t in tools if t["name"] == "plan_cli_chain")
+tests/test_mcp.py:44:    out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": 42, "goal_outputs": ["text"]})
+tests/test_mcp.py:80:    """plan_cli_chain with goal_inputs as a string (not array) is rejected.
+tests/test_mcp.py:82:    out = call_mcp_tool(db, "plan_cli_chain", {"goal_inputs": "notalist", "goal_outputs": ["text"]})
+import json
+
+from core.mcp.http import build_mcp_app
+from core.mcp.server import build_mcp_tools
+from fastapi.testclient import TestClient
+from core.server.app import create_app
+
+_TOKEN = "test-secret-token"
+
+
+def _mcp_headers(extra=None):
+    h = {
+        "Authorization": f"Bearer {_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if extra:
+        h.update(extra)
+    return h
+
+
+def _parse_sse(text):
+    """MCP Streamable-HTTP replies are SSE; pull the JSON out of `data:` lines."""
+    out = []
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            try:
+                out.append(json.loads(line[6:]))
+            except json.JSONDecodeError:
+                pass
+    return out
+
+
+def test_mcp_http_app_is_asgi_and_exposes_registry_tools():
+    # build_mcp_app returns a mounted ASGI app; its tool set == the shared registry
+    app = build_mcp_app(session=None)   # tool LIST does not need a live session
+    assert app is not None
+    assert callable(app)                # ASGI app is callable
+    # parity: the tool names the HTTP surface advertises == build_mcp_tools()
+    from core.mcp.http import mcp_tool_names
+    assert set(mcp_tool_names()) == {t["name"] for t in build_mcp_tools()}
+
+
+def test_mcp_endpoint_requires_auth(app_session_factory, monkeypatch):
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    client = TestClient(app, raise_server_exceptions=False)
+    # No auth header -> rejected (401/403). MCP Streamable-HTTP uses POST.
+    resp = client.post("/mcp", json={})
+    assert resp.status_code in (401, 403)
+
+
+def test_mcp_endpoint_mounted_and_authed_reachable(app_session_factory, monkeypatch):
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    # TestClient MUST be used as a context manager so the parent FastAPI lifespan
+    # fires, which starts the MCP StreamableHTTPSessionManager.  Without it the
+    # session manager is uninitialized and every real MCP call returns 500.
+    with TestClient(app, raise_server_exceptions=False) as client:
+        # Minimal valid MCP Streamable-HTTP initialize request.  The initialize
+        # method is the standard MCP handshake entry point; it proves the session
+        # manager actually started (a missing lifespan yields 500, not 200).
+        resp = client.post(
+            "/mcp/",
+            headers={
+                "Authorization": f"Bearer {_TOKEN}",
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "id": 1,
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "0.0.1"},
+                },
+            },
+        )
+    assert resp.status_code != 404          # mounted
+    assert resp.status_code != 401          # authed through the gate
+    assert resp.status_code != 500          # session manager was started via lifespan
+
+
+def test_mcp_tools_call_accepts_top_level_args(app_session_factory, monkeypatch):
+    """A real tools/call round-trip with TOP-LEVEL args must SUCCEED.
+
+    Regression guard for the headline bug: when the handler was
+    `def handler(arguments: dict)`, FastMCP advertised
+    inputSchema={"required":["arguments"],...} and a client sending
+    {"query":""} at the top level failed validation. This test FAILS against
+    that old signature and PASSES once the handler advertises the op's real
+    top-level params. Streamable-HTTP replies are SSE, parsed via _parse_sse.
+    """
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        # 1) initialize handshake -> grab the session id
+        init = client.post("/mcp/", headers=_mcp_headers(), json={
+            "jsonrpc": "2.0", "method": "initialize", "id": 1,
+            "params": {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0.0.1"},
+            },
+        })
+        assert init.status_code == 200
+        sid = init.headers.get("mcp-session-id")
+        assert sid
+
+        # 2) notifications/initialized completes the handshake
+        client.post(
+            "/mcp/",
+            headers=_mcp_headers({"mcp-session-id": sid}),
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+        )
+
+        # 3) tools/list: search_cli_catalog must NOT require a nested "arguments"
+        listed = client.post(
+            "/mcp/",
+            headers=_mcp_headers({"mcp-session-id": sid}),
+            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+        )
+        tools = {
+            t["name"]: t
+            for m in _parse_sse(listed.text) if "result" in m
+            for t in m["result"].get("tools", [])
+        }
+        schema = tools["search_cli_catalog"]["inputSchema"]
+        # The headline bug advertised required==["arguments"]; assert it's gone.
+        assert schema.get("required") != ["arguments"]
+        assert "query" in schema.get("properties", {})
+
+        # 4) tools/call with TOP-LEVEL args must succeed (not a validation error)
+        called = client.post(
+            "/mcp/",
+            headers=_mcp_headers({"mcp-session-id": sid}),
+            json={
+                "jsonrpc": "2.0", "method": "tools/call", "id": 3,
+                "params": {"name": "search_cli_catalog",
+from core.ops_registry import OPS, validate_input as _validate_input_shared
+
+_BY_SKILL = {o.a2a_skill: o for o in OPS}
+
+
+def _validate_input(op, input_dict: dict):
+    """Validate input keys and types against op.input_schema. Returns error string or None."""
+    return _validate_input_shared(op, input_dict)
+
+
+def handle_a2a(session, method: str, params: dict):
+    if method == "SendMessage":
+        op = _BY_SKILL.get(params.get("skill"))
+        if op is None:
+            return {"error": "unknown skill"}
+        input_dict = params.get("input", {})
+        err = _validate_input(op, input_dict)
+        if err:
+            return {"error": err}
+        try:
+            result = op.handler(session, **input_dict)
+        except (TypeError, ValueError) as exc:
+            return {"error": f"invalid input: {exc}"}
+        return {"result": result}            # data only; never executes a CLI
+    if method == "GetTask":
+        return {"status": "completed"}
+    return {"error": "unknown method"}
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "rg -n 'def app_session_factory|app_session_factory' tests/conftest.py tests -g 'conftest.py'
+sed -n '1,180p' tests/conftest.py
+python - <<'PY'
+import json, os
+from fastapi.testclient import TestClient
+from sqlmodel import create_engine, Session
+from core.server.app import create_app
+os.environ['A2A_BEARER_TOKEN']='x'
+engine=create_engine('sqlite:///registry.db')
+def sf(): return Session(engine)
+app=create_app(sf)
+headers={'Authorization':'Bearer x','Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+with TestClient(app, raise_server_exceptions=False) as c:
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'initialize','id':1,'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'x','version':'0'}}})
+ sid=r.headers['mcp-session-id']; headers['mcp-session-id']=sid
+ c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'notifications/initialized'})
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'tools/call','id':2,'params':{'name':'plan_cli_chain','arguments':{'goal_inputs':[],'goal_outputs':['text'],'bogus':1}}})
+ print(r.text)
+PY" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ exited 1 in 443ms:
+Traceback (most recent call last):
+  File "<stdin>", line 8, in <module>
+  File "/Users/jcords-macmini/projects/a2a-cli-registry/core/server/app.py", line 33, in create_app
+    from core.mcp.http import build_mcp_app, mount_mcp
+  File "/Users/jcords-macmini/projects/a2a-cli-registry/core/mcp/http.py", line 19, in <module>
+    from mcp.server.fastmcp import FastMCP
+ModuleNotFoundError: No module named 'mcp'
+
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "UV_CACHE_DIR=/tmp/uv-cache uv run python - <<'PY'
+import os, contextlib
+from fastapi.testclient import TestClient
+from sqlmodel import create_engine, Session
+from core.server.app import create_app
+os.environ['A2A_BEARER_TOKEN']='x'
+engine=create_engine('sqlite:///registry.db')
+def sf(): return contextlib.closing(Session(engine))
+app=create_app(sf)
+headers={'Authorization':'Bearer x','Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+with TestClient(app, raise_server_exceptions=False) as c:
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'initialize','id':1,'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'x','version':'0'}}})
+ sid=r.headers['mcp-session-id']; headers['mcp-session-id']=sid
+ c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'notifications/initialized'})
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'tools/call','id':2,'params':{'name':'plan_cli_chain','arguments':{'goal_inputs':[],'goal_outputs':['text'],'bogus':1}}})
+ print(r.text)
+PY" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ exited 2 in 5030ms:
+error: Request failed after 3 retries in 5.0s
+  Caused by: Failed to fetch: `https://pypi.org/simple/fastapi/`
+  Caused by: error sending request for url (https://pypi.org/simple/fastapi/)
+  Caused by: client error (Connect)
+  Caused by: dns error
+  Caused by: failed to lookup address information: nodename nor servname provided, or not known
+
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "ls -d .venv ~/.hermes/hermes-adapter/.venv 2>/dev/null || true
+if [ -x .venv/bin/python ]; then .venv/bin/python -c 'import mcp, fastapi; print(\"ok\")'; fi
+if [ -x ~/.hermes/hermes-adapter/.venv/bin/python ]; then ~/.hermes/hermes-adapter/.venv/bin/python -c 'import mcp, fastapi; print(\"adapter-ok\")'; fi" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 795ms:
+ok
+adapter-ok
+
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import os, contextlib
+from fastapi.testclient import TestClient
+from sqlmodel import create_engine, Session
+from core.server.app import create_app
+os.environ['A2A_BEARER_TOKEN']='x'
+engine=create_engine('sqlite:///registry.db')
+def sf(): return contextlib.closing(Session(engine))
+app=create_app(sf)
+headers={'Authorization':'Bearer x','Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+with TestClient(app, raise_server_exceptions=False) as c:
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'initialize','id':1,'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'x','version':'0'}}})
+ sid=r.headers['mcp-session-id']; headers['mcp-session-id']=sid
+ c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'notifications/initialized'})
+ r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','method':'tools/call','id':2,'params':{'name':'plan_cli_chain','arguments':{'goal_inputs':[],'goal_outputs':['text'],'bogus':1}}})
+ print(r.text)
+PY" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 447ms:
+/Users/jcords-macmini/projects/a2a-cli-registry/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+[07/12/26 13:47:13] INFO     StreamableHTTP       streamable_http_manager.py:131
+                             session manager                                    
+                             started                                            
+                    INFO     Created new          streamable_http_manager.py:281
+                             transport with                                     
+                             session ID:                                        
+                             d2ab7721686f4ffd83b3                               
+                             44f9713d07f3                                       
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             200 OK"                                            
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             202 Accepted"                                      
+                    INFO     Processing request of type            server.py:733
+                             CallToolRequest                                    
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             200 OK"                                            
+                    INFO     StreamableHTTP       streamable_http_manager.py:135
+                             session manager                                    
+                             shutting down                                      
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"Error executing tool plan_cli_chain: (sqlite3.OperationalError) no such column: cli.not_standalone\n[SQL: SELECT cli.slug AS cli_slug, cli.lang AS cli_lang, cli.bucket AS cli_bucket, cli.project AS cli_project, cli.path AS cli_path, cli.launch_spec AS cli_launch_spec, cli.description AS cli_description, cli.source_class AS cli_source_class, cli.health_cmd AS cli_health_cmd, cli.health_status AS cli_health_status, cli.health_checked_at AS cli_health_checked_at, cli.not_standalone AS cli_not_standalone, cli.fixed_by AS cli_fixed_by, cli.enabled AS cli_enabled, cli.a2a_invokable AS cli_a2a_invokable, cli.source_run_id AS cli_source_run_id, cli.last_seen_at AS cli_last_seen_at, cli.updated_at AS cli_updated_at \nFROM cli \nWHERE cli.slug = ?]\n[parameters: ('cli-6',)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"}],"isError":true}}
+
+
+
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import os, contextlib
+from fastapi.testclient import TestClient
+from sqlmodel import create_engine, Session
+from core.server.app import create_app
+os.environ['A2A_BEARER_TOKEN']='x'
+engine=create_engine('sqlite:///registry.db')
+def sf(): return contextlib.closing(Session(engine))
+app=create_app(sf)
+h={'Authorization':'Bearer x','Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+with TestClient(app, raise_server_exceptions=False) as c:
+ r=c.post('/mcp/',headers=h,json={'jsonrpc':'2.0','method':'initialize','id':1,'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'x','version':'0'}}}); h['mcp-session-id']=r.headers['mcp-session-id']
+ c.post('/mcp/',headers=h,json={'jsonrpc':'2.0','method':'notifications/initialized'})
+ r=c.post('/mcp/',headers=h,json={'jsonrpc':'2.0','method':'tools/call','id':2,'params':{'name':'plan_cli_chain','arguments':{'goal_inputs':42,'goal_outputs':['text']}}})
+ print(r.text)
+PY" in /Users/jcords-macmini/projects/a2a-cli-registry
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 423ms:
+/Users/jcords-macmini/projects/a2a-cli-registry/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+[07/12/26 13:47:24] INFO     StreamableHTTP       streamable_http_manager.py:131
+                             session manager                                    
+                             started                                            
+                    INFO     Created new          streamable_http_manager.py:281
+                             transport with                                     
+                             session ID:                                        
+                             96c24a42facf4ea8b41e                               
+                             a1ef5d135566                                       
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             200 OK"                                            
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             202 Accepted"                                      
+                    INFO     Processing request of type            server.py:733
+                             CallToolRequest                                    
+                    INFO     HTTP Request: POST                  _client.py:1025
+                             http://testserver/mcp/ "HTTP/1.1                   
+                             200 OK"                                            
+                    INFO     StreamableHTTP       streamable_http_manager.py:135
+                             session manager                                    
+                             shutting down                                      
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"Error executing tool plan_cli_chain: 1 validation error for plan_cli_chainArguments\ngoal_inputs\n  Input should be a valid list [type=list_type, input_value=42, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/list_type"}],"isError":true}}
+
+
+
+codex
+Fold 1 is not closed. The live data contradicts the proposed specificity result. Fold 2 is adequately specified: the structured payload remains intact inside `content[0].json` before `_unwrap_mcp_json` flattens it, and the straight-line retry is explicitly bounded to one reinference and one second planner call.
+
+1. In `~/.hermes/cli-registry.db`, both `send` and `notify` occur on exactly one live capability—`send_mail`. Their rarity is therefore tied 1–1, so the specified “equal rarity is a hard error” rule cannot resolve `send_mail → email`. The stated count of three `notify` CLIs comes from this repo’s different `registry.db`, which contains those three rows but no `send_mail`; the spec combines distributions from two databases.
+
+2. The formal invariant and test (h) remain incompatible with the preferred match-time fix. With `send_mail.intent_tags='notify,send'` unchanged, the stated raw-intersection expression still returns both `email` and `notify` after disambiguation. Test (h) can only become green by retagging or by redefining the invariant/test over the single resolved verb produced by the disambiguator.
+
+NOT-PLAN-READY
+hook: Stop
+hook: Stop Completed
+tokens used
+64,202
+Fold 1 is not closed. The live data contradicts the proposed specificity result. Fold 2 is adequately specified: the structured payload remains intact inside `content[0].json` before `_unwrap_mcp_json` flattens it, and the straight-line retry is explicitly bounded to one reinference and one second planner call.
+
+1. In `~/.hermes/cli-registry.db`, both `send` and `notify` occur on exactly one live capability—`send_mail`. Their rarity is therefore tied 1–1, so the specified “equal rarity is a hard error” rule cannot resolve `send_mail → email`. The stated count of three `notify` CLIs comes from this repo’s different `registry.db`, which contains those three rows but no `send_mail`; the spec combines distributions from two databases.
+
+2. The formal invariant and test (h) remain incompatible with the preferred match-time fix. With `send_mail.intent_tags='notify,send'` unchanged, the stated raw-intersection expression still returns both `email` and `notify` after disambiguation. Test (h) can only become green by retagging or by redefining the invariant/test over the single resolved verb produced by the disambiguator.
+
+NOT-PLAN-READY
+EXIT=0
