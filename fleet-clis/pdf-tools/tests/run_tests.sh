@@ -38,6 +38,38 @@ out=$(PATH="$HERE/mocks/healthy:$PATH" PDF_BACKEND_URL="http://127.0.0.1:59999" 
 st=$?
 assert_zero "ensure_backend: zero when already healthy" "$st"
 
+# ---- Task 2: verb dispatch + atomic output + split ----------------------
+
+echo ""
+echo "== pdf-tools: dispatch + split =="
+
+CLI="$ROOT/pdf-tools"
+FIX="$HERE/fixtures/sample.pdf"
+
+# split posts to the endpoint and writes output atomically (mock curl => healthy + writes bytes)
+rm -f /tmp/pdft_out.pdf /tmp/pdft_out.pdf.tmp
+out=$(PATH="$HERE/mocks/split-ok:/bin:/usr/bin" \
+      "$CLI" split "$FIX" --pages 1-3 -o /tmp/pdft_out.pdf 2>&1)
+st=$?
+assert_zero      "split: exit 0 on success" "$st"
+assert_file      "split: output written" "/tmp/pdft_out.pdf"
+assert_nofile    "split: tmp cleaned up"  "/tmp/pdft_out.pdf.tmp"
+assert_contains  "split: prints output path" "$out" "/tmp/pdft_out.pdf"
+
+# no output file remains when curl fails (5xx-equivalent)
+rm -f /tmp/pdft_fail.pdf /tmp/pdft_fail.pdf.tmp
+out=$(PATH="$HERE/mocks/split-fail:/bin:/usr/bin" \
+      "$CLI" split "$FIX" --pages 1-3 -o /tmp/pdft_fail.pdf 2>&1)
+st=$?
+assert_nonzero   "split: non-zero when backend errors" "$st"
+assert_nofile    "split: no partial output on failure" "/tmp/pdft_fail.pdf"
+assert_nofile    "split: tmp removed on failure"        "/tmp/pdft_fail.pdf.tmp"
+
+# usage/dispatch: unknown verb => non-zero + usage
+out=$("$CLI" bogus 2>&1); st=$?
+assert_nonzero   "dispatch: unknown verb non-zero" "$st"
+assert_contains  "dispatch: usage names split"     "$out" "split"
+
 echo ""
 echo "results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
