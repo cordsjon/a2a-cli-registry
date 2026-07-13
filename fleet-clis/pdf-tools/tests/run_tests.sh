@@ -70,6 +70,45 @@ out=$("$CLI" bogus 2>&1); st=$?
 assert_nonzero   "dispatch: unknown verb non-zero" "$st"
 assert_contains  "dispatch: usage names split"     "$out" "split"
 
+# ---- form-fill: mocked (always runs) ------------------------------------
+
+echo ""
+echo "== pdf-tools: form-fill (mocked) =="
+
+FORM_FIX="$HERE/fixtures/form_sample.pdf"
+printf '{"fullname":"Jonas Cords"}' > /tmp/pdft_ffdata.json
+
+# form-fill requires --data to be an existing JSON file (else usage/exit 2)
+out=$("$CLI" form-fill "$FORM_FIX" -o /tmp/pdft_ff.pdf 2>&1); st=$?
+assert_nonzero  "form-fill: missing --data => non-zero" "$st"
+
+rm -f /tmp/pdft_ff.pdf /tmp/pdft_ff.pdf.tmp
+out=$(PATH="$HERE/mocks/split-ok:/bin:/usr/bin" \
+      "$CLI" form-fill "$FORM_FIX" --data /tmp/pdft_ffdata.json -o /tmp/pdft_ff.pdf 2>&1)
+st=$?
+assert_zero     "form-fill: exit 0 on success" "$st"
+assert_file     "form-fill: output written"    "/tmp/pdft_ff.pdf"
+assert_nofile   "form-fill: tmp cleaned up"    "/tmp/pdft_ff.pdf.tmp"
+
+# ---- form-fill: LIVE round-trip (auto-skips if backend down) ------------
+
+echo ""
+echo "== pdf-tools: form-fill (live round-trip) =="
+
+LIVE_URL="${PDF_BACKEND_URL:-http://localhost:9141}"
+if curl -fsS "$LIVE_URL/api/v1/info/status" >/dev/null 2>&1; then
+  rm -f /tmp/pdft_fflive.pdf
+  "$CLI" form-fill "$FORM_FIX" --data /tmp/pdft_ffdata.json -o /tmp/pdft_fflive.pdf >/dev/null 2>&1
+  st=$?
+  assert_zero "form-fill live: exit 0" "$st"
+  # read the field value back out of the produced PDF via Stirling
+  val=$(curl -fsS -X POST "$LIVE_URL/api/v1/form/fields" -F "file=@/tmp/pdft_fflive.pdf" 2>/dev/null \
+        | python3 -c "import json,sys; print(json.load(sys.stdin)['fields'][0]['value'])" 2>/dev/null)
+  assert_eq "form-fill live: value landed in output" "Jonas Cords" "$val"
+else
+  echo "  skip live form-fill — backend not reachable at $LIVE_URL"
+fi
+
 echo ""
 echo "results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
