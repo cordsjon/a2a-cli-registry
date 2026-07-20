@@ -49,27 +49,37 @@ else
   echo "apply: portmgr not reachable on :9000 — skipping port registration (backend.sh defaults to 9141)" >&2
 fi
 
-# 2. upsert the two entries into the live feed (skip any slug already present)
+# 2. upsert the entries into the live feed — replace-by-slug, not skip-if-
+#    present, so edits to an existing slug's fields (e.g. new intent_tags)
+#    actually land on re-apply instead of being silently ignored (KP:
+#    "idempotent" only meant safe-to-rerun here, not sync-on-change).
 python3 - "$SEED" "$FEED" "$BIN" <<'PY'
 import json, sys, os, tempfile
 seed_path, feed_path, binpath = sys.argv[1], sys.argv[2], sys.argv[3]
 seed = json.load(open(seed_path))
 feed = json.load(open(feed_path)) if os.path.exists(feed_path) else {"schema_version":1,"run_id":"seeded","clis":[]}
-have = {c.get("slug") for c in feed.get("clis", [])}
+clis = feed.setdefault("clis", [])
+by_slug = {c.get("slug"): i for i, c in enumerate(clis)}
 added = 0
+updated = 0
 for e in seed["entries"]:
-    if e["slug"] in have:
-        continue
     e = dict(e); e["path"] = binpath           # resolve the placeholder path
-    feed.setdefault("clis", []).append(e)
-    added += 1
+    if e["slug"] in by_slug:
+        if clis[by_slug[e["slug"]]] != e:
+            clis[by_slug[e["slug"]]] = e
+            updated += 1
+    else:
+        clis.append(e)
+        by_slug[e["slug"]] = len(clis) - 1
+        added += 1
 # atomic write
 d = os.path.dirname(feed_path) or "."
 fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
 with os.fdopen(fd, "w") as fh:
     json.dump(feed, fh, indent=2)
 os.replace(tmp, feed_path)
-print(f"apply: feed upsert — {added} entry(ies) added ({len(seed['entries'])-added} already present)")
+unchanged = len(seed["entries"]) - added - updated
+print(f"apply: feed upsert — {added} added, {updated} updated, {unchanged} unchanged")
 PY
 
 # 3. populate + probe (use the repo venv — needs portalocker etc.)
