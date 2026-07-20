@@ -1,11 +1,14 @@
 #!/bin/sh
 # pdf-tools — PDF manipulation via a local Stirling PDF backend.
-# Verbs: split | compress | convert | redact | form-fill
+# Verbs: split | compress | convert | redact | form-fill | bundle | unbundle
 # NEVER generates PDFs (WeasyPrint/ReportLab own that) and NEVER merges
 # (SVG-PAINT pypdf owns that). See docs/specs/2026-07-13-*.
 #
 # Endpoints + field names are pinned from a live Stirling 2.14.2 instance
 # (docs/stirling-openapi-snapshot.json). Backend on portmgr port 9141.
+#
+# bundle/unbundle are pure-Python (pypdf, lib/bundle.py + .venv) and need
+# no Stirling backend — see docs/specs/2026-07-20-pdf-bundle-manifest.md.
 set -eu
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -21,10 +24,17 @@ verbs:
   convert  <in.pdf> [--to png|jpg] -o <out>            pdf -> image(s)
   redact   <in.pdf> --words "<a,b>" -o <out.pdf>       true redaction (removes text)
   form-fill <in.pdf> --data <fields.json> -o <out.pdf> fill AcroForm fields
+  bundle   <in1.pdf> <in2.pdf> ... -o <out.pdf>        merge + embed manifest (reversible)
+  unbundle <in.pdf> -o <outdir>                        split back per embedded manifest
 
 Stirling backend auto-starts on demand (Docker, port 9141).
+bundle/unbundle need no backend — pure Python (lib/bundle.py, .venv).
 EOF
   exit 2
+}
+
+_bundle_py() {
+  "$HERE/.venv/bin/python" "$HERE/lib/bundle.py" "$@"
 }
 
 # _run_op <endpoint> <out> <curl -F args...>
@@ -120,6 +130,40 @@ case "$cmd" in
     # form/fill uses field name 'file' (not fileInput) + 'data' JSON string.
     _run_op "/api/v1/form/fill" "$out" \
       -F "file=@$infile" -F "data=<$data"
+    ;;
+
+  bundle)
+    out=""; title=""; inputs=""
+    while [ $# -gt 0 ]; do case $1 in
+      -o) out=$2; shift 2 ;;
+      --title) title=$2; shift 2 ;;
+      -*) usage ;;
+      *) inputs="$inputs $1"; shift ;;
+    esac; done
+    [ -n "$inputs" ] || _die "at least one input PDF required" 2
+    [ -n "$out" ] || usage
+    for f in $inputs; do [ -f "$f" ] || _die "input not found: $f" 2; done
+    [ -x "$HERE/.venv/bin/python" ] || _die "bundle needs $HERE/.venv (pip install -r requirements.txt)" 5
+    if [ -n "$title" ]; then
+      # shellcheck disable=SC2086
+      _bundle_py bundle $inputs --out "$out" --title "$title"
+    else
+      # shellcheck disable=SC2086
+      _bundle_py bundle $inputs --out "$out"
+    fi
+    ;;
+
+  unbundle)
+    infile=""; out=""
+    while [ $# -gt 0 ]; do case $1 in
+      -o) out=$2; shift 2 ;;
+      -*) usage ;;
+      *) infile=$1; shift ;;
+    esac; done
+    [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
+    [ -n "$out" ] || usage
+    [ -x "$HERE/.venv/bin/python" ] || _die "unbundle needs $HERE/.venv (pip install -r requirements.txt)" 5
+    _bundle_py unbundle "$infile" --out "$out"
     ;;
 
   -h|--help|help) usage ;;

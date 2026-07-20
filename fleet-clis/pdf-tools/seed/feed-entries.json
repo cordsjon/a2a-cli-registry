@@ -5,10 +5,10 @@
       "slug": "pdf-tools-safe",
       "lang": "shell",
       "path": "__RESOLVED_AT_APPLY__",
-      "description": "PDF manipulation (safe): split, compress, convert (Stirling-backed, local)",
+      "description": "PDF manipulation (safe): split, compress, convert, bundle, unbundle (Stirling-backed except bundle/unbundle, which are local pypdf)",
       "not_standalone": false,
       "capability": {
-        "intent_tags": ["split", "compress", "convert"],
+        "intent_tags": ["split", "compress", "convert", "bundle", "unbundle", "merge"],
         "input_types": ["file:pdf"],
         "output_types": ["file:pdf", "file:png", "file:docx"],
         "side_effect": "writes-fs",

@@ -109,6 +109,69 @@ else
   echo "  skip live form-fill — backend not reachable at $LIVE_URL"
 fi
 
+# ---- bundle/unbundle: pure-Python, real pypdf round-trip (auto-skips) ---
+
+echo ""
+echo "== pdf-tools: bundle/unbundle =="
+
+PY="$ROOT/.venv/bin/python"
+if [ -x "$PY" ] && "$PY" -c "import pypdf" >/dev/null 2>&1; then
+  WORK=$(mktemp -d)
+  "$PY" - "$WORK" <<'PYEOF'
+import sys
+from pypdf import PdfWriter
+work = sys.argv[1]
+for name, n in [("docA", 3), ("docB", 2), ("docC", 5)]:
+    w = PdfWriter()
+    for _ in range(n):
+        w.add_blank_page(width=200, height=200)
+    with open(f"{work}/{name}.pdf", "wb") as f:
+        w.write(f)
+PYEOF
+
+  out=$("$CLI" bundle "$WORK/docA.pdf" "$WORK/docB.pdf" "$WORK/docC.pdf" -o "$WORK/out.pdfx.pdf" 2>&1)
+  st=$?
+  assert_zero     "bundle: exit 0 on success" "$st"
+  assert_file     "bundle: output written"    "$WORK/out.pdfx.pdf"
+  assert_contains "bundle: prints output path" "$out" "out.pdfx.pdf"
+
+  pages=$("$PY" -c "from pypdf import PdfReader; print(len(PdfReader('$WORK/out.pdfx.pdf').pages))")
+  assert_eq "bundle: page count is sum of inputs (10)" "10" "$pages"
+
+  manifest_names=$("$PY" -c "from pypdf import PdfReader; print(','.join(PdfReader('$WORK/out.pdfx.pdf').attachments.keys()))")
+  assert_eq "bundle: embeds exactly pdfx-manifest.json" "pdfx-manifest.json" "$manifest_names"
+
+  out=$("$CLI" unbundle "$WORK/out.pdfx.pdf" -o "$WORK/split" 2>&1)
+  st=$?
+  assert_zero  "unbundle: exit 0 on success" "$st"
+  assert_file  "unbundle: docA.pdf recovered" "$WORK/split/docA.pdf"
+  assert_file  "unbundle: docB.pdf recovered" "$WORK/split/docB.pdf"
+  assert_file  "unbundle: docC.pdf recovered" "$WORK/split/docC.pdf"
+
+  pa=$("$PY" -c "from pypdf import PdfReader; print(len(PdfReader('$WORK/split/docA.pdf').pages))")
+  pb=$("$PY" -c "from pypdf import PdfReader; print(len(PdfReader('$WORK/split/docB.pdf').pages))")
+  pc=$("$PY" -c "from pypdf import PdfReader; print(len(PdfReader('$WORK/split/docC.pdf').pages))")
+  assert_eq "unbundle: docA page count round-trips" "3" "$pa"
+  assert_eq "unbundle: docB page count round-trips" "2" "$pb"
+  assert_eq "unbundle: docC page count round-trips" "5" "$pc"
+
+  # graceful degradation: no manifest attachment => passthrough as one doc
+  out=$("$CLI" unbundle "$WORK/docA.pdf" -o "$WORK/plain" 2>&1)
+  st=$?
+  assert_zero "unbundle: no-manifest input exits 0 (degradation)" "$st"
+  assert_file "unbundle: no-manifest input passes through"        "$WORK/plain/docA.pdf"
+
+  # missing input => non-zero, no output
+  out=$("$CLI" bundle "$WORK/docA.pdf" "$WORK/nope.pdf" -o "$WORK/never.pdf" 2>&1); st=$?
+  assert_nonzero "bundle: missing input => non-zero" "$st"
+  assert_nofile  "bundle: no output on missing-input failure" "$WORK/never.pdf"
+
+  rm -rf "$WORK"
+else
+  echo "  skip bundle/unbundle — $ROOT/.venv missing or pypdf not installed"
+  echo "  (pip install -r $ROOT/requirements.txt inside $ROOT/.venv)"
+fi
+
 echo ""
 echo "results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

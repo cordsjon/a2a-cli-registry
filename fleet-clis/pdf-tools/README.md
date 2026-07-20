@@ -4,8 +4,8 @@ Local PDF **manipulation** for the agent fleet, backed by a self-managed
 [Stirling PDF](https://stirlingpdf.com) Docker container.
 
 > This CLI **never generates** PDFs (WeasyPrint / ReportLab own generation)
-> and **never merges** (SVG-PAINT's pypdf owns merge). It fills the fleet's
-> five manipulation gaps only. See
+> and **never merges plain PDFs** (SVG-PAINT's pypdf owns merge). It fills the
+> fleet's five manipulation gaps, plus `bundle`/`unbundle` (see below). See
 > `docs/specs/2026-07-13-pdf-manipulation-consolidation-design.md`.
 
 ## Verbs
@@ -17,6 +17,8 @@ Local PDF **manipulation** for the agent fleet, backed by a self-managed
 | `convert` | `pdf-tools convert in.pdf [--to png\|jpg] -o out.png` | `/api/v1/convert/pdf/img` |
 | `redact` | `pdf-tools redact in.pdf --words "A,B" -o out.pdf` | `/api/v1/security/auto-redact` |
 | `form-fill` | `pdf-tools form-fill in.pdf --data fields.json -o out.pdf` | `/api/v1/form/fill` |
+| `bundle` | `pdf-tools bundle a.pdf b.pdf c.pdf -o out.pdf [--title T]` | none — local pypdf |
+| `unbundle` | `pdf-tools unbundle out.pdf -o outdir/` | none — local pypdf |
 
 Every verb prints the output path on success and exits non-zero (with no
 partial output) on failure.
@@ -27,6 +29,21 @@ resulting PDFs, not a single PDF. Name the output accordingly (`-o out.zip`).
 **Note on `redact`:** performs *true* redaction — the underlying text is
 removed, not just visually covered (verified: a redacted word is absent from
 the output's text layer).
+
+**Note on `bundle`/`unbundle`:** stolen from
+[github.com/AlexandrosGounis/pdfx](https://github.com/AlexandrosGounis/pdfx)'s
+format spec (not the Electron app — just the idea). `bundle` concatenates
+pages and embeds a `pdfx-manifest.json` file attachment (ISO 32000-1:2008
+§7.11.4) recording each source document's name and page count. The output is
+a fully valid PDF — any standard reader shows all pages in sequence.
+`unbundle` reads the manifest back and re-splits pages exactly. A PDF with no
+manifest attachment degrades to "one document" (`unbundle` copies it through
+unchanged — the pdfx spec's graceful-degradation rule). Pure Python
+(`pypdf`, via `.venv` in this directory) — no Stirling backend involved. See
+`docs/specs/2026-07-20-pdf-bundle-manifest.md`.
+
+Setup: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+(one-time; `.venv/` is gitignored, not committed).
 
 ## Backend lifecycle
 
