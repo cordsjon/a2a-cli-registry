@@ -20,8 +20,8 @@ import pytest
 from bridge.standalone import classify_standalone
 
 # Real on-disk ground-truth files (skipped if the sibling project isn't present).
-_REAL_SUBAPP = "/Users/jcords-macmini/projects/20_CONSIGLIERE/consigliere/cli/memory_commands.py"
-_REAL_NO_PARSER = "/Users/jcords-macmini/projects/75_Coaching/10_Consulting/20_Tooling/simonw-tools/build_index.py"
+_REAL_SUBAPP = "/Users/jc-folder/projects/20_CONSIGLIERE/consigliere/cli/memory_commands.py"
+_REAL_NO_PARSER = "/Users/jc-folder/projects/75_Coaching/10_Consulting/20_Tooling/simonw-tools/build_index.py"
 
 
 def _w(p, src):

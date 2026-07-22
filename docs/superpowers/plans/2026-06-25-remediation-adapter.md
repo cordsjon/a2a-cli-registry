@@ -114,7 +114,7 @@ def test_build_envelope_shape():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_envelope.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_envelope.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.remediation'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -205,7 +205,7 @@ def build_envelope(proposals, failure_records, *, map_version, generated_at, ses
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_envelope.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_envelope.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
@@ -368,7 +368,7 @@ def test_map_covers_required_aliases():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_classify.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_classify.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.remediation.classify'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -495,7 +495,7 @@ def classify_fleet(rows) -> list:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_classify.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_classify.py -v`
 Expected: all passed (24 cases incl. parametrize).
 
 - [ ] **Step 5: Commit**
@@ -627,7 +627,7 @@ def test_batch_size_at_most_ten():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_hermes.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_hermes.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -774,7 +774,7 @@ class HermesAdapter:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_hermes.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_hermes.py -v`
 Expected: all passed.
 
 - [ ] **Step 5: Commit**
@@ -897,7 +897,7 @@ def test_missing_paperclip_warns_and_skips(capsys):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_paperclip.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_paperclip.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1010,7 +1010,7 @@ class PaperclipAdapter:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_paperclip.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_paperclip.py -v`
 Expected: all passed.
 
 - [ ] **Step 5: Commit**
@@ -1103,7 +1103,7 @@ def test_venv_symlink_escape_refused(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_safefixer.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_safefixer.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1151,7 +1151,7 @@ class SafeFixer:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_safefixer.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_safefixer.py -v`
 Expected: all passed.
 
 - [ ] **Step 5: Commit**
@@ -1284,7 +1284,7 @@ def test_write_proposals_is_atomic_overwrite(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.remediation.run'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1375,7 +1375,7 @@ def run_remediate(session, *, out_path, do_file, apply_safe, max_llm_calls,
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
 Expected: all (orchestration) tests pass.
 
 - [ ] **Step 5: Commit**
@@ -1458,7 +1458,7 @@ def test_cli_db_read_failure_exits_2_no_proposals(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -k cli_ -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -k cli_ -v`
 Expected: FAIL — argparse rejects `remediate` (invalid choice) / handler missing.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1532,13 +1532,13 @@ Add the handler block BEFORE `engine = init_db(args.db)` at line 159 (it manages
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/test_remediation_cli.py -v`
 Expected: all pass.
 
 - [ ] **Step 5: Run the full remediation suite + a smoke against the real demo DB**
 
 ```bash
-cd /Users/jcords-macmini/projects/a2a-cli-registry
+cd /Users/jc-folder/projects/a2a-cli-registry
 python -m pytest tests/test_remediation_*.py -q
 python -m core.cli.main remediate --db demo/registry.db --out /tmp/proposals.json --config demo/config.toml
 python -c "import json; e=json.load(open('/tmp/proposals.json')); \
@@ -1549,7 +1549,7 @@ Expected: suite green; the Counter shows the spec §1 distribution (pip-3rd-part
 
 - [ ] **Step 6: Run the FULL project test suite (no regressions)**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest -q`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest -q`
 Expected: all pre-existing tests still pass (remediate adds no DB schema change).
 
 - [ ] **Step 7: Commit**

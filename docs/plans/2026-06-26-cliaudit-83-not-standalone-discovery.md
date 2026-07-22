@@ -342,8 +342,8 @@ cd ~/projects/a2a-cli-registry && python3 -c "
 from bridge.standalone import classify_standalone
 import glob, os
 gt = {
-  '/Users/jcords-macmini/projects/20_CONSIGLIERE/consigliere/cli/memory_commands.py': 'subapp',
-  '/Users/jcords-macmini/projects/50_KETO/keto-data/scripts/categorize_ai.py': 'no_parser',
+  '/Users/jc-folder/projects/20_CONSIGLIERE/consigliere/cli/memory_commands.py': 'subapp',
+  '/Users/jc-folder/projects/50_KETO/keto-data/scripts/categorize_ai.py': 'no_parser',
 }
 for p, exp in gt.items():
     got = classify_standalone(p) if os.path.exists(p) else 'MISSING'

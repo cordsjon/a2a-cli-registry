@@ -15,7 +15,7 @@
 - New ops follow the existing `Op` dataclass: `canonical_id` snake_case, `input_schema` JSON-Schema, `handler(session, **input)`. Register in `OPS` list — never edit `handle_a2a`.
 - Atomic writes only (tempfile + `Path.replace`). No bare `except Exception`. Cross-platform locks via `portalocker` (already a dep), never `fcntl`.
 - The registry **returns data, never executes a CLI.** A playbook "run" is out of scope for the registry backend — execution belongs to the client/bot. `suggest_playbook` and `list_playbooks` return recipe data + a resolved (validated) plan; they do not spawn processes.
-- Test command: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest <path> -v`. Testpaths are `["tests", "bridge"]`.
+- Test command: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest <path> -v`. Testpaths are `["tests", "bridge"]`.
 - Drift rule (Dagster-style, not mtime): a playbook is **stale** if any referenced CLI's interface signature `sha256(sorted(input_types) + "|" + sorted(output_types))` differs from the signature cached in the playbook's index row at author/reindex time.
 - Favourites are **client-side state**, NOT registry state. No favourites table in this plan.
 
@@ -109,7 +109,7 @@ def test_missing_frontmatter_raises():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_skillmd.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_skillmd.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.skillmd'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -203,7 +203,7 @@ def parse_skillmd(text: str, slug: str) -> Playbook:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_skillmd.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_skillmd.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -254,7 +254,7 @@ def test_empty_root_returns_empty(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_loader.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_loader.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.loader'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -281,7 +281,7 @@ def load_playbooks(root: str = "playbooks") -> list[Playbook]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_loader.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_loader.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Create the seed playbook**
@@ -377,7 +377,7 @@ def test_drift_reports_missing_cli(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_signature.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_signature.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.signature'`
 
 > If the import path `core.store.models` is wrong, first run `grep -rn "class Cli(SQLModel" core/` to find the real module path and fix the import in BOTH the test and `signature.py`. The models live where `Cli`/`Capability` are defined (per plan research: `core/models.py` or `core/store/models.py`).
@@ -418,7 +418,7 @@ def playbook_drift(session, pb: Playbook) -> dict:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_signature.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_signature.py -v`
 Expected: PASS (3 passed)
 
 - [ ] **Step 5: Commit**
@@ -493,7 +493,7 @@ def test_stale_against_index_detects_signature_change(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_index.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_index.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.index'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -565,7 +565,7 @@ def stale_against_index(session, pb: Playbook) -> list:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_index.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_index.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -652,7 +652,7 @@ def test_get_playbook_includes_steps(tmp_path, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_queries.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_queries.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.queries'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -737,7 +737,7 @@ def get_playbook(session, slug: str) -> "dict | None":
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_queries.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_queries.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
@@ -783,7 +783,7 @@ def test_list_playbooks_op_registered():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_ops_registration.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_ops_registration.py -v`
 Expected: FAIL — `KeyError: 'suggest-playbook'`
 
 - [ ] **Step 3: Add the imports and ops**
@@ -808,12 +808,12 @@ Append these two entries to the `OPS` list (after `plan_cli_chain`):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_ops_registration.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_ops_registration.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Run the full suite to confirm no regression**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest -m "not slow" -q`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest -m "not slow" -q`
 Expected: all pass (existing ops untouched; dispatcher unchanged).
 
 - [ ] **Step 6: Commit**
@@ -860,7 +860,7 @@ def test_playbook_detail_404(app_client):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_http_routes.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_http_routes.py -v`
 Expected: FAIL — 404 on `/playbooks` (route not yet defined) or fixture error to resolve first.
 
 - [ ] **Step 3: Add the routes**
@@ -885,13 +885,13 @@ In `core/server/app.py`, after the existing `/clis/{slug}` route (~line 94), add
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_http_routes.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_http_routes.py -v`
 Expected: PASS (2 passed)
 
 - [ ] **Step 5: Run full suite + manual curl smoke**
 
 ```bash
-cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest -m "not slow" -q
+cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest -m "not slow" -q
 ```
 Expected: all pass.
 
@@ -1010,7 +1010,7 @@ def test_resolve_unknown_slug_returns_none(tmp_path, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_resolve.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_resolve.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.playbooks.resolve'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1081,7 +1081,7 @@ def resolve_playbook(session, slug: str) -> "dict | None":
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_resolve.py -v`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest tests/playbooks/test_resolve.py -v`
 Expected: PASS (3 passed)
 
 - [ ] **Step 5: Register the op**
@@ -1104,7 +1104,7 @@ Append to `OPS`:
 
 - [ ] **Step 6: Run full suite**
 
-Run: `cd /Users/jcords-macmini/projects/a2a-cli-registry && python -m pytest -m "not slow" -q`
+Run: `cd /Users/jc-folder/projects/a2a-cli-registry && python -m pytest -m "not slow" -q`
 Expected: all pass.
 
 - [ ] **Step 7: Commit**

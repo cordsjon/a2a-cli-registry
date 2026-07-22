@@ -17,7 +17,7 @@ AUDIT_RECORDS = [
     {
         "bucket": "consigliere",
         "project": "20_CONSIGLIERE",
-        "file": "/Users/jcords-macmini/projects/20_CONSIGLIERE/consigliere/__main__.py",
+        "file": "/Users/jc-folder/projects/20_CONSIGLIERE/consigliere/__main__.py",
         "invocation": "python -m consigliere --help",
         "exit_code": 0,
         "final_class": "PASS",
@@ -26,7 +26,7 @@ AUDIT_RECORDS = [
     {
         "bucket": "svg-paint",
         "project": "30_SVG-PAINT",
-        "file": "/Users/jcords-macmini/projects/30_SVG-PAINT/app/cli/main.py",
+        "file": "/Users/jc-folder/projects/30_SVG-PAINT/app/cli/main.py",
         "invocation": "python app/cli/main.py --help",
         "exit_code": 1,
         "final_class": "BUG",  # crashes -> must be excluded
