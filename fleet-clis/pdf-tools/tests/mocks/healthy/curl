@@ -1,0 +1,5 @@
+#!/bin/sh
+# mock curl: status endpoint healthy -> 200-equivalent success.
+# Emits a status body and exits 0 so _backend_healthy() returns true.
+echo '{"status":"UP"}'
+exit 0

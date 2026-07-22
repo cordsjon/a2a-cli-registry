@@ -59,11 +59,12 @@ def test_summary_counts_all_states_with_total_equal_to_parts(monkeypatch):
         "stale": 1,
         "unknown": 2,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": "1.2.0",
     }
     assert summary["total"] == (
         summary["healthy"] + summary["unhealthy"] + summary["stale"]
-        + summary["unknown"] + summary["not_standalone"]
+        + summary["unknown"] + summary["not_standalone"] + summary["skipped-needs-env"]
     )
 
 
@@ -128,9 +129,56 @@ def test_empty_input_returns_zero_summary_and_no_buckets(monkeypatch):
         "stale": 0,
         "unknown": 0,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": "1.2.0",
     }
     assert model["buckets"] == []
+
+
+def test_sanity_checked_at_display_formatted_for_render(monkeypatch):
+    """The Jinja env has no date filter (core/web/render.py), so the view
+    formats sanity_checked_at into a human 'as of' string the template can
+    print directly. None (never checked) yields no display string."""
+    monkeypatch.setattr(overview_view, "_package_version", lambda: "1.2.0")
+    rows = {
+        "clis": [{"slug": "a", "health_status": "healthy", "project": "p"}],
+        "caps_by_slug": {
+            "a": [{
+                "intent_tags": ["convert"], "input_types": ["path"],
+                "output_types": ["json"], "side_effect": "none",
+                "confidence": "inferred",
+                "sanity_ok": True, "sanity_reason": "",
+                "sanity_checked_at": 1700000000.0,
+            }],
+        },
+        "edges": [],
+    }
+    model = overview_view.build_overview_model(rows)
+    cap = model["buckets"][0]["clis"][0]["capabilities"][0]
+    assert cap["sanity_ok"] is True
+    assert cap["sanity_checked_at_display"]  # a non-empty 'as of' date string
+    assert "1700000000" not in cap["sanity_checked_at_display"]  # formatted, not raw epoch
+
+
+def test_sanity_checked_at_display_empty_when_never_checked(monkeypatch):
+    monkeypatch.setattr(overview_view, "_package_version", lambda: "1.2.0")
+    rows = {
+        "clis": [{"slug": "a", "health_status": "healthy", "project": "p"}],
+        "caps_by_slug": {
+            "a": [{
+                "intent_tags": ["convert"], "input_types": ["path"],
+                "output_types": ["json"], "side_effect": "none",
+                "confidence": "inferred",
+                "sanity_ok": None, "sanity_reason": "",
+                "sanity_checked_at": None,
+            }],
+        },
+        "edges": [],
+    }
+    model = overview_view.build_overview_model(rows)
+    cap = model["buckets"][0]["clis"][0]["capabilities"][0]
+    assert cap["sanity_ok"] is None
+    assert cap["sanity_checked_at_display"] == ""
 
 
 def test_version_unknown_when_package_and_pyproject_are_unavailable(monkeypatch):

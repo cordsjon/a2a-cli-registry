@@ -29,7 +29,7 @@ class Capability(SQLModel, table=True):
     intent_tags: str = ""                           # CSV controlled-vocab verbs
     input_types: str = ""                           # CSV registered typed ports
     output_types: str = ""                          # CSV registered typed ports
-    side_effect: str = "unknown"                    # none/writes-fs/network/destructive/unknown
+    side_effect: str = "unknown"                    # none/writes-fs/network/external/destructive/unknown
     confidence: str = "declared"                    # declared/inferred
 
 

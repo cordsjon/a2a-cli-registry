@@ -6,6 +6,8 @@ from core.remediation.proposal import FailureClass, FixKind, Confidence
 
 MNFE = "ModuleNotFoundError: No module named '{}'"
 
+from core.remediation.classify import _proven_module_mode
+
 
 def test_mapped_identity_third_party():
     p = classify_failure("detect_freshness", MNFE.format("numpy"), "/x/detect_freshness.py")
@@ -66,6 +68,78 @@ def test_dotted_module_uses_top_segment(tmp_path):
     p = classify_failure("c", MNFE.format("google.cloud"), str(tmp_path / "c.py"))
     assert p.target == "google"
     assert p.failure_class == FailureClass.PIP_UNKNOWN
+
+
+def test_proven_module_mode_two_dirs_up(tmp_path):
+    # syllabus_v2 lives at the project root, two directories above the
+    # failing CLI's own file — _proven_local (adjacent-only) would miss
+    # this; _proven_module_mode must find it via _project_root.
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "syllabus_v2").mkdir()
+    (tmp_path / "syllabus_v2" / "__init__.py").write_text("")
+    cli = tmp_path / "scripts" / "tools" / "categorize.py"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("import syllabus_v2\n")
+    p = classify_failure("categorize", MNFE.format("syllabus_v2"), str(cli))
+    assert p.failure_class == FailureClass.WRONG_CWD
+    assert p.fix_kind == FixKind.PROPOSE_ONLY
+    assert "python -m syllabus_v2" in p.evidence
+
+
+def test_proven_module_mode_file_form(tmp_path):
+    # A module as a single file (engine.py) at the project root, not a
+    # package dir - both forms must be proven.
+    (tmp_path / "setup.py").write_text("")
+    (tmp_path / "engine.py").write_text("")
+    cli = tmp_path / "sub" / "run.py"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("import engine\n")
+    p = classify_failure("run", MNFE.format("engine"), str(cli))
+    assert p.failure_class == FailureClass.WRONG_CWD
+    assert "python -m engine" in p.evidence
+
+
+def test_dotted_submodule_partial_proof_is_not_proof(tmp_path):
+    # localpkg exists at the root, but the specific submodule 'missing' does
+    # not. This must NOT be misclassified wrong-cwd - the missing submodule
+    # is a real gap, not a wrong-cwd problem. (This is the case a partial
+    # top-segment-only check would get wrong.)
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "localpkg").mkdir()
+    (tmp_path / "localpkg" / "__init__.py").write_text("")
+    cli = tmp_path / "sub" / "run.py"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("from localpkg import missing\n")
+    p = classify_failure("run", MNFE.format("localpkg.missing"), str(cli))
+    assert p.failure_class == FailureClass.PIP_UNKNOWN
+    assert p.failure_class != FailureClass.WRONG_CWD
+
+
+def test_proven_module_mode_empty_path_returns_none():
+    assert _proven_module_mode("", "anything") is None
+
+
+def test_proven_module_mode_no_root_found_returns_none(tmp_path):
+    # No sentinel anywhere under tmp_path -> _project_root returns None ->
+    # _proven_module_mode must return None, not raise.
+    isolated = tmp_path / "isolated"
+    isolated.mkdir()
+    cli = isolated / "c.py"
+    cli.write_text("")
+    assert _proven_module_mode(str(cli), "somepkg") is None
+
+
+def test_adjacent_file_case_still_wins_over_module_mode(tmp_path):
+    # Regression: the existing _proven_local (adjacent-file) path must still
+    # be checked BEFORE _proven_module_mode, and still produce WRONG_CWD with
+    # its own (non-python-m) evidence wording, per the current test
+    # test_proven_local_module_is_wrong_cwd.
+    (tmp_path / "syllabus_v2.py").write_text("# local module\n")
+    cli = tmp_path / "seed_artefacts.py"
+    cli.write_text("import syllabus_v2\n")
+    p = classify_failure("seed_artefacts", MNFE.format("syllabus_v2"), str(cli))
+    assert p.failure_class == FailureClass.WRONG_CWD
+    assert "proven-local" in p.evidence
 
 
 def test_syntax_error_is_code_bug():

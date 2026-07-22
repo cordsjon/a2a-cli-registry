@@ -1,4 +1,5 @@
 import importlib.metadata
+from datetime import datetime, timezone
 from pathlib import Path
 import tomllib
 
@@ -14,7 +15,22 @@ _HEALTH_GLYPHS = {
     "stale": "\u25c6",
     "unknown": "\u25cb",
     "not_standalone": "\u25cc",   # dotted circle: present-but-not-a-standalone-CLI
+    "skipped-needs-env": "\u25a1",   # hollow square: known env-var gap, not a defect
 }
+
+
+def _sanity_display(cap):
+    """The Jinja env (core/web/render.py) has no date filter, so format the
+    sanity_checked_at unix timestamp into a human 'as of' date HERE and add it
+    as sanity_checked_at_display. Never-checked rows (sanity_checked_at is
+    None) get an empty string. Returns a shallow copy so the incoming _cap_row
+    dict is not mutated."""
+    ts = cap.get("sanity_checked_at")
+    if ts is None:
+        display = ""
+    else:
+        display = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    return {**cap, "sanity_checked_at_display": display}
 
 
 def _bucket_name(cli):
@@ -51,6 +67,7 @@ def build_overview_model(rows) -> dict:
         "stale": 0,
         "unknown": 0,
         "not_standalone": 0,
+        "skipped-needs-env": 0,
         "version": _package_version(),
     }
     buckets = {}
@@ -72,7 +89,7 @@ def build_overview_model(rows) -> dict:
             "health_glyph": _HEALTH_GLYPHS[state],
             "description": desc,
             "desc_is_error": desc_is_error,
-            "capabilities": caps_by_slug.get(slug, []),
+            "capabilities": [_sanity_display(cap) for cap in caps_by_slug.get(slug, [])],
             "edges": [
                 edge for edge in edges
                 if edge.get("from") == slug or edge.get("to") == slug
@@ -86,7 +103,7 @@ def build_overview_model(rows) -> dict:
 
     assert summary["total"] == (
         summary["healthy"] + summary["unhealthy"] + summary["stale"]
-        + summary["unknown"] + summary["not_standalone"]
+        + summary["unknown"] + summary["not_standalone"] + summary["skipped-needs-env"]
     )
 
     return {

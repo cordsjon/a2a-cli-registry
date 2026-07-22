@@ -13,7 +13,15 @@ class PythonAdapter:
 
     def launch_spec(self, rec: CliRecord) -> dict:
         # US-80: invoke as a module (python -m <slug>), not a bare script path.
-        return {"kind": "python_module", "entrypoint": rec.slug, "args_schema": {}}
+        # Carry the absolute script_path too: the fleet's CLIs are loose .py
+        # files (not importable modules), so a downstream executor needs the
+        # concrete path to run `python3 <path>` — the entrypoint slug alone is
+        # not runnable. Consumers that can import the module ignore it.
+        spec = {"kind": "python_module", "entrypoint": rec.slug, "args_schema": {}}
+        path = (rec.path or "").strip()
+        if path:
+            spec["script_path"] = path
+        return spec
 
     def health_cmd(self, rec: CliRecord) -> str:
         # US-77 two-stage filter resolves a safe --help/--version probe.

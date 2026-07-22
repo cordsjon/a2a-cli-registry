@@ -97,6 +97,19 @@ def create_app(session_factory, *, mcp_session=None):
     def graph(session=Depends(_request_session)):
         return queries.cli_graph(session)
 
+    @app.get("/playbooks", dependencies=[Depends(_require_token)])
+    def playbooks(query: str = "", session=Depends(_request_session)):
+        from core.playbooks.queries import list_playbooks
+        return list_playbooks(session, query=query)
+
+    @app.get("/playbooks/{slug}", dependencies=[Depends(_require_token)])
+    def playbook_detail(slug: str, session=Depends(_request_session)):
+        from core.playbooks.queries import get_playbook
+        pb = get_playbook(session, slug)
+        if pb is None:
+            raise HTTPException(status_code=404, detail="playbook not found")
+        return pb            # full candidate shape, includes steps
+
     @app.post("/a2a", dependencies=[Depends(_require_token)])
     def a2a(body: dict, session=Depends(_request_session)):
         return handle_a2a(session, body.get("method"), body.get("params", {}))

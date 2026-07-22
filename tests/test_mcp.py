@@ -117,3 +117,74 @@ def test_describe_via_mcp_omits_launch_spec(db):
     # sanity: we got a real describe result, not an error
     assert "error" not in payload
     assert payload.get("slug") == "secret-cli"
+
+
+def test_plan_cli_chain_accepts_goal_actions_key(db):
+    # schema omission guard (§3): without the ops-schema entry this returns
+    # "unknown input keys: ['goal_actions']" (ops_registry.py:101)
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": ["text"], "goal_actions": []})
+    payload = out["content"][0]["json"]
+    assert not (isinstance(payload, dict) and "unknown input keys" in str(payload.get("error", "")))
+
+
+def test_plan_cli_chain_unknown_verb_is_structured_error(db):
+    # §2.8: unknown verb -> structured op error with the known-verbs vocabulary
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": [], "goal_actions": ["telegram"]})
+    err = out["content"][0]["json"]["error"]
+    assert "unknown action verb: telegram" in err and "known:" in err
+
+
+def test_plan_cli_chain_multi_match_integrity_error_is_structured(db):
+    # registry half of §5 test (n): the §2.2 integrity ValueError surfaces as a
+    # structured _error_block, not an unstructured exception
+    db.add(Cli(slug="dual_mail", lang="python"))
+    db.add(Capability(cli_slug="dual_mail", intent_tags="notify,send", input_types="text",
+                      output_types="text", side_effect="external", confidence="declared"))
+    db.commit()
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": [], "goal_actions": ["email"]})
+    err = out["content"][0]["json"]["error"]
+    assert "action verb integrity" in err and "dual_mail" in err
+
+
+def test_plan_cli_chain_accepts_producer_terms_key(db):
+    # spec §3 (g1): schema omission guard — without the ops-schema entry this
+    # returns "unknown input keys: ['producer_terms']".
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": [], "goal_outputs": ["text"], "producer_terms": []})
+    payload = out["content"][0]["json"]
+    assert not (isinstance(payload, dict) and "unknown input keys" in str(payload.get("error", "")))
+
+
+def _tied_producer_rows(db):
+    from core.models import Cli, Capability
+    for slug in ("aaa_build", "zzz_codename"):
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags="generate", input_types="file:pdf",
+                          output_types="text", side_effect="none", confidence="declared"))
+    db.commit()
+
+
+def test_plan_cli_chain_orders_by_producer_terms_and_serializes_rank(db):
+    # spec §3 (g2 forward + g3 serialize)
+    _tied_producer_rows(db)
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": ["file:pdf"], "goal_outputs": ["text"],
+                         "producer_terms": ["codename"]})
+    chains = out["content"][0]["json"]
+    assert chains[0]["slugs"] == ["zzz_codename"]
+    assert chains[0]["relevance_rank"] == 0
+    assert chains[1]["relevance_rank"] == 1
+
+
+def test_plan_cli_chain_without_producer_terms_is_legacy_ordered(db):
+    # spec §3 (g2 second half): transport-level twin of planner test (b) —
+    # AC-02 invariance through the full op path.
+    _tied_producer_rows(db)
+    out = call_mcp_tool(db, "plan_cli_chain",
+                        {"goal_inputs": ["file:pdf"], "goal_outputs": ["text"]})
+    chains = out["content"][0]["json"]
+    assert chains[0]["slugs"] == ["aaa_build"]           # alphabetical, as today
+    assert all("relevance_rank" in ch for ch in chains)  # additive field always present

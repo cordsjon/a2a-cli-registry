@@ -2,7 +2,8 @@
 from collections import deque
 from dataclasses import dataclass, field
 from sqlmodel import select
-from core.models import Capability, CliEdge
+from core.models import Capability, CliEdge, Cli
+from core.catalog.match import clean_terms, ident_haystack, vocab_haystack, term_matches
 
 # excluded-by-default side-effect classes (fail-UNSAFE): destructive + unknown
 _UNSAFE_DEFAULT = {"destructive", "unknown"}
@@ -16,11 +17,15 @@ class Chain:
     side_effect_count: int
     min_confidence_rank: int       # max over hops of _CONFIDENCE_RANK (worst hop)
     hops: list[dict] = field(default_factory=list)
+    relevance_rank: int = 1    # 0 = a producer hop matches a producer_term (§2.2)
 
     def sort_key(self):
         # length asc, side-effect count asc, min-confidence DESC (rank asc since
-        # lower rank = higher confidence), slug-sequence asc (final tiebreak)
-        return (self.length, self.side_effect_count, self.min_confidence_rank, tuple(self.slugs))
+        # lower rank = higher confidence), relevance asc (0 = producer matches a
+        # requested term — resolves formerly-arbitrary slug ties, spec §2.2),
+        # slug-sequence asc (final tiebreak)
+        return (self.length, self.side_effect_count, self.min_confidence_rank,
+                self.relevance_rank, tuple(self.slugs))
 
 
 def _cap_index(session):
@@ -31,7 +36,7 @@ def _cap_index(session):
 
 
 def _slug_side_effect(caps_for_slug) -> str:
-    order = ["destructive", "unknown", "network", "writes-fs", "none"]
+    order = ["destructive", "unknown", "network", "external", "writes-fs", "none"]
     present = {c.side_effect for c in caps_for_slug}
     for level in order:
         if level in present:
@@ -78,32 +83,134 @@ def _slug_consumes(caps_for_slug) -> set[str]:
     return {p for c in caps_for_slug for p in c.input_types.split(",") if p}
 
 
+# --- goal_actions dimension (spec 2026-07-12-goal-actions-dimension-design §2.2) ---
+# Action verbs are matched to terminal intent tags. Map values are pairwise
+# disjoint (necessary), but the real guard is the max-one-verb-per-live-terminal
+# invariant enforced in _action_terminals (sufficient): a multi-tagged terminal
+# matching >1 verb is a hard integrity error, never a silent pick.
+_ACTION_REQUIRES_TAG = {
+    "email":      {"send"},       # send_mail carries 'send' post-retag (§8 step 0)
+    "notify":     {"notify"},     # a pure-notification terminal (none live today)
+    "webhook":    {"webhook"},
+    "file_write": {"persist"},
+}
+
+
+def _slug_intent_tags(caps_for_slug) -> set[str]:
+    return {t for c in caps_for_slug for t in c.intent_tags.split(",") if t}
+
+
+def _action_terminals(caps, goal_actions) -> set[str]:
+    """Slugs satisfying a requested action verb (§2.2). Raises ValueError on an
+    unknown verb (§2.8 structured-error contract) or on any slug whose intent
+    tags match more than one map verb (max-one-verb-per-live-terminal)."""
+    unknown = [a for a in goal_actions if a not in _ACTION_REQUIRES_TAG]
+    if unknown:
+        raise ValueError(
+            f"unknown action verb: {unknown[0]}; known: {sorted(_ACTION_REQUIRES_TAG)}")
+    terminals = set()
+    for slug, caps_for_slug in caps.items():
+        tags = _slug_intent_tags(caps_for_slug)
+        verbs = [a for a in _ACTION_REQUIRES_TAG if _ACTION_REQUIRES_TAG[a] & tags]
+        if len(verbs) > 1:
+            raise ValueError(
+                f"action verb integrity: terminal '{slug}' matches multiple verbs "
+                f"{sorted(verbs)}")
+        if verbs and verbs[0] in goal_actions:
+            terminals.add(slug)
+    return terminals
+
+
 def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
-               max_chain_depth=4, max_candidate_chains=100):
+               max_chain_depth=4, max_candidate_chains=100, goal_actions=None,
+               producer_terms=None):
     allow_side_effects = set(allow_side_effects or [])
+    goal_actions = list(goal_actions or [])
+    if len(goal_actions) > 1:
+        # §7: one final action hop per goal; forward-compatible list, explicit cap
+        raise ValueError(f"multiple action verbs not supported: {sorted(goal_actions)}")
     caps = _cap_index(session)
+    # §2.2: validates verbs and enforces max-one-verb-per-live-terminal.
+    action_terminals = _action_terminals(caps, goal_actions) if goal_actions else set()
     adjacency = {}
     for e in session.exec(select(CliEdge)).all():
         adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
 
+    # §2.5: planning-time terminal edge synthesis — send_mail-class terminals
+    # have zero persisted incoming edges (edges.py:30 down-weights bare hub
+    # types). Synthesize (producer -> terminal, via H) IN MEMORY, scoped
+    # strictly to terminals matching a requested action; the general hub
+    # down-weight and the persisted CliEdge table are untouched.
+    if goal_actions:
+        for term in sorted(action_terminals):
+            term_in = _slug_consumes(caps[term])
+            for prod, prod_caps in caps.items():
+                if prod == term:
+                    continue
+                for hub in sorted(_slug_produces(prod_caps) & term_in):
+                    pairs = adjacency.setdefault(prod, [])
+                    if (term, hub) not in pairs:
+                        pairs.append((term, hub))
+
     goal_in, goal_out = set(goal_inputs), set(goal_outputs)
-    starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
+    # An empty goal_in means "no input constraint" (a query-only goal like
+    # "list files" or "check status"). `_slug_consumes(c) & goal_in` is always
+    # empty/falsy when goal_in is empty, which used to make EVERY CLI —
+    # including the ones with input_types="" that exist specifically for this
+    # case — permanently unreachable. Only match no-declared-input CLIs when
+    # goal_in is empty; a CLI with a real declared input type still requires
+    # the caller to name it (goal_in non-empty and intersecting).
+    if goal_in:
+        starts = [s for s, c in caps.items() if _slug_consumes(c) & goal_in]
+    else:
+        starts = [s for s, c in caps.items() if not _slug_consumes(c)]
+    # §2.6: ONLY a pure-action goal (empty goal_outputs) admits action
+    # terminals as starts, regardless of their declared inputs. For a compound
+    # goal the terminal is reachable ONLY as a synthesized final hop (§2.5)
+    # downstream of a real producer — starting there would let its
+    # confirmation output masquerade as the artifact (3rd-pass fix).
+    if goal_actions and not goal_out:
+        starts = sorted(set(starts) | action_terminals)
     candidates = []
 
     for start in starts:
-        if len(candidates) >= max_candidate_chains:
-            break
         # BFS state: (path, visited, hops). Cycle guard via visited set.
         q = deque([([start], {start}, [])])
-        while q and len(candidates) < max_candidate_chains:
+        while q:
             path, visited, hops = q.popleft()
             tail = path[-1]
-            # fail-UNSAFE prune: destructive/unknown OR inferred-side-effect
-            if _hop_excluded(caps[tail], allow_side_effects):
-                continue
-            if _slug_produces(caps[tail]) & goal_out:
-                candidates.append(_finalize(path, caps, hops))
-                continue
+            if not goal_actions:
+                # legacy path — byte-identical to the pre-goal_actions planner
+                # (§2.3: "the new clauses are gated behind non-empty goal_actions")
+                if _hop_excluded(caps[tail], allow_side_effects):
+                    continue
+                if _slug_produces(caps[tail]) & goal_out:
+                    candidates.append(_finalize(path, caps, hops))
+                    continue
+            else:
+                # §2.7: slug-scoped, final-position-only self-authorization.
+                # _hop_excluded is consulted unchanged with the caller's
+                # allow_side_effects; the ONLY relaxation is an action terminal
+                # at terminal position (the branch below never expands through
+                # one, so reaching it here IS final position). No other hop and
+                # no other CLI of the same side-effect class is admitted.
+                if _hop_excluded(caps[tail], allow_side_effects) \
+                        and tail not in action_terminals:
+                    continue
+                if tail in action_terminals:
+                    # §2.3 terminal predicate: the final hop is the action; the
+                    # artifact must come from an EARLIER hop (path[:-1]), so a
+                    # dual-capable CLI never satisfies a compound goal in 1 hop.
+                    artifact_met = (not goal_out) or any(
+                        _slug_produces(caps[s]) & goal_out for s in path[:-1])
+                    if artifact_met:
+                        candidates.append(_finalize(path, caps, hops))
+                    # action terminals are FINAL-position only (§2.6/§2.7):
+                    # never expand through one — its confirmation output must
+                    # not feed a later hop as a fake artifact.
+                    continue
+                # §2.4: a producer hop does NOT short-circuit when an action is
+                # requested — fall through to neighbor expansion.
             if len(path) >= max_chain_depth:
                 continue
             for (nxt, via) in adjacency.get(tail, []):
@@ -111,6 +218,27 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
                     continue                       # cycle guard
                 q.append((path + [nxt], visited | {nxt},
                           hops + [{"from": tail, "to": nxt, "via_type": via}]))
+
+    # §2.2 producer relevance: rank 0 iff any PRODUCER hop matches any term
+    # under the shared two-haystack predicate. Producer hops = path[:-1] when
+    # the final hop is an action terminal (its verb already matched, and its
+    # blob must not fake artifact relevance); ALL hops otherwise. Runs before
+    # the [:max_candidate_chains] cut — rank-before-cap is the point (§1.1).
+    terms = clean_terms(producer_terms)
+    if terms and candidates:
+        descs = {c.slug: c.description or "" for c in session.exec(select(Cli)).all()}
+        idents, vocabs = {}, {}
+
+        def _slug_matches(s):
+            if s not in idents:
+                idents[s] = ident_haystack(s, descs.get(s, ""))
+                vocabs[s] = vocab_haystack(caps.get(s, []))
+            return any(term_matches(t, idents[s], vocabs[s]) for t in terms)
+
+        for ch in candidates:
+            producers = ch.slugs[:-1] if ch.slugs[-1] in action_terminals else ch.slugs
+            if any(_slug_matches(s) for s in producers):
+                ch.relevance_rank = 0
 
     candidates.sort(key=lambda c: c.sort_key())
     return candidates[:max_candidate_chains]

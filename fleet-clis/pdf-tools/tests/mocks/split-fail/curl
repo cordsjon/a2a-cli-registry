@@ -1,0 +1,8 @@
+#!/bin/sh
+# mock curl for split failure path.
+# - health probe: healthy (so ensure_backend passes).
+# - op POST: fail (non-zero), write nothing -> _run_op must clean up the tmp.
+case " $* " in
+  *info/status*) echo '{"status":"UP"}'; exit 0 ;;
+esac
+exit 22

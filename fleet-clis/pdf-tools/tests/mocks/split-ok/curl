@@ -1,0 +1,18 @@
+#!/bin/sh
+# mock curl for split success path.
+# - health probe (URL ends in /api/v1/info/status): return 200-equivalent.
+# - op POST (has -o <file>): write fake PDF bytes to that file, exit 0.
+out=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = "-o" ] && out="$a"
+  prev="$a"
+done
+case " $* " in
+  *info/status*) echo '{"status":"UP"}'; exit 0 ;;
+esac
+if [ -n "$out" ]; then
+  printf '%%PDF-1.4\nmock-split-output\n%%%%EOF\n' > "$out"
+  exit 0
+fi
+exit 0

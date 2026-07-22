@@ -17,6 +17,7 @@
       --stale: #7a5c00;
       --unknown: #55606d;
       --not_standalone: #3a7a8c;
+      --skipped-needs-env: #8a6d00;
       --accent: #0f5f8c;
     }
     * { box-sizing: border-box; }
@@ -64,6 +65,7 @@
     .health.stale { color: var(--stale); }
     .health.unknown { color: var(--unknown); }
     .health.not_standalone { color: var(--not_standalone); }
+    .health.skipped-needs-env { color: var(--skipped-needs-env); }
     .filter {
       display: flex;
       flex-wrap: wrap;
@@ -156,6 +158,11 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .sanity { font-size: 12px; white-space: nowrap; }
+    .sanity-ok { color: var(--healthy); }
+    .sanity-fail { color: var(--unhealthy); }
+    .sanity-none { color: var(--muted); }
+    .sanity-asof { color: var(--muted); }
     .card-body {
       border-top: 1px solid var(--line);
       padding: 12px;
@@ -202,6 +209,7 @@
         <span class="health stale">◆ stale {{ model.summary.stale }}</span>
         <span class="health unknown">○ unknown {{ model.summary.unknown }}</span>
         <span class="health not_standalone">◌ not-standalone {{ model.summary.not_standalone }}</span>
+        <span class="health skipped-needs-env">□ skipped-needs-env {{ model.summary["skipped-needs-env"] }}</span>
         <span class="pill">Version {{ model.summary.version }}</span>
       </div>
     </header>
@@ -230,7 +238,7 @@
                   {% if cli.description %}<span class="desc-inline{% if cli.desc_is_error %} desc-error{% endif %}"{% if cli.desc_is_error %} title="probe failure"{% endif %}>{{ cli.description }}</span>{% endif %}
                 </span>
                 <span class="lang">{{ cli.lang }}</span>
-                <span class="health {{ cli.health_status }}">{% if cli.health_status == "healthy" %}●{% elif cli.health_status == "unhealthy" %}▲{% elif cli.health_status == "stale" %}◆{% elif cli.health_status == "not_standalone" %}◌{% else %}○{% endif %} {{ cli.health_status }}</span>
+                <span class="health {{ cli.health_status }}">{{ cli.health_glyph }} {{ cli.health_status }}</span>
               </summary>
               <div class="card-body">
                 <p class="description">{{ cli.description }}</p>
@@ -245,6 +253,7 @@
                         <th>Output</th>
                         <th>Side effect</th>
                         <th>Confidence</th>
+                        <th>Sanity</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -255,6 +264,17 @@
                           <td>{{ cap.output_types | join(", ") }}</td>
                           <td>{{ cap.side_effect }}</td>
                           <td>{{ cap.confidence }}</td>
+                          <td class="sanity">
+                            {% if cap.sanity_ok is none %}
+                              <span class="sanity-none">sanity: not yet checked</span>
+                            {% elif cap.sanity_ok %}
+                              <span class="sanity-ok">&#10003; sanity ok</span>
+                              {% if cap.sanity_checked_at_display %}<span class="sanity-asof"> as of {{ cap.sanity_checked_at_display }}</span>{% endif %}
+                            {% else %}
+                              <span class="sanity-fail">&#10007; {{ cap.sanity_reason }}</span>
+                              {% if cap.sanity_checked_at_display %}<span class="sanity-asof"> as of {{ cap.sanity_checked_at_display }}</span>{% endif %}
+                            {% endif %}
+                          </td>
                         </tr>
                       {% endfor %}
                     </tbody>
