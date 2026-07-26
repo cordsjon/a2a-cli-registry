@@ -95,7 +95,7 @@ def main(argv=None) -> int:
         "command",
         choices=["audit", "discover", "populate", "lifecycle", "serve",
                  "graph", "probe", "overview", "okf-produce", "okf-ingest",
-                 "remediate"],
+                 "remediate", "ard-resolve"],
     )
     parser.add_argument("--db", default="registry.db")
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
@@ -118,6 +118,14 @@ def main(argv=None) -> int:
                         help="[remediate] arm SafeFixer: wheel-only install + isolated re-probe into demo/ venv")
     parser.add_argument("--max-llm-calls", type=int, default=0,
                         help="[remediate] Hermes diagnosis batch cap (default 0 = skip Hermes)")
+    parser.add_argument("--base-url", default="",
+                        help="[ard-resolve] registry base URL to resolve against")
+    parser.add_argument("--type", dest="ard_type", choices=["mcp", "a2a"], default="mcp",
+                        help="[ard-resolve] artifact type to resolve")
+    parser.add_argument("--emit", choices=["claude", "openworker", "hermes"], default="",
+                        help="[ard-resolve] emit a consumer config snippet (mcp only)")
+    parser.add_argument("--check", action="store_true",
+                        help="[ard-resolve] self-check: verify own catalog entries are live")
     args, _rest = parser.parse_known_args(argv)
 
     if args.command == "discover":
@@ -133,6 +141,34 @@ def main(argv=None) -> int:
                 with get_session(engine) as session:
                     populate(session, src, _adapters(), vocab, _RealClock(),
                              mass_removal_threshold=_mass_removal_threshold(_cfg))
+        return 0
+
+    if args.command == "ard-resolve":
+        # Pure network/stdout command: it must reach neither init_db nor the
+        # sidecar lock, so it dispatches here — above every DB-touching branch.
+        # `resolve` is looked up on the MODULE at call time (not imported by
+        # name) so tests can monkeypatch core.ard.resolve.resolve.
+        import core.ard.resolve as ard_resolve
+        from core.ard.emit import emit as ard_emit
+        if args.check:
+            from core.ard.check import run_check     # Task 8
+            return run_check(args.base_url or
+                             os.environ.get("A2A_BASE_URL", "http://localhost:8080"))
+        if not args.base_url:
+            print("ard-resolve: --base-url is required", file=sys.stderr)
+            return 2
+        if args.emit and args.ard_type != "mcp":
+            # AC-2.4: reject the nonsense combo BEFORE any network I/O.
+            print("ard-resolve: --emit is only valid with --type mcp", file=sys.stderr)
+            return 2
+        try:
+            resolved = ard_resolve.resolve(args.base_url, args.ard_type)
+        except ard_resolve.ArdError as e:
+            # One operator-facing line, no traceback: ArdError messages are
+            # already safe to print as-is.
+            print(f"ard-resolve: {e}", file=sys.stderr)
+            return 1
+        print(ard_emit(args.emit, resolved) if args.emit else resolved)
         return 0
 
     if args.command in ("audit", "lifecycle"):
