@@ -382,7 +382,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>" -- core/server/app.py te
 **Interfaces:**
 - Consumes: HTTP surface from Task 4 (in tests, monkeypatched `_fetch_json`).
 - Produces:
-  - `class ArdError(Exception)` — `.message` is the one-line operator message.
+  - `class ArdError(Exception)` — `str(e)` is the one-line operator message (no `.message` attribute; Task 6 uses `f"ard-resolve: {e}"`).
   - `fetch_json(url: str, deadline: float, max_bytes: int = 1_048_576) -> dict`
   - `resolve(base_url: str, type_: str, deadline_s: float = 10.0) -> str` — returns the MCP **endpoint** (for `mcp`, two hops) or the agent-card document URL (for `a2a`).
   - `TYPE_MEDIA = {"mcp": "application/mcp-server-card+json", "a2a": "application/a2a-agent-card+json"}`
