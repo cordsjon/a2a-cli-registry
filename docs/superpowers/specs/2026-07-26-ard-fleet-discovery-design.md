@@ -95,21 +95,38 @@ def ai_catalog():
 - AC-1.3: URLs in entries derive from `A2A_BASE_URL` exactly as the Agent Card
   route does — test with a non-default base URL.
 
-**Dependency note:** `jsonschema` as **test-only** dev dependency, if not already
-transitively present (check `uv.lock` first). Runtime stays dependency-free.
+**Dependency note (resolved):** `jsonschema>=4.0` is **already declared** in
+`pyproject.toml` `[project.optional-dependencies] dev` and present in `uv.lock`
+(4.26.0 importable in `.venv` — verified 2026-07-26). No new dependency, no
+approval needed. `tests/fixtures/` already exists.
 
 ### US-2 (a2a-cli-registry): `ard-resolve` subcommand + E2E consumer proof
 
-New operator CLI subcommand, sibling of `populate`/`probe`/`serve`:
+```
+a2a-cli-registry ard-resolve --base-url <url> --type {mcp|a2a} [--emit {claude|openworker|hermes}]
+```
 
-```
-a2a-cli-registry ard-resolve <base-url> --type {mcp|a2a} [--emit {claude|openworker|hermes}]
-```
+**CLI-shape constraint (verified `core/cli/main.py:91-121`):** this CLI does *not*
+use argparse subparsers. It has ONE positional `command` with a `choices=[...]`
+list plus shared global flags parsed via `parse_known_args`. Consequences the
+implementation MUST respect:
+
+- `ard-resolve` is added to the `choices` list — it cannot take its own positional
+  argument, because the parser has no second positional slot. The base URL is
+  therefore a **flag** (`--base-url`), not a positional as originally drafted.
+- New flags (`--base-url`, `--type`, `--emit`) become globally visible in
+  `--help`, like the existing `[serve]` / `[remediate]` flags. Follow the
+  established convention: prefix each help string with `[ard-resolve]`.
+- Do **not** migrate the CLI to subparsers as part of this epic — that is an
+  unrelated refactor touching every existing command (out of scope; file
+  separately if wanted).
 
 Behavior:
 
 1. Fetch `<base-url>/.well-known/ai-catalog.json` (status-checked before `.json()`;
    non-200 or schema-missing fields → non-zero exit with a one-line error).
+   Timeout: 5s connect/read, so a hung host cannot stall an operator or a
+   consumer's boot path.
 2. Select first entry whose `type` matches: `mcp` → `application/mcp-server-card+json`,
    `a2a` → `application/a2a-agent-card+json`. No match → non-zero exit.
 3. Output:
@@ -170,11 +187,21 @@ Wire the **local** OpenWorker install to the registry using the output of
 `ard-resolve --emit openworker` (config entry added per OpenWorker's MCP server
 config format; token supplied through its SecretStore, not the config file).
 
-- AC-4.1: OpenWorker lists the registry's MCP tools in its tool inventory
-  (verified in the running app).
+- AC-4.1: OpenWorker lists the registry's MCP tools in its tool inventory.
+  **Evidence required:** screenshot or copied tool list naming ≥ 1 registry tool,
+  pasted into the US on close.
 - AC-4.2: One registry tool call (e.g. CLI search) succeeds from an OpenWorker
-  session.
+  session. **Evidence required:** the session transcript excerpt showing the call
+  and its result.
+- AC-4.3: The config entry contains no token literal — the bearer comes from
+  OpenWorker's SecretStore. Verified by grepping the written config file for the
+  token value and finding no match.
 - Scope: local config only. No OpenWorker code changes in this US.
+
+**Manual-verification note:** US-4 and US-5 are the only USs whose ACs cannot run
+in CI (they need the OpenWorker app and physical hives). Their evidence is
+operator-pasted, not automated — stated plainly so nobody later mistakes them for
+test-covered.
 
 ### US-5 (beehive): fleet-wide discovery skill
 
@@ -204,13 +231,20 @@ Two rules follow, and both are acceptance criteria:
 - AC-5.3: The artifact pins the tailnet host; a catalog served from any other host
   is not adopted (mirrors AC-3.3's rejection rule).
 
-### US-7 (a2a-cli-registry): catalog self-check in `probe`
+### US-7 (a2a-cli-registry): catalog self-check
 
-Extend the existing `probe` command (or add `ard-resolve --check`) to verify the
-catalog describes reality: fetch own `/.well-known/ai-catalog.json`, then for each
+Add `ard-resolve --check`: fetch own `/.well-known/ai-catalog.json`, then for each
 entry assert its `url` is reachable and returns the expected shape (agent-card
 entry → valid Agent Card JSON; MCP entry → endpoint responds to an MCP handshake,
 401-without-token counts as alive). Reports per-entry status like CLI health does.
+
+**Not a `probe` extension (verified `core/cli/main.py:286-300`):** `probe` acquires
+the sidecar DB write-lock (`with_file_lock(_db_lock_path)`) and opens a session to
+persist `health_status`. The catalog check is pure HTTP against the server's own
+endpoints and touches no DB rows — folding it into `probe` would make a read-only
+network check contend for the write-lock against a concurrent `populate`, and
+would couple catalog health to DB availability. Keep it lock-free and DB-free
+under `ard-resolve`.
 
 Rationale: without this, AC-2.2 proves the chain worked *once at test time*. In
 production `A2A_BASE_URL` can change, `/mcp` can move, and the catalog keeps
@@ -234,6 +268,20 @@ test keeps passing while the catalog drifts out of conformance with the live spe
   difference and reports the changed field paths.
 - AC-8.2: The check records the upstream retrieval date so the pin's age is visible.
 
+### US-Docs (a2a-cli-registry)
+
+README section "Discovery (ARD)": what the catalog endpoint is, `ard-resolve`
+usage, and copy-paste wiring for Claude Code, codex, and gemini (all three take
+a URL + transport; only the config surface differs).
+
+- AC-D.1: The README section includes at least one worked example whose commands
+  run as written against a local server (copy-paste verified, not hand-typed
+  approximations).
+- AC-D.2: The "What's in vX" list and the Quickstart command block both mention
+  the catalog endpoint, matching how existing features are documented there.
+- AC-D.3: No token literals appear in any documented command — auth is shown as
+  `$A2A_BEARER_TOKEN`.
+
 ### US-6 (OpenWorker upstream — planned, deferred)
 
 Contribute ARD auto-discovery to upstream OpenWorker (fetch `ai-catalog.json` →
@@ -242,26 +290,37 @@ locally for long enough to trust the shape, and (b) ARD spec churn settles
 (v1.0-final or visible multi-vendor adoption). Tracked here so it isn't lost;
 not part of this epic's execution scope.
 
-### US-Docs (a2a-cli-registry)
-
-README section "Discovery (ARD)": what the catalog endpoint is, `ard-resolve`
-usage, and copy-paste wiring for Claude Code, codex, and gemini (all three take
-a URL + transport; only the config surface differs).
-
 ## Sequencing
 
-US-1 → US-2 (needs the endpoint) → US-3/US-4/US-5 in any order (all need US-2's
-resolver or at least US-1's endpoint). US-7 (catalog self-check) should land
-**before** US-5, so remote hives are not the first thing to discover a stale
-catalog. US-8 and US-Docs run alongside. US-6 deferred.
+Strict order, no "any order" ambiguity:
+
+1. **US-1** — serve the catalog (everything else reads it).
+2. **US-2** — `ard-resolve` + E2E proof (needs the endpoint).
+3. **US-7** — catalog self-check (ships with `ard-resolve`; must precede any
+   remote consumer so hives are never the first to discover a stale catalog).
+4. **US-3**, **US-4** — Hermes and local OpenWorker, either order, both
+   independent of each other.
+5. **US-5** — beehive fleet rollout (last consumer: highest blast radius,
+   depends on US-7's check existing).
+6. **US-8**, **US-Docs** — run alongside any of steps 2-5, no ordering constraint.
+7. **US-6** — deferred behind its gate; not in this epic's execution scope.
 
 ## Error handling summary
 
 - Serve side: pure function, no I/O beyond env read — no new failure modes.
-- Resolve side: status-checked fetch, distinct non-zero exits per failure class
-  (AC-2.3).
-- Consumer side: fail-open to existing static config everywhere (AC-3.2); a
-  broken catalog must never degrade a consumer below today's behavior.
+- Resolve side: status-checked fetch with a 5s timeout, distinct non-zero exits
+  per failure class (AC-2.3). No bare `except Exception`; catch the specific
+  network/JSON errors and map each to its own message.
+- Consumer side: fail-open to existing static config everywhere (AC-3.2), except
+  host-mismatch which fails *closed* (AC-3.3) — a broken catalog must never
+  degrade a consumer below today's behavior, and must never silently upgrade one
+  to a new host.
+
+**Observability:** every consumer-side resolution outcome emits exactly one log
+line naming which path was taken — `resolved-from-catalog <url>`,
+`fallback-static <url> (<reason>)`, or `rejected-host-mismatch <catalog-url> vs
+<configured-host>`. Without this, a silently-failing-open adapter looks identical
+to a working one, and the fallback becomes undetectable in production.
 
 ## Risks & trade-offs
 
