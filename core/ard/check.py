@@ -51,7 +51,11 @@ def run_check(base_url: str) -> int:
     for entry in catalog.get("entries", []):
         ident = entry.get("identifier", "<no-identifier>")
         try:
-            doc = fetch_json(entry["url"], deadline)
+            url = entry.get("url")
+            if not isinstance(url, str) or not url:
+                # schema allows a 'data' (inline) variant instead of 'url'
+                raise ArdError("entry has no 'url' (data-inline entries are not supported by this check)")
+            doc = fetch_json(url, deadline)
             if entry.get("type") == TYPE_MEDIA["a2a"]:
                 if "name" not in doc or "url" not in doc:
                     raise ArdError("document is not an Agent Card (missing name/url)")
