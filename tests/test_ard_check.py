@@ -127,6 +127,71 @@ def test_endpoint_status_auth_200_is_ok():
         assert C._endpoint_status(ep, "good-token") == "ok"
 
 
+@contextlib.contextmanager
+def _redirect_server(location=None, code=307, cross_origin_to=None):
+    """POST /mcp -> 307 to /mcp/ (Starlette mount behaviour); POST /mcp/ -> 200.
+
+    urllib does not auto-follow 307/308 on POST, so without an explicit follow
+    in check.py this shape reads as a false FAIL against every real server.
+    """
+    body = b'{"jsonrpc":"2.0","id":1,"result":{}}'
+    hits = {"slash": 0}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.0"
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            if self.path == "/mcp":
+                self.send_response(code)
+                self.send_header("Location", cross_origin_to or location or "/mcp/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            hits["slash"] += 1
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{srv.server_port}/mcp", hits
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_endpoint_status_follows_same_origin_307_on_post():
+    # regression: Starlette 307-redirects /mcp -> /mcp/, and urllib will NOT
+    # follow that on POST. Before the follow-once fix this raised "HTTP 307".
+    with _redirect_server() as (ep, hits):
+        assert C._endpoint_status(ep, "good-token") == "ok"
+        assert hits["slash"] == 1
+
+
+def test_endpoint_status_refuses_cross_origin_redirect():
+    # catalog/server-card content is untrusted: a redirect must never carry the
+    # bearer token to another origin
+    with _redirect_server(cross_origin_to="http://evil.example/mcp/") as (ep, hits):
+        with pytest.raises(R.ArdError, match="HTTP 307"):
+            C._endpoint_status(ep, "good-token")
+        assert hits["slash"] == 0
+
+
+def test_endpoint_status_redirect_loop_is_capped():
+    # /mcp -> /mcp (self-redirect) must terminate, not recurse
+    with _redirect_server(location="/mcp") as (ep, _hits):
+        with pytest.raises(R.ArdError, match="HTTP 307"):
+            C._endpoint_status(ep, "good-token")
+
+
 def test_endpoint_status_unreachable_is_ard_error():
     # closed port -> URLError, surfaced as ArdError (never an uncaught OSError)
     s = socket.socket()
