@@ -38,6 +38,7 @@ a2a-cli-registry okf-produce --out ./bundle           # export catalog as an OKF
 a2a-cli-registry okf-ingest  --bundle ./bundle        # round-trip enriched descriptions back (descriptions only)
 a2a-cli-registry graph                                # see the computed call-graph
 A2A_BEARER_TOKEN=secret a2a-cli-registry serve        # serve A2A + MCP (Streamable HTTP at /mcp)
+a2a-cli-registry ard-resolve --base-url http://localhost:8080   # discover endpoints from the ARD catalog
 # then browse http://localhost:8080/overview or point Claude Code / any MCP client at http://localhost:8080/mcp
 ```
 
@@ -75,6 +76,41 @@ Note: `stale` applies only to unprobeable CLIs (no `health_cmd`). `unknown` appl
 ## What's in v1.3
 - **OKF export:** `okf-produce --out <dir>` exports the catalog as an Open Knowledge Format bundle (Markdown + YAML); byte-stable re-produce, typed ports, call-graph edges in frontmatter.
 - **OKF ingest:** `okf-ingest --bundle <dir>` round-trips LLM/human-enriched descriptions from an OKF bundle back into the catalog (descriptions only).
+
+## Discovery (ARD)
+
+The registry publishes an [ARD](https://github.com/ards-project/ard-spec) catalog at
+`/.well-known/ai-catalog.json` referencing two artifact documents: the A2A Agent Card
+and an MCP server-card (`/.well-known/mcp-server-card.json`, whose `endpoint` is the
+live `/mcp` URL — two-hop resolution per ARD §3.4).
+
+```bash
+# resolve the MCP endpoint from any host serving the catalog
+a2a-cli-registry ard-resolve --base-url http://127.0.0.1:9113
+# → http://127.0.0.1:9113/mcp
+
+# wire Claude Code (codex / gemini operators: same URL + transport, your config surface)
+a2a-cli-registry ard-resolve --base-url http://127.0.0.1:9113 --emit claude
+# → claude mcp add --transport http cli-registry http://127.0.0.1:9113/mcp --header "Authorization: Bearer ${A2A_BEARER_TOKEN}"
+
+# self-check: are the catalog's advertised documents + endpoint actually live?
+A2A_BEARER_TOKEN=… a2a-cli-registry ard-resolve --base-url http://127.0.0.1:9113 --check
+# → urn:air:127.0.0.1:agent:catalog ok
+# → urn:air:127.0.0.1:mcp:server ok
+```
+
+`--check` grades the MCP endpoint in two tiers: with `A2A_BEARER_TOKEN` set it performs a
+real MCP `initialize` handshake and reports `ok`; without a token a `401` only proves the
+auth gate is alive, reported as the visibly weaker `alive-unverified`. Exit code is `1` if
+any advertised document or endpoint is dead.
+
+Other emit targets: `--emit openworker` (JSON config object) and `--emit hermes`
+(`cli_registry_url=…`). Use `--type a2a` to resolve the Agent Card document URL instead of
+the MCP endpoint.
+
+Auth is always referenced by env-var name (`$A2A_BEARER_TOKEN`) — no command here
+ever contains a token literal. Set `ARD_PUBLISHER` to your FQDN to control the
+`urn:air:<publisher>:…` identifiers (defaults to the `A2A_BASE_URL` hostname).
 
 ## What's in v1.2
 - **Web overview:** `GET /overview` serves an open, read-only Swagger-style HTML view with fleet totals, project buckets, filtering, health badges, capabilities, and incident edges. It does not render `launch_spec`.
