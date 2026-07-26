@@ -46,7 +46,7 @@ def build_ai_catalog(base_url: str) -> dict:
         },
         "entries": [
             {
-                "identifier": "urn:air:a2a-cli-registry:agent:catalog",
+                "identifier": f"urn:air:{publisher}:agent:catalog",
                 "displayName": "a2a-cli-registry Agent",
                 "type": "application/a2a-agent-card+json",
                 "url": f"{base_url}/.well-known/agent-card.json",
@@ -59,10 +59,10 @@ def build_ai_catalog(base_url: str) -> dict:
                 ],
             },
             {
-                "identifier": "urn:air:a2a-cli-registry:mcp:server",
+                "identifier": f"urn:air:{publisher}:mcp:server",
                 "displayName": "a2a-cli-registry MCP Server",
                 "type": "application/mcp-server-card+json",
-                "url": f"{base_url}/mcp",
+                "url": f"{base_url}/.well-known/mcp-server-card.json",
                 "description": "MCP Streamable-HTTP endpoint exposing discovery + plan tools (bearer auth).",
                 "tags": ["mcp", "streamable-http", "cli", "registry"],
                 "representativeQueries": [
@@ -73,6 +73,42 @@ def build_ai_catalog(base_url: str) -> dict:
         ],
     }
 ```
+
+**Entry URLs point at artifact documents, not live endpoints (codex gate, verified
+ARD §3.4):** ARD's Strict Value-or-Reference rule defines `url` as "a remote
+reference to the artifact document." Pointing the MCP entry at the live `/mcp`
+protocol endpoint (as originally drafted, and as Risk 2 hedged) violates that
+contract — a conforming client GETs the URL expecting a JSON document and gets a
+protocol endpoint instead. Fix: serve a minimal **MCP server-card document** at
+`/.well-known/mcp-server-card.json` (same pure-function pattern):
+
+```python
+def build_mcp_server_card(base_url: str) -> dict:
+    return {
+        "name": "a2a-cli-registry",
+        "endpoint": f"{base_url}/mcp",
+        "transport": "streamable-http",
+        "auth": {"type": "bearer", "env": "A2A_BEARER_TOKEN"},
+    }
+```
+
+There is no finalized standard for this card's shape yet — keep it to these four
+documented fields and revisit when the media type gets a canonical schema.
+Consumers (US-2 resolver, US-3) fetch the card and read `endpoint` from it —
+two-hop resolution, per the ARD contract.
+
+**URN publisher must be an FQDN (codex gate, verified ARD §4.2.1):** the spec text
+requires `<publisher>` to be "a fully qualified domain name." `a2a-cli-registry`
+is not one. `publisher` therefore comes from the `ARD_PUBLISHER` env var,
+defaulting to the hostname of `A2A_BASE_URL`. On the tailnet that yields an IP
+literal — still not an FQDN, a **documented conformance exception** acceptable
+only because this catalog is never published off-tailnet (Out of scope). If that
+ever changes, a real domain is the prerequisite.
+
+**Pre-existing Agent Card bug (fix-what-you-find):** `build_agent_card()` sets
+`"url": base_url`, but the A2A JSON-RPC service actually lives at `POST /a2a` —
+an A2A client following the card today would call the wrong path. Fix in this US:
+`"url": f"{base_url}/a2a"`, with a regression test.
 
 Route in `core/server/app.py`, cloned from the `card()` route (unauthenticated GET,
 `A2A_BASE_URL` env, no DB session):
@@ -89,11 +125,18 @@ def ai_catalog():
 - AC-1.1: `GET /.well-known/ai-catalog.json` returns 200 with the manifest above;
   no auth required (parity with agent-card route).
 - AC-1.2: The official schema file is vendored at
-  `tests/fixtures/ai-catalog.schema.json` (Apache-2.0, provenance header comment
-  with source URL + retrieval date) and a test validates `build_ai_catalog()`
-  output against it with `jsonschema` (Draft 2020-12).
+  `tests/fixtures/ai-catalog.schema.json` **byte-identical to upstream** — JSON
+  has no comments, so provenance (source URL + retrieval date + upstream commit)
+  goes in a sidecar `tests/fixtures/ai-catalog.schema.provenance.md`. Keeping the
+  vendored copy byte-identical is also what keeps US-8's upstream diff clean.
+  A test validates `build_ai_catalog()` output against it with `jsonschema`
+  (Draft 2020-12).
 - AC-1.3: URLs in entries derive from `A2A_BASE_URL` exactly as the Agent Card
   route does — test with a non-default base URL.
+- AC-1.4: `GET /.well-known/mcp-server-card.json` returns 200 with the four-field
+  card; the catalog's MCP entry `url` points at it (not at `/mcp`).
+- AC-1.5: `build_agent_card()` regression: card `url` ends in `/a2a` and a test
+  asserts the card's URL path matches the mounted A2A route.
 
 **Dependency note (resolved):** `jsonschema>=4.0` is **already declared** in
 `pyproject.toml` `[project.optional-dependencies] dev` and present in `uv.lock`
@@ -125,51 +168,90 @@ Behavior:
 
 1. Fetch `<base-url>/.well-known/ai-catalog.json` (status-checked before `.json()`;
    non-200 or schema-missing fields → non-zero exit with a one-line error).
-   Timeout: 5s connect/read, so a hung host cannot stall an operator or a
-   consumer's boot path.
+   **Deadline: 10s total wall-clock for the whole resolve** (both hops, all
+   phases — DNS, connect, read, redirects), not a per-phase connect/read value;
+   a per-phase 5s can stall a boot path for far longer than 5s.
 2. Select first entry whose `type` matches: `mcp` → `application/mcp-server-card+json`,
-   `a2a` → `application/a2a-agent-card+json`. No match → non-zero exit.
-3. Output:
-   - no `--emit`: the entry's bare `url` on stdout (scripting-friendly).
-   - `--emit claude`: `claude mcp add --transport http cli-registry <url>`
-     (also serves codex/gemini operators — documented, see US-Docs).
+   `a2a` → `application/a2a-agent-card+json`. No match → non-zero exit. More than
+   one match → first wins, warn on stderr.
+3. **Second hop (MCP only, per ARD §3.4):** the entry's `url` is the *server-card
+   document*, not the endpoint. Fetch it, read `endpoint` — that is the MCP URL.
+   For `--type a2a` the entry's `url` (the Agent Card document) is itself the
+   deliverable.
+4. Output:
+   - no `--emit`: the resolved URL on stdout (endpoint for mcp, card URL for a2a).
+   - `--emit claude`:
+     `claude mcp add --transport http cli-registry <endpoint> --header "Authorization: Bearer ${A2A_BEARER_TOKEN}"`
+     — **without the header the generated command dials a bearer-gated endpoint
+     unauthenticated and gets 401**; the env var expands on the consumer side,
+     never here. (Also serves codex/gemini operators — documented, see US-Docs.)
    - `--emit openworker`: JSON snippet matching OpenWorker's `coworker/mcp/config.py`
-     shape: `{"name": "cli-registry", "transport": "http", "url": "<url>"}`.
-   - `--emit hermes`: the hermes-adapter config line `cli_registry_url=<url>`.
+     shape, including its auth field referencing the SecretStore entry by *name*:
+     `{"name": "cli-registry", "transport": "http", "url": "<endpoint>", "auth": "secretstore:cli-registry"}` —
+     exact key names to be matched against OpenWorker's config schema at
+     implementation time, with the invariant: a token literal never appears.
+   - `--emit hermes`: the hermes-adapter config line `cli_registry_url=<endpoint>`
+     (token resolution stays in the adapter's existing `A2A_BEARER_TOKEN` chain).
+   - `--emit` is **only valid with `--type mcp`** — combining it with `--type a2a`
+     would emit an MCP consumer config pointing at an Agent Card document; the
+     combination exits non-zero with a one-line error.
+
+**Input hardening (catalog content is untrusted input):** before any URL from the
+catalog or server-card is used or emitted: scheme must be `http` or `https`;
+response bodies are capped (1 MiB) before parsing; and every value interpolated
+into emitted shell text passes `shlex.quote()` — a malicious catalog must not be
+able to inject shell syntax through an emit snippet.
 
 **Secrets rule:** `ard-resolve` never reads, stores, or prints tokens. Emitted
-snippets reference `$A2A_BEARER_TOKEN` by env-var *name* only where the target
-format needs an auth field. The catalog itself is public; only the MCP/A2A
-endpoints behind it are bearer-gated.
+snippets reference `$A2A_BEARER_TOKEN` / SecretStore entries by *name* only.
+The catalog itself is public; only the MCP/A2A endpoints behind it are
+bearer-gated.
 
 **Acceptance criteria**
 
 - AC-2.1: Each emit format produces the documented output against a served catalog
   (unit tests with a stub HTTP server or TestClient).
 - AC-2.2 (E2E — the "live consumer" gate): a test starts the app, fetches the
-  catalog **as a client** (no hardcoded `/mcp` path), resolves the MCP entry from
-  catalog content, connects with the `mcp` Python client over Streamable-HTTP with
-  bearer auth, and asserts `tools/list` returns ≥ 1 tool. This proves the full
-  chain catalog → entry → endpoint → tools.
-- AC-2.3: Fetch failures (connection refused, 404, invalid JSON, no matching type)
-  each exit non-zero with a distinct one-line message; no tracebacks.
+  catalog **as a client** (no hardcoded paths), resolves the MCP entry, fetches
+  the server-card from the entry's `url`, reads `endpoint` from it, connects with
+  the `mcp` Python client over Streamable-HTTP with bearer auth, and asserts
+  `tools/list` returns ≥ 1 tool. This proves the full chain
+  catalog → entry → server-card → endpoint → tools.
+- AC-2.3: Fetch failures (connection refused, 404, invalid JSON, no matching type,
+  missing `endpoint` in server-card) each exit non-zero with a distinct one-line
+  message; no tracebacks.
+- AC-2.4: `--emit` with `--type a2a` exits non-zero. Emitted claude snippet
+  contains the `Authorization: Bearer ${A2A_BEARER_TOKEN}` header; no emit format
+  ever contains a token literal (test greps output against the env value).
+- AC-2.5: Hardening tests: a catalog URL with scheme `file://`, a URL containing
+  `$(...)` / backticks / quotes, and a >1 MiB body each fail closed with a
+  one-line error; emitted shell text round-trips through `shlex.split` intact.
 
 ### US-3 (hermes-adapter): startup resolution via catalog
 
 At startup, hermes-adapter attempts `GET <registry-base>/.well-known/ai-catalog.json`
-and, on success, sets its effective MCP URL from the resolved
-`application/mcp-server-card+json` entry. **Fail-open:** any failure (timeout,
+and, on success, resolves the `application/mcp-server-card+json` entry, fetches
+the server-card document from its `url`, and sets its effective MCP URL from the
+card's `endpoint` field (same two-hop contract as US-2). **Fail-open:** any failure (timeout,
 non-200, bad schema) falls back to the existing static `cli_registry_url` and logs
 one warning line — discovery must never block boot or change behavior when the
 catalog is unreachable.
 
 **Host-pinning (resolves silent-redirect risk):** a resolved URL is adopted only if
-its **host:port matches the configured registry base** the adapter already trusts.
-A catalog that resolves to a *different* host is REJECTED — adapter keeps static
-config and logs an error naming both URLs. Rationale: fail-open on unreachable is
-safe (degrades to today's behavior), but silently following a redirect to an
-unexpected host is a privilege change, not a degradation. Path/scheme differences
-on the same host are accepted (that is the legitimate use: `/mcp` moving).
+its **host:port matches the configured registry base** the adapter already trusts
+(ports normalized before compare: explicit `:80`/`:443` equals the scheme
+default). A catalog that resolves to a *different* host is REJECTED — adapter
+keeps static config and logs an error naming both URLs. Rationale: fail-open on
+unreachable is safe (degrades to today's behavior), but silently following a
+redirect to an unexpected host is a privilege change, not a degradation.
+
+**Scheme rule (codex gate):** *path* changes on the pinned host are the
+legitimate use (`/mcp` moving) and are accepted. Scheme changes are asymmetric:
+`http → https` upgrade is accepted; **`https → http` downgrade is REJECTED** even
+on the same host:port — a downgraded URL would carry the bearer token in
+cleartext, which is a credential exposure, not a path move. The pinning applies
+to the **final resolved endpoint** (after the server-card hop), not only the
+catalog URL.
 
 - AC-3.1: With the registry serving the catalog, adapter startup logs show the
   resolved-from-catalog URL and CLI-slice tools work (existing test path).
@@ -229,14 +311,24 @@ Two rules follow, and both are acceptance criteria:
   copy), and documents where the bearer token comes from on each hive
   (env/secrets file — never in the synced artifact).
 - AC-5.3: The artifact pins the tailnet host; a catalog served from any other host
-  is not adopted (mirrors AC-3.3's rejection rule).
+  is not adopted (mirrors AC-3.3's rejection rule), and the pin is enforced on the
+  **final resolved endpoint** too — a pinned-host catalog whose server-card
+  `endpoint` points off-tailnet is rejected the same way.
 
 ### US-7 (a2a-cli-registry): catalog self-check
 
 Add `ard-resolve --check`: fetch own `/.well-known/ai-catalog.json`, then for each
 entry assert its `url` is reachable and returns the expected shape (agent-card
-entry → valid Agent Card JSON; MCP entry → endpoint responds to an MCP handshake,
-401-without-token counts as alive). Reports per-entry status like CLI health does.
+entry → valid Agent Card JSON; MCP entry → server-card document with an `endpoint`
+field, then the endpoint itself). Endpoint liveness has two tiers (codex gate —
+"any 401 is alive" only proves the auth gate exists, not that an MCP server is
+behind it):
+
+- **Authenticated (default when `A2A_BEARER_TOKEN` is set):** perform an MCP
+  initialize handshake with the token; healthy = handshake completes.
+- **Unauthenticated (fallback):** 401-without-token counts as alive, and the
+  report labels that entry's status `alive-unverified` — visibly weaker, so a
+  wrong-but-gated path can't masquerade as verified health.
 
 **Not a `probe` extension (verified `core/cli/main.py:286-300`):** `probe` acquires
 the sidecar DB write-lock (`with_file_lock(_db_lock_path)`) and opens a session to
@@ -325,19 +417,28 @@ to a working one, and the fallback becomes undetectable in production.
 ## Risks & trade-offs
 
 1. **Spec churn (highest):** ARD is weeks old. Mitigation: reference-only entries
-   (small surface), vendored schema pinned with provenance, `trustManifest`
-   omitted, US-6 deferred behind a maturity gate.
-2. **Media-type semantics:** the MCP entry's `url` points at the live `/mcp`
-   protocol endpoint while `type` says `…server-card+json` (a card document).
-   This matches observed ecosystem practice (Hugging Face's live catalog points
-   its entry at a service base URL) but could shift; flagged for re-check at
-   spec v1.0.
+   (small surface), vendored schema pinned with provenance sidecar,
+   `trustManifest` omitted, US-6 deferred behind a maturity gate.
+2. **RESOLVED (codex gate) — media-type semantics:** the original draft pointed
+   the MCP entry's `url` at the live `/mcp` endpoint; ARD §3.4 requires `url` to
+   reference the artifact *document*. Fixed via the served
+   `mcp-server-card.json` + two-hop resolution. Residual risk: the server-card's
+   field shape has no canonical schema yet — four minimal fields, revisit when
+   the media type standardizes.
 3. **Static catalog:** entries and `representativeQueries` are constants, not
    DB-derived — they describe the registry, not individual CLIs. Per-CLI ARD
    entries (Option B) remain possible later without breaking Option C consumers.
-4. **URN publisher naming:** `urn:air:a2a-cli-registry:…` uses the project name,
-   not a domain. Fine for self-hosted/tailnet use; revisit only if the catalog
-   is ever published to a public directory.
+4. **URN publisher conformance boundary:** ARD §4.2.1 requires an FQDN publisher.
+   `ARD_PUBLISHER` / base-URL hostname yields an IP literal on the tailnet —
+   still nonconforming, accepted only because off-tailnet publication is out of
+   scope. A real domain is the prerequisite for any public directory listing.
+7. **Origin discovery is NOT solved (codex gate, honesty):** every consumer still
+   receives the registry's base URL from configuration (pinned artifact, static
+   config, operator command). What ARD buys here is *endpoint/path* discovery,
+   config *generation*, and drift *detection* behind a known origin — not
+   zero-config bootstrap. The Problem section's "remote hives can't find the
+   registry" is solved by the *synced pinned artifact*, with ARD resolving the
+   rest; stated so nobody mistakes this for DNS-SD.
 5. **No document-level integrity (accepted, bounded):** with `trustManifest`
    omitted, catalog authenticity rests on transport only — tailnet WireGuard for
    hives, loopback for the Mini. Compensating controls: host-pinning on every
