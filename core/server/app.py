@@ -1,9 +1,12 @@
 import contextlib
 import os
+from urllib.parse import urlparse
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from core.cardgen.card import build_agent_card
+from core.cardgen.ai_catalog import build_ai_catalog
+from core.cardgen.mcp_server_card import build_mcp_server_card
 from core.server.a2a import handle_a2a
 from core.catalog import queries
 from core.web.overview_view import build_overview_model
@@ -74,6 +77,17 @@ def create_app(session_factory, *, mcp_session=None):
     def card():
         base_url = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
         return build_agent_card(base_url)
+
+    @app.get("/.well-known/ai-catalog.json")
+    def ai_catalog():
+        base_url = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
+        publisher = os.environ.get("ARD_PUBLISHER") or (urlparse(base_url).hostname or "localhost")
+        return build_ai_catalog(base_url, publisher=publisher)
+
+    @app.get("/.well-known/mcp-server-card.json")
+    def mcp_server_card():
+        base_url = os.environ.get("A2A_BASE_URL", "http://localhost:8080")
+        return build_mcp_server_card(base_url)
 
     @app.get("/health")
     def health():
