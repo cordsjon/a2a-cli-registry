@@ -146,10 +146,21 @@ non-200, bad schema) falls back to the existing static `cli_registry_url` and lo
 one warning line — discovery must never block boot or change behavior when the
 catalog is unreachable.
 
+**Host-pinning (resolves silent-redirect risk):** a resolved URL is adopted only if
+its **host:port matches the configured registry base** the adapter already trusts.
+A catalog that resolves to a *different* host is REJECTED — adapter keeps static
+config and logs an error naming both URLs. Rationale: fail-open on unreachable is
+safe (degrades to today's behavior), but silently following a redirect to an
+unexpected host is a privilege change, not a degradation. Path/scheme differences
+on the same host are accepted (that is the legitimate use: `/mcp` moving).
+
 - AC-3.1: With the registry serving the catalog, adapter startup logs show the
   resolved-from-catalog URL and CLI-slice tools work (existing test path).
 - AC-3.2: With the registry down or catalog 404, adapter boots on static config
   unchanged (regression test).
+- AC-3.3: With a catalog whose MCP entry points at a *different host*, the adapter
+  rejects it, boots on static config, and logs an error naming both URLs
+  (negative test — this is the spoofed-catalog case).
 - Lands in hermes-adapter's BACKLOG.md as `US-HERMES-ARD-BOOTSTRAP-01`,
   cross-referencing this spec.
 
@@ -173,11 +184,55 @@ tailnet (`100.92.111.112:9113`) via `ard-resolve` or a direct catalog fetch —
 replacing per-hive hardcoded URLs. This is the US where ARD pays for itself:
 remote hives don't share this machine's config files.
 
+**Trust boundary (compensating control for omitted `trustManifest`):** the catalog
+is fetched over **plain HTTP on the tailnet**, so its integrity rests entirely on
+Tailscale's authenticated WireGuard transport — there is no signature on the
+document itself. This is acceptable only because the tailnet is the trust boundary.
+Two rules follow, and both are acceptance criteria:
+
+- The synced artifact **pins the expected host** (`100.92.111.112`) rather than
+  accepting an arbitrary base URL, so a rogue catalog elsewhere cannot enroll a hive.
+- A hive must **never** fetch a catalog from outside the tailnet and act on it.
+  Public-internet ARD consumption stays out of scope until `trustManifest`
+  verification exists (see Risks 1 and 5).
+
 - AC-5.1: On at least one non-Mini hive, a fresh session can list the registry's
   MCP tools with no hand-edited URL — bootstrap path only.
 - AC-5.2: The artifact is distributed through beehive's normal sync (no manual
   copy), and documents where the bearer token comes from on each hive
   (env/secrets file — never in the synced artifact).
+- AC-5.3: The artifact pins the tailnet host; a catalog served from any other host
+  is not adopted (mirrors AC-3.3's rejection rule).
+
+### US-7 (a2a-cli-registry): catalog self-check in `probe`
+
+Extend the existing `probe` command (or add `ard-resolve --check`) to verify the
+catalog describes reality: fetch own `/.well-known/ai-catalog.json`, then for each
+entry assert its `url` is reachable and returns the expected shape (agent-card
+entry → valid Agent Card JSON; MCP entry → endpoint responds to an MCP handshake,
+401-without-token counts as alive). Reports per-entry status like CLI health does.
+
+Rationale: without this, AC-2.2 proves the chain worked *once at test time*. In
+production `A2A_BASE_URL` can change, `/mcp` can move, and the catalog keeps
+advertising stale URLs to every consumer with no signal. The registry already owns
+health-checking as a concept (`probe`, `health_status`) — the catalog should not be
+the one thing that is never probed.
+
+- AC-7.1: With the server running, the check reports both entries reachable.
+- AC-7.2: With an entry URL made wrong (e.g. bad `A2A_BASE_URL`), the check exits
+  non-zero and names the failing entry — verified red before green.
+
+### US-8 (a2a-cli-registry): upstream schema-drift detection
+
+A scheduled check (dagu job or `qmd_health_check`-style weekly gate) fetches the
+upstream `ai-catalog.schema.json`, diffs it against the vendored
+`tests/fixtures/ai-catalog.schema.json`, and alerts on change. ARD is v0.9 with
+admitted churn (Risk 1); a silently-diverging vendored copy means the validation
+test keeps passing while the catalog drifts out of conformance with the live spec.
+
+- AC-8.1: Given an artificially modified vendored copy, the check detects the
+  difference and reports the changed field paths.
+- AC-8.2: The check records the upstream retrieval date so the pin's age is visible.
 
 ### US-6 (OpenWorker upstream — planned, deferred)
 
@@ -196,7 +251,9 @@ a URL + transport; only the config surface differs).
 ## Sequencing
 
 US-1 → US-2 (needs the endpoint) → US-3/US-4/US-5 in any order (all need US-2's
-resolver or at least US-1's endpoint) → US-Docs alongside → US-6 deferred.
+resolver or at least US-1's endpoint). US-7 (catalog self-check) should land
+**before** US-5, so remote hives are not the first thing to discover a stale
+catalog. US-8 and US-Docs run alongside. US-6 deferred.
 
 ## Error handling summary
 
@@ -222,10 +279,23 @@ resolver or at least US-1's endpoint) → US-Docs alongside → US-6 deferred.
 4. **URN publisher naming:** `urn:air:a2a-cli-registry:…` uses the project name,
    not a domain. Fine for self-hosted/tailnet use; revisit only if the catalog
    is ever published to a public directory.
+5. **No document-level integrity (accepted, bounded):** with `trustManifest`
+   omitted, catalog authenticity rests on transport only — tailnet WireGuard for
+   hives, loopback for the Mini. Compensating controls: host-pinning on every
+   consumer (AC-3.3, AC-5.3) and a hard rule against consuming off-tailnet
+   catalogs. This is the risk that most warrants revisiting at ARD v1.0; a signed
+   catalog would let us drop the pinning rule rather than keep layering on it.
+6. **`representativeQueries` are unmeasured:** hand-written strings whose retrieval
+   value is asserted, not tested — no consumer in this repo reads them today
+   (verified: no semantic/embedding consumer in `core/`). They are cheap and
+   spec-conformant, so they ship, but no claim is made that they improve discovery
+   until some consumer actually indexes them.
 
 ## Out of scope
 
-- `trustManifest` / signing / attestations (spec too young; real new surface).
+- `trustManifest` / signing / attestations (spec too young; real new surface) —
+  see Risk 5 for the compensating controls that make this acceptable.
+- Consuming ARD catalogs from outside the tailnet (blocked until Risk 5 is closed).
 - Per-CLI catalog entries (Option B).
 - Consuming *other* hosts' ARD catalogs into the registry DB.
 - Any upstream OpenWorker code change (deferred to US-6).
