@@ -10,3 +10,5 @@ HANDOVER-*.md
 .superpowers/
 demo/
 registry.db.lock
+.remediate-runs/
+.codex-runs/
