@@ -159,7 +159,12 @@ MARKER="$WORK_DIR/.$STAMP.marker"
 
 echo "codex-run: $CODEX exec --skip-git-repo-check -o $OUT (prompt: $PROMPT_FILE)" >&2
 set +e
-"$CODEX" exec --skip-git-repo-check -o "$OUT" "${EXTRA_ARGS[@]}" \
+# ${ARR[@]+"${ARR[@]}"}, not "${ARR[@]}": macOS ships bash 3.2, where expanding
+# an EMPTY array under `set -u` is an unbound-variable error. Since no extra
+# codex args is the default invocation, the plain form aborted the run here and
+# then reported the resulting empty -o file as codex's silent-empty bug — i.e.
+# codex was never actually called.
+"$CODEX" exec --skip-git-repo-check -o "$OUT" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   "$(cat "$PROMPT_FILE")" </dev/null 2>&1 | tee "$STDOUT_LOG"
 CODEX_RC="${PIPESTATUS[0]}"
 set -e
