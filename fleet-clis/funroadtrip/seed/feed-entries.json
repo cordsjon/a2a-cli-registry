@@ -1,0 +1,19 @@
+{
+  "_comment": "Committed source-of-truth for the funroadtrip registry entry. The live feed (demo/cli-audit/latest.json) and registry.db are gitignored generated state, so this entry does NOT travel with git. Apply it on any machine with `sh fleet-clis/funroadtrip/seed/apply.sh`. Unlike pdf-tools, funroadtrip's binary lives in its OWN separate repo (~/projects/60_funroadtrip), not under fleet-clis/ -- precedented by existing entries whose path points outside this repo (generate_pdf_v2 -> 30_SVG-PAINT, generate_pdf -> 50_KETO). Path is resolved at apply time from FUNROADTRIP_REPO, not hardcoded here.",
+  "entries": [
+    {
+      "slug": "funroadtrip-nearby",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "What kid-friendly POI (playground, toilets, food, fuel, ...) is near this GPS position, within a radius or widened until N results are found. The device/agent contract: --json emits one object per hit with toilet/opening-hours/chain-vouch three-state fields, never a collapsed boolean. Read-only -- queries a local SQLite corpus of ~1.06M harvested OSM POIs, no network call.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["nearby", "search", "find_poi", "roadtrip_stop"],
+        "input_types": ["text:coordinates"],
+        "output_types": ["json:poi"],
+        "side_effect": "read-only",
+        "confidence": "declared"
+      }
+    }
+  ]
+}
