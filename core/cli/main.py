@@ -20,6 +20,32 @@ from core.adapters.stub_adapter import StubAdapter
 from core.vocabulary import VocabularyRegistry
 from core.populate import populate
 
+#: The registry the live service actually serves. `cli-registry-serve.sh`
+#: launches `serve` with an explicit `--db $HOME/.hermes/cli-registry.db`, so
+#: this is the DB behind :9113 -- and the one every ad-hoc command must reach
+#: by default too.
+#:
+#: This used to default to the bare relative "registry.db", which resolved
+#: against the caller's cwd. In the repo that is a stale copy (479 rows, last
+#: written 2026-08-03, vs 572 live): reads answered from dead data and writes
+#: landed where nothing serves, with no error either way. Anywhere else it
+#: silently CREATED an empty DB. `tools/reclassify_*.py` already used the
+#: pattern below; these entrypoints never got migrated.
+DEFAULT_DB = os.path.join(os.path.expanduser("~"), ".hermes", "cli-registry.db")
+
+#: Honored by cli-registry-serve.sh; same name here so one override moves both.
+DB_ENV_VAR = "REGISTRY_DB"
+
+
+def resolve_db(db: str | None) -> str:
+    """Resolve the DB path: explicit flag > $REGISTRY_DB > DEFAULT_DB.
+
+    `~` and `$VARS` are expanded so an operator-supplied path never reaches
+    sqlite as a literal that would be created as a weird relative file.
+    """
+    chosen = db or os.environ.get(DB_ENV_VAR) or DEFAULT_DB
+    return os.path.expanduser(os.path.expandvars(chosen))
+
 
 def _adapters():
     """The language adapters every mutating command dispatches through.
@@ -97,7 +123,11 @@ def main(argv=None) -> int:
                  "graph", "probe", "overview", "okf-produce", "okf-ingest",
                  "remediate", "ard-resolve"],
     )
-    parser.add_argument("--db", default="registry.db")
+    parser.add_argument(
+        "--db", default=None,
+        help=(f"registry DB (default: ${DB_ENV_VAR} or {DEFAULT_DB}); "
+              "the DB the live service on :9113 serves"),
+    )
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
@@ -127,6 +157,10 @@ def main(argv=None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="[ard-resolve] self-check: verify own catalog entries are live")
     args, _rest = parser.parse_known_args(argv)
+    # Normalize once, at the single seam: every `args.db` use below (12 of
+    # them) then gets an absolute, expanded path without each call site having
+    # to remember to resolve it.
+    args.db = resolve_db(args.db)
 
     if args.command == "discover":
         # A pure --dry-run discover only LISTS; it must not create registry.db.

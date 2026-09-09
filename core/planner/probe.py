@@ -32,6 +32,11 @@ from core.planner.search import (
     _slug_produces, _slug_consumes, _slug_intent_tags,
 )
 from core.store.db import init_db, get_session
+# Same default + resolution order as the main entrypoint, imported rather than
+# restated: a probe answering from a different DB than the one the registry
+# serves reports grounding facts about the wrong fleet. (No cycle: core.cli.main
+# does not import core.planner.probe.)
+from core.cli.main import DEFAULT_DB, DB_ENV_VAR, resolve_db
 
 
 def _csv(value) -> list[str]:
@@ -139,9 +144,13 @@ def main(argv=None) -> int:
     ap.add_argument("--goal-actions", action="append", default=[],
                     help="final action verb (at most one, per spec §7)")
     ap.add_argument("--producer-terms", action="append", default=[])
-    ap.add_argument("--db", default="registry.db")
+    ap.add_argument(
+        "--db", default=None,
+        help=f"registry DB (default: ${DB_ENV_VAR} or {DEFAULT_DB})",
+    )
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)
+    args.db = resolve_db(args.db)
 
     try:
         engine = init_db(args.db)
