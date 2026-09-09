@@ -1,0 +1,25 @@
+cli_audit_path = "demo/cli-audit/latest.json"
+
+[thresholds]
+mass_removal = 0.30
+
+[vocabulary]
+registered = ["text", "text:doc", "text:summary", "url", "file", "json", "json:invoice", "file:json", "file:csv", "file:yaml", "file:xml", "file:pdf", "file:md", "file:html", "file:pptx", "file:ppsx", "file:potx", "file:xlsx", "file:docx", "image", "file:png", "file:svg", "text:coordinates", "json:poi"]
+
+[vocabulary.aliases]
+pdf = "file:pdf"
+PDF = "file:pdf"
+csv = "file:csv"
+yaml = "file:yaml"
+yml = "file:yaml"
+xml = "file:xml"
+pptx = "file:pptx"
+ppsx = "file:ppsx"
+potx = "file:potx"
+xlsx = "file:xlsx"
+docx = "file:docx"
+md = "file:md"
+markdown = "file:md"
+html = "file:html"
+png = "file:png"
+svg = "file:svg"

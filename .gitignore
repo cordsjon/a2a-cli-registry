@@ -11,6 +11,11 @@ build/
 *.pyc
 HANDOVER-*.md
 .superpowers/
-demo/
+# demo/ holds janitor-swept blobs (cli-audit/latest.json, proposals.json) BUT
+# also config.toml, which the live service runs with (--config demo/config.toml)
+# and which fleet-clis/*/seed/apply.sh default to. Exclude the contents, not the
+# directory itself — git cannot re-include a file under an excluded directory.
+demo/*
+!demo/config.toml
 .remediate-runs/
 .codex-runs/
