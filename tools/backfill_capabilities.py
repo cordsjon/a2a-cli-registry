@@ -133,10 +133,17 @@ def _persist_sanity(db_path: str, sanity_results: list[dict], checked_at: float)
     drift-only sanity_ok/sanity_reason/sanity_checked_at columns (added by
     ensure_provenance_columns). Runs on EVERY run_pipeline invocation,
     dry-run included, so the /overview "as of" staleness label stays
-    meaningful between commits."""
+    meaningful between commits.
+
+    Rows whose check could not be performed (router unreachable) are SKIPPED,
+    not written as sanity_ok=0: that column means "the checker judged this row
+    bad", and an outage is not a judgment. Persisting it would stamp a false
+    verdict on every row and leave the previous, real verdict overwritten."""
     con = sqlite3.connect(db_path)
     try:
         for r in sanity_results:
+            if r.get("unreachable"):
+                continue
             con.execute(
                 """UPDATE capability SET sanity_ok=?, sanity_reason=?, sanity_checked_at=?
                    WHERE cli_slug=?""",
@@ -254,6 +261,13 @@ def _run_calibration() -> tuple[bool, str]:
     mismatches = []
     for case in CALIBRATION_SET:
         result = _REAL_CHECK_ROW(case["slug"], case["description"], case["capability"])
+        if result.get("unreachable"):
+            # Stop at the first outage rather than walking the whole set and
+            # reporting "mismatched: [...]" -- that reads as "the fixtures are
+            # wrong" when the truth is "nothing was asked". Every expected_ok
+            # case fails this way, so the mismatch list looks like a
+            # calibration drift and sends the reader after the wrong bug.
+            return False, result["reason"]
         if result["ok"] != case["expected_ok"]:
             mismatches.append(case["slug"])
     ok = not mismatches
@@ -317,9 +331,16 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if not result["summary"]["calibration_ok"]:
+        detail = result["summary"]["calibration_detail"]
+        # Two very different faults land here. Do not tell someone to
+        # recalibrate a checker that was never reached.
+        hint = (
+            "Start the router or point SANITY_ROUTER_URL at it; nothing was checked."
+            if "unreachable" in detail
+            else "The checker may be miscalibrated -- fix before committing."
+        )
         print(
-            f"REFUSED: sanity-check calibration failed ({result['summary']['calibration_detail']}). "
-            "The checker may be miscalibrated -- fix before committing.",
+            f"REFUSED: sanity-check calibration failed ({detail}). {hint}",
             file=sys.stderr,
         )
         sys.exit(1)

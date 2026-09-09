@@ -5,13 +5,21 @@ never edits rows, only flags them ok=True/False with a reason.
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 
-ROUTER_URL = "http://localhost:9111/v1/chat/completions"
-ROUTER_MODEL = "deepseek-v4-flash"
-ROUTER_KEY = "router-local"
+# The router is not always on loopback: api-router is currently launched as
+# `uvicorn --host <tailnet-ip> --port 9111`, so "localhost" is refused even
+# though the service is up and healthy. Keep loopback as the default (it is
+# right when the router binds 0.0.0.0) but let the caller redirect without
+# editing source.
+ROUTER_URL = os.environ.get(
+    "SANITY_ROUTER_URL", "http://localhost:9111/v1/chat/completions"
+)
+ROUTER_MODEL = os.environ.get("SANITY_ROUTER_MODEL", "deepseek-v4-flash")
+ROUTER_KEY = os.environ.get("SANITY_ROUTER_KEY", "router-local")
 
 _PATH_LIKE = re.compile(r"^[\w./-]+\.py$")
 _TRACEBACK_MARKERS = ("Error", "Traceback", "Errno", "Exception")
@@ -43,7 +51,16 @@ def _mechanical_prefilter(description: str) -> str | None:
     return None
 
 
-def _call_router(prompt: str, slug: str, timeout: int = 30) -> dict | None:
+# Returned by _call_router when the router could not be REACHED at all, as
+# distinct from reached-but-answered-badly. Both used to collapse into None,
+# so an outage was reported as "ambiguous or malformed model output" -- an
+# accusation against the row for what is an infrastructure fault.
+UNREACHABLE = object()
+
+
+def _call_router(prompt: str, slug: str, timeout: int = 30):
+    """Returns the parsed judgment dict, None if the router answered but the
+    answer was unusable, or UNREACHABLE if it could not be contacted."""
     payload = {
         "model": ROUTER_MODEL,
         "messages": [
@@ -62,10 +79,13 @@ def _call_router(prompt: str, slug: str, timeout: int = 30) -> dict | None:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
-                return None
+                return UNREACHABLE
             body = json.loads(resp.read().decode())
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+    except json.JSONDecodeError:
+        # Reached it; it just said something we cannot parse.
         return None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return UNREACHABLE
     try:
         content = body["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError):
@@ -94,13 +114,29 @@ def check_row(slug: str, description: str, capability: dict) -> dict:
         f"Description: {description}\n"
         f"Capability fields: {json.dumps(capability)}"
     )
+    def _usable(r) -> bool:
+        return (
+            r is not UNREACHABLE
+            and bool(r)
+            and "ok" in r
+            and isinstance(r["ok"], bool)
+        )
+
     result = _call_router(prompt, slug)
-    if not result or "ok" not in result or not isinstance(result["ok"], bool):
+    if not _usable(result):
         # One retry: a transient router hiccup is indistinguishable from a
         # malformed judgment and must not condemn a good row (2 rows failed
         # this way in round 3).
         result = _call_router(prompt, slug)
-    if not result or "ok" not in result or not isinstance(result["ok"], bool):
+    if not _usable(result):
+        if result is UNREACHABLE:
+            # NOT a verdict on the row. The caller must not persist this as
+            # "this row is bad" -- it means we never got to ask.
+            return {
+                "ok": False,
+                "unreachable": True,
+                "reason": f"router unreachable at {ROUTER_URL} (set SANITY_ROUTER_URL)",
+            }
         return {"ok": False, "reason": "ambiguous or malformed model output"}
     return {"ok": bool(result["ok"]), "reason": str(result.get("reason", ""))}
 

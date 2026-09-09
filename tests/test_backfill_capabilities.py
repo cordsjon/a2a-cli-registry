@@ -5,6 +5,38 @@ import pytest
 
 import tools.backfill_capabilities as backfill
 
+# The --commit path runs _run_calibration(), which deliberately calls the REAL
+# sanity_check.check_row (captured as _REAL_CHECK_ROW at import) so a test stub
+# cannot fool the gate into passing. That makes every --commit test an
+# integration test: it needs the LLM router reachable at ROUTER_URL.
+#
+# Without this marker those tests fail with a calibration error, which reads as
+# "the checker drifted" rather than "the router is down" -- the misdiagnosis
+# that left them sitting as 6 unexplained failures. Point SANITY_ROUTER_URL at
+# a live router to run them (the service does not always bind loopback).
+def _router_reachable() -> bool:
+    import urllib.error
+    import urllib.request
+
+    from tools.sanity_check import ROUTER_URL
+
+    try:
+        urllib.request.urlopen(ROUTER_URL, data=b"{}", timeout=3)
+    except urllib.error.HTTPError:
+        return True  # answered, even if it rejected this probe
+    except OSError:
+        return False
+    return True
+
+
+needs_router = pytest.mark.skipif(
+    not _router_reachable(),
+    reason=(
+        "LLM router unreachable at tools.sanity_check.ROUTER_URL; the calibration "
+        "gate calls the real checker by design. Set SANITY_ROUTER_URL to run."
+    ),
+)
+
 
 def _make_drifted_db(path):
     """Mirrors the LIVE registry.db schema exactly, including the missing
@@ -99,6 +131,7 @@ def test_dry_run_writes_proposals_and_zero_db_changes(drifted_db, monkeypatch, t
     assert row[0] == "30_x/csv2json.py"  # unchanged -- dry-run never writes
 
 
+@needs_router
 def test_commit_updates_capability_and_description_and_creates_backup(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -115,6 +148,7 @@ def test_commit_updates_capability_and_description_and_creates_backup(drifted_db
     assert backups
 
 
+@needs_router
 def test_manual_capability_provenance_protected_independently_of_description(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -135,6 +169,7 @@ def test_manual_capability_provenance_protected_independently_of_description(dri
     assert desc[0] == "A test CLI that converts things."  # description still refreshed
 
 
+@needs_router
 def test_manual_description_provenance_protected_independently_of_capability(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -155,6 +190,7 @@ def test_manual_description_provenance_protected_independently_of_capability(dri
     assert cap[0] == "path"  # capability still refreshed
 
 
+@needs_router
 def test_backup_failure_aborts_write(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -263,6 +299,7 @@ def test_commit_refuses_when_sanity_failure_rate_exceeds_threshold(drifted_db, m
     assert row[0] == "30_x/csv2json.py"  # refused -- no write happened
 
 
+@needs_router
 def test_commit_proceeds_when_failure_rate_under_threshold(drifted_db, monkeypatch, tmp_path):
     _patch_pipeline(monkeypatch, sanity_ok=True)  # 0% failure rate
     monkeypatch.chdir(tmp_path)
@@ -273,6 +310,7 @@ def test_commit_proceeds_when_failure_rate_under_threshold(drifted_db, monkeypat
     assert row[0] == "A test CLI that converts things."
 
 
+@needs_router
 def test_all_474_rows_get_description_only_python_rows_get_capability(drifted_db, monkeypatch, tmp_path):
     # csv2json is python (lang='python'), shellwrap is lang='shell'
     _patch_pipeline(monkeypatch)
