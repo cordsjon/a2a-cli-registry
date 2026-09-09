@@ -30,6 +30,7 @@
 
 **Acceptance Criteria:**
 - [ ] AC-01: `registry-inspect` prints schema/tag-coverage/type-coverage/path-resolution stats for an explicitly-named DB path (help text names the two DBs — a2a-cli-registry/registry.db vs ~/.hermes/cli-registry.db — to prevent wrong-DB recon)
+  > Note (2026-09-09, commit 1d90008): the wrong-DB hazard this AC defends against is now fixed at the source — `--db` defaults to `$REGISTRY_DB` or `~/.hermes/cli-registry.db` (absolute) in both `core/cli/main.py` and `core/planner/probe.py`, instead of the relative `registry.db` that resolved against the caller's cwd. The in-repo `registry.db` is a stale 479-row copy vs 572 live. This AC's defensive help text is no longer the only thing standing between a reviewer and wrong-DB recon; scope it to coverage stats when this story is picked up.
 - [ ] AC-02: `plan-probe --slug <s> --goal-inputs <t> --goal-outputs <t> [--allow-side-effects …]` prints the slug's presence, chain position, and _hop_excluded decision via plan_chain/plan_cli_chain
 - [ ] AC-03: Both commands are strictly read-only (no writes to the registry DB)
 - [ ] AC-04: Test: `plan-probe` reproduces the VOCAB-01 grounding result (a known slug's presence/position) that the inline probes returned
