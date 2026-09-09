@@ -366,6 +366,32 @@ map. Validation lives entirely in the registry.**
 
 ## 4. Acceptance criteria (reconstituted)
 
+> **DECAYED AND RESTORED 2026-09-09.** The §2.2 durability caveat came true: a
+> `populate.py` delete+recreate feed run erased BOTH live data fixes below, and the
+> two live-registry planner tests had been red ever since (carried across sessions as
+> "9 pre-existing failures, unowned"). Re-verified against
+> `~/.hermes/cli-registry.db` and re-applied, backup first, each with an exact
+> affected-row-count == 1 assertion:
+>
+> | field | found | restored to | authority |
+> |---|---|---|---|
+> | `send_mail.intent_tags` | `notify,send` | `send` | §2.2 retag decision (this spec, line 33) |
+> | `send_mail.output_types` | `''` (empty) | `text` | AC-01 / reachability-slice spec §2 |
+>
+> The premise behind the retag has WEAKENED but still holds: `send_mail` is no longer
+> the sole carrier of a map tag — `irc` now carries `search,tail,send` — but `irc`
+> matches only ONE verb (`email`), so `send_mail` remains the only multi-verb offender.
+> If a second multi-verb terminal ever appears, §2.2's "generalizing from n=1" argument
+> no longer applies and the decision must be revisited, not re-applied.
+>
+> Post-restore: `pytest tests/test_planner.py` 41 passed; `send_mail` sits at sorted
+> position 19/100 (spec documented 18/100 — the registry has grown 475 -> 573 CLIs, and
+> the test asserts presence within the cap, not an exact rank).
+>
+> **Still not durable.** The next feed run erases both again. A durable fix belongs in
+> `populate.py` (preserve hand-set capability fields across delete+recreate) or in a
+> post-populate reconciliation step. Not done here — it is a design change, not a data fix.
+
 - **AC-01** — DONE (`3a78aa8`): declared-`external` recognition + `send_mail.output_types`
   live backfill. Documents the enum-recognition mechanism. No further work.
 - **AC-02** — Verification test: `send_mail` reachable at the DEFAULT cap. Codex flagged a
