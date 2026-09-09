@@ -1,6 +1,9 @@
 .venv/
 __pycache__/
 *.db
+# Anchor on the stem, not the extension: backup suffixes appended after ".db"
+# (registry.db.bak-<sha>, registry.db.lock) slip past the *.db glob above.
+registry.db*
 .pytest_cache/
 *.egg-info/
 dist/
@@ -9,6 +12,5 @@ build/
 HANDOVER-*.md
 .superpowers/
 demo/
-registry.db.lock
 .remediate-runs/
 .codex-runs/
