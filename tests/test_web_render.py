@@ -1,59 +1,55 @@
+from core.web.overview_view import build_overview_model
 from core.web.render import render_overview_html
 
 
 def _model():
-    return {
-        "summary": {
-            "total": 3,
-            "healthy": 1,
-            "unhealthy": 1,
-            "stale": 1,
-            "unknown": 0,
-            "version": "1.2.0",
-        },
-        "buckets": [
+    """Built by the REAL view-model builder, not hand-written.
+
+    This fixture used to be a literal dict mirroring build_overview_model's
+    output. When the template gained `cli.health_glyph` the production path
+    (app.py: build_overview_model -> render_overview_html) kept working and
+    only this copy fell behind — and because Jinja renders an undefined
+    variable as an empty string rather than raising, the card silently lost its
+    glyph instead of failing loudly. Going through the builder means a new
+    required field cannot drift out of the fixture again.
+    """
+    return build_overview_model({
+        "clis": [
             {
-                "name": "alpha",
-                "count": 2,
-                "clis": [
-                    {
-                        "slug": "healthy-cli",
-                        "lang": "python",
-                        "health_status": "healthy",
-                        "description": "good",
-                        "capabilities": [{
-                            "intent_tags": ["inspect"],
-                            "input_types": ["file:json"],
-                            "output_types": ["text:plain"],
-                            "side_effect": "none",
-                            "confidence": "declared",
-                        }],
-                        "edges": [],
-                    },
-                    {
-                        "slug": "unhealthy-cli",
-                        "lang": "shell",
-                        "health_status": "unhealthy",
-                        "description": "bad",
-                        "capabilities": [],
-                        "edges": [{"from": "healthy-cli", "to": "unhealthy-cli", "via_type": "text:plain"}],
-                    },
-                ],
+                "slug": "healthy-cli",
+                "lang": "python",
+                "project": "alpha",
+                "health_status": "healthy",
+                "description": "good",
             },
             {
-                "name": "beta",
-                "count": 1,
-                "clis": [{
-                    "slug": "stale-cli",
-                    "lang": "go",
-                    "health_status": "stale",
-                    "description": "old",
-                    "capabilities": [],
-                    "edges": [],
-                }],
+                "slug": "unhealthy-cli",
+                "lang": "shell",
+                "project": "alpha",
+                "health_status": "unhealthy",
+                "description": "bad",
+            },
+            {
+                "slug": "stale-cli",
+                "lang": "go",
+                "project": "beta",
+                "health_status": "stale",
+                "description": "old",
             },
         ],
-    }
+        "caps_by_slug": {
+            "healthy-cli": [{
+                "intent_tags": ["inspect"],
+                "input_types": ["file:json"],
+                "output_types": ["text:plain"],
+                "side_effect": "none",
+                "confidence": "declared",
+            }],
+        },
+        "edges": [
+            {"from": "healthy-cli", "to": "unhealthy-cli", "via_type": "text:plain"},
+        ],
+    })
 
 
 def _card(html, slug):
