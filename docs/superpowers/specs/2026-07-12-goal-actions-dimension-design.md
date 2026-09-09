@@ -388,9 +388,26 @@ map. Validation lives entirely in the registry.**
 > position 19/100 (spec documented 18/100 — the registry has grown 475 -> 573 CLIs, and
 > the test asserts presence within the cap, not an exact rank).
 >
-> **Still not durable.** The next feed run erases both again. A durable fix belongs in
-> `populate.py` (preserve hand-set capability fields across delete+recreate) or in a
-> post-populate reconciliation step. Not done here — it is a design change, not a data fix.
+> **NOW DURABLE (same session).** `populate()` no longer overwrites a capability row
+> marked `provenance='manual'`, and `send_mail`'s row carries that marker. The
+> protection already existed for `tools/backfill_capabilities.py`, but `provenance` was
+> added by `ensure_provenance_columns()` as a runtime `ALTER TABLE` and was never on the
+> SQLModel `Capability` class — so `populate()`, which goes through the ORM, could not
+> see the flag and erased hand-fixes regardless. The column is now a model field and the
+> live DB has been migrated.
+>
+> Proven against a COPY of the live registry: a full 575-CLI feed re-run proposing the
+> original `notify,send` / `output_types=''` values left the row untouched. Negative
+> control: with `provenance` cleared to NULL the same run decays it exactly as before,
+> so the marker is what protects it. Unit-pinned by
+> `test_manual_provenance_capability_survives_a_feed_rerun` and its counterpart
+> `test_non_manual_capability_is_still_refreshed_by_the_feed` — the second matters as
+> much as the first, since "preserve manual" is one `if` away from "never update
+> anything", which would silently freeze the registry.
+>
+> **Operator note:** a hand-fix is only durable if you MARK it. Set
+> `provenance='manual'` on the row in the same transaction as the fix, or the next feed
+> run still eats it.
 
 - **AC-01** — DONE (`3a78aa8`): declared-`external` recognition + `send_mail.output_types`
   live backfill. Documents the enum-recognition mechanism. No further work.

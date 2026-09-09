@@ -52,16 +52,28 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.launch_spec = _json.dumps(launch)
         session.add(cli)
 
-        for old in session.exec(select(Capability).where(Capability.cli_slug == rec.slug)).all():
-            session.delete(old)
-        session.add(Capability(
-            cli_slug=rec.slug,
-            intent_tags=",".join(merged.intent_tags),
-            input_types=",".join(merged.input_types),
-            output_types=",".join(merged.output_types),
-            side_effect=merged.side_effect,
-            confidence=merged.confidence,
-        ))
+        # A row an operator hand-set (provenance='manual') is NOT the feed's to
+        # overwrite. Without this, the delete+recreate below silently erases
+        # every hand-fix on the next feed run: send_mail's intent_tags retag and
+        # its output_types backfill were both lost this way, leaving two planner
+        # tests red for ~2 months while the code that depended on them stayed
+        # correct. Same protected marker tools/backfill_capabilities.py honours.
+        old_caps = session.exec(
+            select(Capability).where(Capability.cli_slug == rec.slug)
+        ).all()
+        # Scoped to this block rather than `continue`, so that anything added
+        # later in the loop body still runs for a manual row.
+        if not any(c.provenance == "manual" for c in old_caps):
+            for old in old_caps:
+                session.delete(old)
+            session.add(Capability(
+                cli_slug=rec.slug,
+                intent_tags=",".join(merged.intent_tags),
+                input_types=",".join(merged.input_types),
+                output_types=",".join(merged.output_types),
+                side_effect=merged.side_effect,
+                confidence=merged.confidence,
+            ))
 
     for slug in to_remove:
         obj = session.get(Cli, slug)

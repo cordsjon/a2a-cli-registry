@@ -31,6 +31,13 @@ class Capability(SQLModel, table=True):
     output_types: str = ""                          # CSV registered typed ports
     side_effect: str = "unknown"                    # none/writes-fs/network/external/destructive/unknown
     confidence: str = "declared"                    # declared/inferred
+    # Who owns these values. None/"static"/"llm" are feed- or tool-owned and get
+    # overwritten freely; "manual" means an operator hand-set the row and
+    # populate() must preserve it across its delete+recreate. Same marker
+    # tools/backfill_capabilities.py already honours — it added this column at
+    # runtime via ensure_provenance_columns(), which is why populate (going
+    # through the ORM) never saw it and erased hand-fixes anyway.
+    provenance: Optional[str] = None
 
 
 class CliEdge(SQLModel, table=True):

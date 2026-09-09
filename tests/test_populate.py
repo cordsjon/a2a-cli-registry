@@ -88,3 +88,61 @@ def test_removed_cli_leaves_no_orphan_capabilities(db, clock):
     edges = current_edges(db)
     phantom = [(f, t, v) for (f, t, v) in edges if f == "doomed" or t == "doomed"]
     assert phantom == [], f"phantom edges remain after removal: {phantom}"
+
+
+def test_manual_provenance_capability_survives_a_feed_rerun(db, clock):
+    """A hand-set capability row marked provenance='manual' must survive the
+    delete+recreate in populate().
+
+    Reproduces the live decay: `send_mail` was hand-fixed twice (the §2.2
+    intent_tags retag and the AC-01 output_types backfill) and BOTH were erased
+    by a feed re-run, leaving two planner tests red for ~2 months. The spec
+    predicted it ("populate.py delete+recreate means a future enriched feed can
+    restore notify,send; fails closed") but nothing enforced it.
+
+    'manual' is the same protected marker tools/backfill_capabilities.py already
+    honours: provenance in (None, 'static', 'llm') is overwritable, anything
+    else is not.
+    """
+    from sqlalchemy import text as _text
+
+    vocab = VocabularyRegistry(registered={"text"}, aliases={})
+    recs = [_rec("send_mail", ["text"], [])]
+    populate(db, FakeSource(recs), [PythonAdapter()], vocab, clock)
+
+    # Hand-fix the row exactly as an operator would, and mark it manual.
+    db.connection().execute(_text(
+        "UPDATE capability SET intent_tags='send', output_types='text', "
+        "provenance='manual' WHERE cli_slug='send_mail'"
+    ))
+    db.commit()
+
+    # A feed re-run proposing the ORIGINAL (unfixed) values.
+    populate(db, FakeSource(recs), [PythonAdapter()], vocab, clock)
+
+    cap = db.exec(select(Capability).where(Capability.cli_slug == "send_mail")).one()
+    assert cap.intent_tags == "send", (
+        f"manual intent_tags overwritten by the feed: {cap.intent_tags!r} — "
+        "this is the live send_mail decay reproduced"
+    )
+    assert cap.output_types == "text", (
+        f"manual output_types overwritten by the feed: {cap.output_types!r}"
+    )
+
+
+def test_non_manual_capability_is_still_refreshed_by_the_feed(db, clock):
+    """The guard must protect ONLY manual rows — a feed-owned row still updates.
+
+    Without this, "preserve manual" could silently become "never update
+    anything" and the registry would freeze at its first populate.
+    """
+    vocab = VocabularyRegistry(registered={"file:pdf", "text:doc", "text:summary"}, aliases={})
+    populate(db, FakeSource([_rec("conv", ["file:pdf"], ["text:doc"])]),
+             [PythonAdapter()], vocab, clock)
+    populate(db, FakeSource([_rec("conv", ["file:pdf"], ["text:summary"])]),
+             [PythonAdapter()], vocab, clock)
+
+    cap = db.exec(select(Capability).where(Capability.cli_slug == "conv")).one()
+    assert cap.output_types == "text:summary", (
+        f"feed-owned row was not refreshed: {cap.output_types!r}"
+    )
