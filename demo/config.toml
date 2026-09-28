@@ -4,7 +4,7 @@ cli_audit_path = "demo/cli-audit/latest.json"
 mass_removal = 0.30
 
 [vocabulary]
-registered = ["text", "text:doc", "text:summary", "url", "file", "json", "json:invoice", "file:json", "file:csv", "file:yaml", "file:xml", "file:pdf", "file:md", "file:html", "file:pptx", "file:ppsx", "file:potx", "file:xlsx", "file:docx", "image", "file:png", "file:svg", "text:coordinates", "json:poi"]
+registered = ["text", "text:doc", "text:summary", "url", "file", "json", "json:invoice", "json:transactions", "file:json", "file:csv", "file:yaml", "file:xml", "file:pdf", "file:md", "file:html", "file:pptx", "file:ppsx", "file:potx", "file:xlsx", "file:docx", "image", "file:png", "file:svg", "text:coordinates", "json:poi"]
 
 [vocabulary.aliases]
 pdf = "file:pdf"
