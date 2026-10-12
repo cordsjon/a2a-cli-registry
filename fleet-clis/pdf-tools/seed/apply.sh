@@ -74,6 +74,7 @@ for e in seed["entries"]:
         added += 1
 # atomic write
 d = os.path.dirname(feed_path) or "."
+os.makedirs(d, exist_ok=True)   # first run on a fresh checkout: demo/cli-audit/ is gitignored and absent
 fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
 with os.fdopen(fd, "w") as fh:
     json.dump(feed, fh, indent=2)
