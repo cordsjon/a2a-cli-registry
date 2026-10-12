@@ -1,0 +1,215 @@
+{
+  "_comment": "Committed source-of-truth for the diar1 registry entries, one per verb. The live feed (demo/cli-audit/latest.json) and registry.db are gitignored generated state, so these entries do NOT travel with git. Apply them on any machine with `sh fleet-clis/diar1/seed/apply.sh`. All slugs share one binary because the feed loader binds one capability row per slug (see pdf-tools). The binary lives in the venv of its own repo (75_Coaching), like funroadtrip; the path is resolved at apply time from DIAR1_VENV, not hardcoded here. Every verb that changes a result works inside the engagement folder, so its output type is dir:engagement: the verbs chain among themselves and with nothing else. Every verb except serve and replay also appends one line to the engagement's commands.log.",
+  "entries": [
+    {
+      "slug": "diar1-init",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Scaffold a new engagement folder from an existing engagement.toml: `diar1 init --from <engagement.toml> <dir>` copies the config with attendees and sources emptied and creates the folders. The engagement.toml contract that every other diar1 verb reads through `--dir <folder>`: schema_version = 2; [meeting] type (a key of diar1's meeting_types.toml), title, date; [[sources]] id, device, file; [[attendees]] name, org, role; glossary; optional [paths] out, speaker_maps, transcripts; optional [features] and [thresholds].",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["init", "scaffold", "engagement", "meeting"],
+        "input_types": ["file"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-pregame",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Evaluate the meeting type's checklist for an engagement (`diar1 --dir <folder> pregame`): required and recommended items, each a file, count or PATH check. Exit 1 while a required item is open. Also runs on an incomplete engagement.toml and names what is missing. Changes no result file.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["checklist", "preflight", "validate", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["text"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-stage",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Run a pipeline stage for one source as a job (`diar1 --dir <folder> stage <transcribe|diarize> <source>`). The stage's output goes to out/<source>/<stage>.log. Local models, nothing leaves the machine.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["transcribe", "diarize", "speech_to_text", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-offsets",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Measure the time offset between two recordings of one meeting (`diar1 --dir <folder> offsets <source-a> <source-b>`, t_b = t_a + offset) and store it in out/offsets.toml.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["align", "time_offset", "multi_source", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-find",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Find the segments of a source by pasted text or by a time range hh:mm:ss-hh:mm:ss (`diar1 --dir <folder> find <source> <query>`). Prints the matching rows. Changes no result file.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["find", "search", "transcript", "segments"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["text"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-anchor",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Confirm a time span as one person's voice (`diar1 --dir <folder> anchor <source> <person> <start> <end>`; `--remove` deletes it). Embeds the span with a local model, stores the span in anchors.json and, with offset propagation on, tests the same moment in the other sources.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["speaker_naming", "voice_anchor", "diarization", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-assign",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Name every segment inside a time range by hand (`diar1 --dir <folder> assign <source> <person> <start> <end>`, basis operator; `--remove` deletes that person's operator rows in the range). Writes assign.json and recomputes coverage.json.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["speaker_naming", "assign", "transcript", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-flag",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Mark a time range with one of the meeting type's flag kinds (`diar1 --dir <folder> flag <source> <kind> <start> <end> [note]`; `--remove` deletes it). Writes flags.json.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["flag", "annotate", "transcript", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-classify",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Name every segment of a source against the confirmed anchors (`diar1 --dir <folder> classify <source>`). A segment gets a name only above the similarity floor and the margin of engagement.toml. Replaces the earlier anchor-based rows of assign.json, never an operator row. Runs a local embedding model over the whole recording.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["speaker_naming", "classify", "diarization", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-promote",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Give a whole diarization label one person's name (`diar1 --dir <folder> promote <source> <label> <person>`; `--check` only says whether it would be done). Refused unless the label_promotion feature is on and no second voice is present in that label. Writes speaker_map_<source>.json.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["speaker_naming", "promote", "diarization", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-coverage",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Recompute coverage.json of a source (`diar1 --dir <folder> coverage <source>`): named share of speech time, label breakdown, the missing list by the meeting type's stop rule, glossary coverage, crosscheck against the other sources.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["coverage", "report", "speaker_naming", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-render",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Write the V1 protocol of a source as Markdown (`diar1 --dir <folder> render <source>`; `--hide-labels`). Each segment carries the name from assign.json, else from the speaker map, else its diarization label. Needs a glossary.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["render", "transcript", "protocol", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["file:md"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-launch",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Open a result in VS Code or hand a Claude task out (`diar1 --dir <folder> launch <open_in_editor|open_engagement|claude_task> [source=<id>] [task=<key>] [line=<n>] [--print] [--confirm <sha256>]`). `--print` shows the command line and starts nothing. claude_task writes a prompt file from the flagged passages; it starts a Claude session in plan mode only when the engagement's claude_task feature is on and the SHA-256 of the prompt is confirmed, and that start sends the prompt to the Claude service.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["launch", "open_in_editor", "claude_task", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": [],
+        "side_effect": "external",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-replay",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Run the lines of a commands.log again in a fresh copy of an engagement's inputs and compare the result with the original (`diar1 --dir <fresh copy> replay <commands.log> [--compare <original folder>]`). Exit 0 when assign.json and the V1 body are the same in every source. The check a reviewer uses to reproduce a named transcript.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["replay", "reproduce", "audit", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["text"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
+      "slug": "diar1-serve",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Start the local server on 127.0.0.1 and print the page URL with its session token (`diar1 serve [<folder>] [--port N]`, default port 8791). The page runs the other verbs as CLI processes. Does not return until it is stopped.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["serve", "web_ui", "speaker_naming", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["url"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    }
+  ]
+}
