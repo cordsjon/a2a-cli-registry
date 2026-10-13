@@ -131,7 +131,7 @@
       "slug": "diar1-promote",
       "lang": "python",
       "path": "__RESOLVED_AT_APPLY__",
-      "description": "Give a whole diarization label one person's name (`diar1 --dir <folder> promote <source> <label> <person>`; `--check` only says whether it would be done). Refused unless the label_promotion feature is on and no second voice is present in that label. Writes speaker_map_<source>.json.",
+      "description": "Give a whole diarization label one person's name (`diar1 --dir <folder> promote <source> <label> <person>`; `--check` only says whether it would be done). Refused unless the label_promotion feature is on and no second voice is present in that label. Writes a labels.json row with the named share, then speaker_map_<source>.json.",
       "not_standalone": false,
       "capability": {
         "intent_tags": ["speaker_naming", "promote", "diarization", "meeting"],
@@ -142,10 +142,24 @@
       }
     },
     {
+      "slug": "diar1-attest",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Name a whole diarization label on the operator's hearing (`diar1 --dir <folder> attest <source> <label> <person> <start> <end> [<start> <end> …] [--note <text>]`): the heard clips are the basis, written as a row of out/<source>/labels.json before the map entry. Refused unless label_promotion is on, when a clip lies outside the label or under min_clip_s, and while a classifier row in the label names another person (the refusal lists those segments to settle with `assign`). `attest <source> <label> --remove` takes the name back.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["speaker_naming", "attest", "diarization", "meeting"],
+        "input_types": ["dir:engagement"],
+        "output_types": ["dir:engagement"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    },
+    {
       "slug": "diar1-coverage",
       "lang": "python",
       "path": "__RESOLVED_AT_APPLY__",
-      "description": "Recompute coverage.json of a source (`diar1 --dir <folder> coverage <source>`): named share of speech time, label breakdown, the missing list by the meeting type's stop rule, glossary coverage, crosscheck against the other sources.",
+      "description": "Recompute coverage.json of a source (`diar1 --dir <folder> coverage <source>`): named share of speech time, label breakdown, the missing list by the meeting type's stop rule, glossary coverage, crosscheck against the other sources. Reconciles the speaker map with labels.json: a map entry without a matching row is listed under unattested and its segments count as unnamed. Records the SHA-256 of assign.json, flags.json, the map and labels.json under inputs.",
       "not_standalone": false,
       "capability": {
         "intent_tags": ["coverage", "report", "speaker_naming", "meeting"],
@@ -187,7 +201,7 @@
       "slug": "diar1-replay",
       "lang": "python",
       "path": "__RESOLVED_AT_APPLY__",
-      "description": "Run the lines of a commands.log again in a fresh copy of an engagement's inputs and compare the result with the original (`diar1 --dir <fresh copy> replay <commands.log> [--compare <original folder>]`). Exit 0 when assign.json and the V1 body are the same in every source. The check a reviewer uses to reproduce a named transcript.",
+      "description": "Run the lines of a commands.log again in a fresh copy of an engagement's inputs and compare the result with the original (`diar1 --dir <fresh copy> replay <commands.log> [--compare <original folder>]`). Exit 0 when assign.json, the speaker map, labels.json and the V1 body are the same in every source. The check a reviewer uses to reproduce a named transcript.",
       "not_standalone": false,
       "capability": {
         "intent_tags": ["replay", "reproduce", "audit", "meeting"],
