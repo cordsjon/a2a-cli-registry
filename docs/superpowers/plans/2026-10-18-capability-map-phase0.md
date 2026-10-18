@@ -1,6 +1,6 @@
 # Capability Map Phase 0 Implementation Plan
 
-**Status 2026-10-18 19:30 (operator ruling, 20_CONSIGLIERE DECISIONS Q92): NOT cleared for execution.** This plan was written before the operator ruled "spec → architecture review → LLM panel → plans" for the capability-consolidation design. It goes through `sh:architecture-panel`, then `sh:spec-panel`, then a Codex review, and only then to execution. Do not start Task 1 until all three are recorded here with their verdicts. Pre-panel grounding review (Codex + DeepSeek) ran 2026-10-18 20:26; findings and the per-item triage are at the bottom of this file, and the edits they produced are folded into the tasks above.
+**Status 2026-10-18 19:30 (operator ruling, 20_CONSIGLIERE DECISIONS Q92): NOT cleared for execution.** This plan was written before the operator ruled "spec → architecture review → LLM panel → plans" for the capability-consolidation design. It goes through `sh:architecture-panel`, then `sh:spec-panel`, then a Codex review, and only then to execution. Do not start Task 1 until all three are recorded here with their verdicts. Pre-panel grounding review (Codex + DeepSeek) ran 2026-10-18 20:26; findings and the per-item triage are at the bottom of this file, and the edits they produced are folded into the tasks above. Architecture panel 2026-10-18 20:55: **7.3, PASS**, five findings applied and one demoted (section at the bottom). Spec panel and post-panel Codex review still outstanding.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -21,7 +21,7 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 - AC-03: after commit, every enabled CLI has a capability row.
 - AC-04: after commit, `sanity_ok IS NOT NULL` on ≥ 90 % of enabled CLIs' capability rows.
 - AC-05: no field of the live DB's `cli` or `capability` tables changes before the operator resolves the escalated DECISIONS entry (the dry run targets a snapshot copy, Task 4).
-- AC-06: a `populate()` run after the commit leaves backfilled descriptions and capability rows in place.
+- AC-06: a `populate()` run after the commit leaves backfilled descriptions and capability rows in place for every CLI the feed still emits. A slug the feed no longer emits is removed with its rows by design (`core/populate.py:25-28, 80-87`, gated by `MassRemovalBreaker` at 30 %); Task 3 does not and should not change that.
 
 ## Global Constraints
 
@@ -32,7 +32,8 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 - No bare `except Exception` in new code; the existing `except Exception: rollback; raise` blocks in `write_commit` and `_persist_sanity` stay as they are.
 - Commits use explicit pathspecs: `git commit -m "..." -- <paths>` (the shared-index hook at `~/.config/git/hooks/pre-commit` gates bare commits). Trailer: `Co-Authored-By: Claude <model> <noreply@anthropic.com>` naming the running model.
 - Test runner: `.venv/bin/python -m pytest`. Commit-path tests carry `@needs_router` and call the real router for calibration.
-- Live DB: `~/.hermes/cli-registry.db` (`DEFAULT_DB` in `core/cli/main.py:34`). The service on :9113 reads it per request; no restart after a commit.
+- Live DB: `~/.hermes/cli-registry.db` (`DEFAULT_DB` in `core/cli/main.py:34`). The service on :9113 reads it per request; no restart after a DB commit. The service runs from `~/MAC/nanobot/.venv`, an editable install of this checkout (`_editable_impl_a2a_cli_registry.pth`; launcher `~/.hermes/scripts/cli-registry-serve.sh:21`), so Task 3's `core/` commits are live on its next restart. The live `capability` table already has `description_provenance` (`PRAGMA table_info`, 2026-10-18), so the model field needs no migration on this database.
+- Registry write lock: every mutating CLI command serializes on the sidecar `<db>.lock` via `with_file_lock` (`core/store/db.py:44`; `core/cli/main.py:173,344,361`). The shipped backfill writer does not take it; Task 2 adds it around the live-write tail. `tools/reclassify_modulemode.py:12` already imports from `core`, so the dependency direction has precedent.
 - Gates in `tools/backfill_capabilities.py` stay as shipped: `FALLBACK_CAP = 300`, `SANITY_FAILURE_THRESHOLD = 0.10`, calibration must pass, `--commit` refuses otherwise. Never bypass with a flag.
 - Long router runs go to the background with a log file, never in a foreground tool call (612 rows, two to four router calls each; runtime unmeasured, expect more than an hour).
 - The handover asks for `/model opus` before build work. Tasks 2 and 3 are build work.
@@ -112,7 +113,7 @@ The shipped writer only `UPDATE`s capability rows, so the 125 enabled CLIs witho
 
 **Interfaces:**
 - Consumes: `_patch_pipeline(monkeypatch, ...)` and the `drifted_db` fixture already in `tests/test_backfill_capabilities.py` (fixture rows are inserted with positional `INSERT INTO cli VALUES (...)`, 17 columns, `enabled` is column 13).
-- Produces: `_ensure_capability_row(con, slug) -> bool` (inserts `('', '', '', 'unknown', 'inferred')` with `provenance NULL` when the slug exists in `cli` and has no capability row; returns whether it inserted; returns False without inserting when the slug is not in `cli`). Callers treat the two False cases differently: slug not in `cli` → `continue` (no orphan row); slug in `cli` → fall through to the existing `UPDATE`, which the shipped guard (`provenance in (None, 'static', 'llm')`) lets through for the fresh placeholder, so the placeholder ends up carrying the proposal's `provenance` and `description_provenance = 'llm'`. `_load_reviewed(path) -> tuple[list[dict], list[dict]]` reads `PATH` and the sibling `sanity_report.jsonl` and refuses (`REFUSED: reviewed report does not cover the proposals (<detail>)` to stderr, exit 1) unless the report holds exactly one verdict per proposal slug and none for any other slug. `main(argv)` gains `--from-proposals PATH` (requires `--commit`; skips `run_pipeline`; `sanity_fail_rate = fails / len(report)` over the validated report; runs `_run_calibration()` and the two shipped REFUSED gates; then `backup_db`, `_persist_sanity(db, report, now)`, `write_commit`, in that order, so the first live write of any kind sits behind the backup). `_fetch_all_cli_rows` returns only `enabled = 1` rows. Tasks 4 and 5 call these.
+- Produces: `_ensure_capability_row(con, slug) -> bool` (inserts `('', '', '', 'unknown', 'inferred')` with `provenance NULL` when the slug exists in `cli` and has no capability row; returns whether it inserted; returns False without inserting when the slug is not in `cli`). Callers treat the two False cases differently: slug not in `cli` → `continue` (no orphan row); slug in `cli` → fall through to the existing `UPDATE`, which the shipped guard (`provenance in (None, 'static', 'llm')`) lets through for the fresh placeholder, so the placeholder ends up carrying the proposal's `provenance` and `description_provenance = 'llm'`. `_load_reviewed(path) -> tuple[list[dict], list[dict]]` reads `PATH` and the sibling `sanity_report.jsonl` and refuses (`REFUSED: reviewed report does not cover the proposals (<detail>)` to stderr, exit 1) unless the report holds exactly one verdict per proposal slug and none for any other slug. `main(argv)` gains `--from-proposals PATH` (requires `--commit`; skips `run_pipeline`; `sanity_fail_rate = fails / len(report)` over the validated report; runs `_run_calibration()` and the two shipped REFUSED gates; then, inside `with_file_lock(args.db + ".lock")` imported from `core.store.db`, `backup_db`, `_persist_sanity(db, report, now)`, `write_commit`, in that order, so the first live write of any kind sits behind the backup and no `populate` / `discover` / armed `probe` can run against the DB mid-write). The lock wraps the shipped `--commit` tail too, since it is the same code. `run_pipeline` prints one `[i/n] <slug>` line to stderr per row in its proposal loop and its sanity loop, so a multi-hour run is observable. `_fetch_all_cli_rows` returns only `enabled = 1` rows. Tasks 4 and 5 call these.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -126,13 +127,14 @@ def _insert_cli(con, slug, lang="python", enabled=1, description="30_x/orphan.py
     )
 
 
-def test_pipeline_skips_disabled_rows(drifted_db, monkeypatch, tmp_path):
+def test_pipeline_skips_disabled_rows(drifted_db, monkeypatch, tmp_path, capsys):
     con = sqlite3.connect(drifted_db); _insert_cli(con, "deadcli", enabled=0); con.commit(); con.close()
     _patch_pipeline(monkeypatch)
     monkeypatch.chdir(tmp_path)
     result = backfill.run_pipeline(drifted_db)
     assert "deadcli" not in {p["slug"] for p in result["proposals"]}
     assert result["summary"]["total_rows"] == 2
+    assert "[2/2] " in capsys.readouterr().err  # per-row progress line, so a live run can be watched for stalls
 
 
 def test_persist_sanity_creates_placeholder_row_for_cli_without_capability(drifted_db):
@@ -217,9 +219,30 @@ def test_commit_from_proposals_refuses_report_missing_a_verdict(drifted_db, tmp_
     con = sqlite3.connect(drifted_db)
     assert con.execute("SELECT description FROM cli WHERE slug='csv2json'").fetchone()[0] != "Reviewed description."
     con.close()
+
+
+@needs_router
+def test_commit_from_proposals_holds_the_registry_lock(drifted_db, monkeypatch, tmp_path):
+    held = []
+
+    @contextlib.contextmanager
+    def _spy(path):
+        held.append(path)
+        yield
+
+    monkeypatch.setattr(backfill, "with_file_lock", _spy)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "backfill_proposals.jsonl").write_text(json.dumps({
+        "slug": "csv2json", "description": "Reviewed description.",
+        "capability": {"input_types": ["path"], "output_types": ["json"], "intent_tags": ["convert"],
+                       "side_effect": "none", "confidence": "inferred", "provenance": "static"},
+    }) + "\n")
+    (tmp_path / "sanity_report.jsonl").write_text(json.dumps({"slug": "csv2json", "ok": True, "reason": ""}) + "\n")
+    backfill.main(["--db", drifted_db, "--commit", "--from-proposals", str(tmp_path / "backfill_proposals.jsonl")])
+    assert held == [drifted_db + ".lock"]
 ```
 
-The refusal test needs no router: `_load_reviewed` validates before `_run_calibration()` runs.
+The refusal test needs no router: `_load_reviewed` validates before `_run_calibration()` runs. The lock test spies on the lock helper and records its argument (the seam under test is the acquisition, not SQLite); add `import contextlib` at the top of the file if absent.
 
 Append to `tests/test_sanity_check.py`:
 
@@ -231,17 +254,21 @@ def test_extract_json_strips_markdown_fence():
 - [ ] **Step 2: Run the new tests to verify they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_backfill_capabilities.py tests/test_sanity_check.py -v -k "disabled or placeholder or unknown_slug or inserts_capability or from_proposals or fence"`
-Expected: `test_extract_json_strips_markdown_fence` PASSES already (`_extract_json` slices from the first `{`; the test pins it). The others FAIL: `AttributeError: _ensure_capability_row` (`unknown_slug`), `total_rows == 3` (`disabled`), `row is None` (`placeholder`), `cap is None` (`inserts_capability`: the shipped writer only updates), and argparse rejecting `--from-proposals` (the four `from_proposals` tests).
+Expected: `test_extract_json_strips_markdown_fence` PASSES already (`_extract_json` slices from the first `{`; the test pins it). The others FAIL: `AttributeError: _ensure_capability_row` (`unknown_slug`), `total_rows == 3` (`disabled`), `row is None` (`placeholder`), `cap is None` (`inserts_capability`: the shipped writer only updates), and argparse rejecting `--from-proposals` (the five `from_proposals` tests).
 
 - [ ] **Step 3: Implement in `tools/backfill_capabilities.py`**
 
 `_fetch_all_cli_rows`: add `WHERE enabled = 1`.
 
+`run_pipeline`: `print(f"[{i + 1}/{len(cli_rows)}] {slug}", file=sys.stderr)` as the first statement of the proposal loop (`enumerate(cli_rows)`) and of the sanity loop. Nothing else about the loops changes.
+
+`from core.store.db import with_file_lock` at module top (precedent: `tools/reclassify_modulemode.py:12`).
+
 `_ensure_capability_row(con, slug: str) -> bool`: `SELECT 1 FROM cli WHERE slug=?`, return False if absent; `SELECT 1 FROM capability WHERE cli_slug=?`, return False if present; else `INSERT INTO capability (cli_slug, intent_tags, input_types, output_types, side_effect, confidence) VALUES (?, '', '', '', 'unknown', 'inferred')` and return True. Call it at the top of the per-row loop in `_persist_sanity` and in `write_commit`; in both, `continue` when the slug has no `cli` row.
 
 `_load_reviewed(path: Path) -> tuple[list[dict], list[dict]]`: reads `path` and `path.parent / "sanity_report.jsonl"` as JSON lines; builds `verdicts = {r["slug"]: r}` and refuses (`REFUSED: reviewed report does not cover the proposals (<detail>)` to stderr, `sys.exit(1)`) when a report slug repeats, a proposal slug has no verdict, or a verdict names a slug absent from the proposals.
 
-`main`: add `parser.add_argument("--from-proposals", type=Path, default=None)`. If set without `--commit`, `parser.error("--from-proposals requires --commit")`. If set, build `result = {"proposals", "sanity_results", "summary"}` with `calibration_ok` / `calibration_detail` from `_run_calibration()` and `sanity_fail_rate = fails / len(report)` from the validated report, then fall through to the existing two REFUSED gates, `backup_db`, then `_persist_sanity(args.db, report, time.time())` (the replay is the only path that writes sanity verdicts to the live DB, since Task 4's dry run targets a snapshot), then `write_commit`.
+`main`: add `parser.add_argument("--from-proposals", type=Path, default=None)`. If set without `--commit`, `parser.error("--from-proposals requires --commit")`. If set, build `result = {"proposals", "sanity_results", "summary"}` with `calibration_ok` / `calibration_detail` from `_run_calibration()` and `sanity_fail_rate = fails / len(report)` from the validated report, then fall through to the existing two REFUSED gates, then `with with_file_lock(args.db + ".lock"):` around `backup_db`, `_persist_sanity(args.db, report, time.time())` (the replay is the only path that writes sanity verdicts to the live DB, since Task 4's dry run targets a snapshot) and `write_commit`. The shipped `--commit` tail (`backup_db`, `write_commit`) moves inside the same `with` block.
 
 - [ ] **Step 4: Run the file's tests, then the full suite**
 
@@ -249,7 +276,7 @@ Run: `.venv/bin/python -m pytest tests/test_backfill_capabilities.py tests/test_
 Expected: all PASS, including `test_all_474_rows_get_description_only_python_rows_get_capability` (its fixture rows are `enabled = 1`).
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: 602 collected pre-plan plus the 9 new tests, all PASS. If `tests/test_server_overview.py` or `tests/test_web_overview_view.py` fail, read them: `/overview` counts capability rows and placeholder rows change those counts.
+Expected: 602 collected pre-plan plus the 10 new tests, all PASS. If `tests/test_server_overview.py` or `tests/test_web_overview_view.py` fail, read them: `/overview` counts capability rows and placeholder rows change those counts.
 
 - [ ] **Step 5: Commit**
 
@@ -262,7 +289,7 @@ git commit -m "feat(backfill): insert capability rows for CLIs without one, skip
 
 ### Task 3: `populate()` keeps backfilled fields
 
-Deviation from the design's "no design change; the plan is the design" (section 5): `core/populate.py:46` sets `cli.description` from the feed, and lines 66 to 76 delete and recreate the capability row unless `provenance == 'manual'`. One populate after Task 5 would undo it. Logged as a DECISIONS entry (Step 5), outcome `assumed`; the operator can strike this task.
+Deviation from the design's "no design change; the plan is the design" (section 5): `core/populate.py:46` sets `cli.description` from the feed, and lines 66 to 76 delete and recreate the capability row unless `provenance == 'manual'`. One populate after Task 5 would undo it for every slug the feed still emits. Slugs the feed drops are removed with their rows (`core/populate.py:25-28, 80-87`); that is the feed's authority and stays as shipped (AC-06 is scoped accordingly). Logged as a DECISIONS entry (Step 5), outcome `assumed`; the operator can strike this task.
 
 **Files:**
 - Modify: `core/models.py` (`Capability` gains `description_provenance: Optional[str] = None`, mirroring `provenance`, which commit `d022b46` added for the same reason)
@@ -384,7 +411,7 @@ cd ~/projects/a2a-cli-registry && nohup .venv/bin/python -m tools.backfill_capab
 echo "$! $SNAP"
 ```
 `.backup` is a consistent copy while the :9113 service keeps reading the live file. Every write the run makes (sanity fields, placeholder rows, the provenance columns) lands in the snapshot.
-Then wait with a Monitor on the log for the line `"elapsed_seconds"` (the summary JSON is the last thing printed). Do not poll in a foreground loop. Runtime is unmeasured; the July run's elapsed was not recorded.
+Then wait with a Monitor on the log for the line `"elapsed_seconds"` (the summary JSON is the last thing printed). Do not poll in a foreground loop. Runtime is unmeasured; the July run's elapsed was not recorded. Stall rule: the log gains one `[i/n] <slug>` line per row (Task 2); a row costs at most four router calls with one retry each at 30 s (`_call_router` in the four tools; `sanity_check.py:125` retries once, no backoff), so if the last progress line is older than 10 minutes, probe the router (`Step 1`'s curl); non-200 → kill the run, fix the router, re-run against a fresh snapshot (the run is a pure regeneration, nothing to resume); 200 → leave it, it is working through slow rows.
 
 - [ ] **Step 3: Read the summary and the gates**
 
@@ -455,11 +482,12 @@ Run: `cd ~/projects/a2a-cli-registry && shasum -a 256 backfill_proposals.jsonl s
 - [ ] **Step 2: Commit from the reviewed file**
 
 ```bash
-cd ~/projects/a2a-cli-registry && SHA=$(git rev-parse --short HEAD)
+cd ~/projects/a2a-cli-registry && SHA=$(git rev-parse --short HEAD) && STAMP=$(date +%Y%m%d-%H%M)
+sqlite3 ~/.hermes/cli-registry.db ".backup '$HOME/.local/state/a2a-cli-registry/registry-prewrite-$STAMP.db'"
 .venv/bin/python -m tools.backfill_capabilities --db ~/.hermes/cli-registry.db --commit --from-proposals backfill_proposals.jsonl 2>&1 | tail -5
-ls -la ~/.hermes/cli-registry.db.bak-$SHA
+ls -la ~/.hermes/cli-registry.db.bak-$SHA ~/.local/state/a2a-cli-registry/registry-prewrite-$STAMP.db
 ```
-Expected: no `REFUSED` line; the backup file exists under the SHA captured before the run (captured first so a future `git commit` inserted in between cannot make the check pass against the wrong file). The calibration step makes eight router calls; the regeneration does not re-run; the reviewed sanity verdicts are persisted in this same run.
+Expected: no `REFUSED` line; both backup files exist. The tool's `.bak-<sha>` is keyed by git SHA and overwritten on a re-run at the same HEAD (`backup_db`, `tools/backfill_capabilities.py:99-113`), and the live write is two transactions (`_persist_sanity`, then `write_commit`), so a failure between them followed by a re-run would replace that backup with the half-written state. The timestamped pre-write snapshot taken here is therefore the rollback artifact; record its path under this step. A re-run of this command is data-idempotent (every live write is an `UPDATE` keyed by slug, or a placeholder insert guarded by existence). `$SHA` is captured before the run so a future `git commit` inserted in between cannot make the `ls` check pass against the wrong file. The calibration step makes eight router calls; the regeneration does not re-run; the reviewed sanity verdicts are persisted in this same run, under the registry lock.
 
 - [ ] **Step 3: Acceptance queries (AC-02, AC-03, AC-04)**
 
@@ -493,7 +521,7 @@ git commit -m "docs: capability map foundation implemented; phase 0 acceptance r
 git push
 ```
 
-Then in 20_CONSIGLIERE: the design's section 8 phase 0 row is done; phase 1 (feeds) gets its own `superpowers:writing-plans` run. Carry forward to that plan: `register_cli.py:181` rewrites descriptions on re-register (Review Focus item 5), and the `unknown_purpose` slugs from Task 4 Step 4 are registry rows whose source files are gone.
+Then in 20_CONSIGLIERE: the design's section 8 phase 0 row is done; phase 1 (feeds) gets its own `superpowers:writing-plans` run. Carry forward to that plan: `register_cli.py:181` rewrites descriptions on re-register (Review Focus item 5); the `unknown_purpose` slugs from Task 4 Step 4 are registry rows whose source files are gone; and `description_provenance` lives on `capability` although it governs `cli.description` (`write_commit`, `tools/backfill_capabilities.py:290-297`; live schema has it on `capability` only), which forces `populate()` to read a child row before touching a parent column and is why Task 2 needs placeholder rows at all. Moving it to `cli` is a schema change for phase 1, not phase 0.
 
 ---
 
@@ -702,3 +730,28 @@ Each finding checked against the repo at `3edf844` before the verdict. "Applied"
 5. IMPORTANT replay does not validate sanity coverage — **applied.** `_load_reviewed` refuses duplicate, missing or extra verdicts; negative test added (9 new tests, was 8).
 6. IMPORTANT replay skips the fallback cap — **ignored.** `run_pipeline` exits 1 before writing either jsonl file when `fallback_count > FALLBACK_CAP` (`:191-197`), so no over-cap artifact can exist for the replay to consume; the cap is a generation-time gate and the DECISIONS question records `fallback=<n>`. A generation manifest would duplicate the hash pinning from item 4.
 7. IMPORTANT `unknown purpose` counts as prose — **applied.** AC-02, Task 4 Step 4 and Task 5 Step 3 all exclude the sentinel.
+
+## Architecture panel — 2026-10-18 20:55 (sh:architecture-panel, critique mode, silent)
+
+Experts: Fowler, Newman, Hohpe, Nygard (panel defaults; auto-select matched `sqlite`, `failure`, `retry`, `contract`, adding nobody new). Every finding was resolved in source at HEAD `12e50e6` and then sent to `codex exec` (read-only) as the refutation engine; verdicts below are post-refute. Scores are for the plan as reviewed, before the fixes.
+
+| Dimension | Score | Basis |
+|---|---|---|
+| Boundary clarity | 7.5 | `tools/` raw-sqlite vs `core/` ORM split is explicit and the provenance vocabulary now names each owner; `description_provenance` on the child table is the one blurred seam (F4). |
+| Integration correctness | 7.5 | Replay is UPDATE-idempotent and hash-pinned to the reviewed artifacts; the writer ignores the registry's own write lock (F1). |
+| Failure-mode coverage | 6.5 | Router outage, calibration, fail-rate and mass-removal are all gated; the backup is not run-unique (F2) and a multi-hour run had no stall criterion (F6). |
+| Evolvability | 7.5 | Phase 1 carry-forwards are listed; AC-06 promised more than `populate` can keep (F3); the live-service import path was unstated (F5). |
+| **Overall** | **7.3** | **PASS** (threshold 7.0) |
+
+Findings, all applied in the task text above:
+
+- **F1 MAJOR (Nygard, concurrency)** — writer bypasses the sidecar lock. `_persist_sanity` / `write_commit` connect raw (`tools/backfill_capabilities.py:142, :279`); `populate`, `discover` and the armed `probe` serialize on `<db>.lock` (`core/cli/main.py:173, :344, :361`; `core/store/db.py:44`), with a 5 s connection timeout (`core/store/db.py:19`). SQLite still serializes transactions, so the outcome is a failed run, not corruption. Fix: Task 2 wraps the live-write tail in `with_file_lock`; one spy test records the lock path; Global Constraints names the lock.
+- **F2 MAJOR (Nygard, recovery)** — backup keyed by git SHA and overwritten without a guard (`backup_db`, `:102, :108`); the live write is two transactions (`:152`, `:313`). Fix: Task 5 takes a timestamped `.backup` snapshot before the tool runs and names it the rollback artifact; re-run documented as data-idempotent.
+- **F3 MAJOR (Hohpe, contracts-vs-callers)** — AC-06 over-claimed. `populate` deletes slugs absent from the feed with their rows (`core/populate.py:25, :78`), gated only by the 30 % breaker; Task 3 touches incoming slugs only. Fix: AC-06 and Task 3's intro scoped to "CLIs the feed still emits"; removal named as the feed's authority.
+- **F4 MINOR (Fowler, boundaries)** — `description_provenance` is a `capability` column governing `cli.description` (`:78`, `:290`; live `PRAGMA` confirms). Fix: recorded as a phase 1 schema carry-forward in Task 5's closing paragraph; no phase 0 change.
+- **F5 MINOR (Newman, deployment coupling)** — the :9113 service runs an editable install of this checkout (`~/.hermes/scripts/cli-registry-serve.sh:21`, `_editable_impl_a2a_cli_registry.pth`), so Task 3's `core/` commits are live on next restart; the live DB already has the column, so no migration. Fix: stated in Global Constraints.
+- **F6 demoted to MINOR (Nygard, observability)** — as drafted ("no retry") it was refuted: `sanity_check.py:125` retries once, no backoff. What stands: nothing is written per row (`:237` writes after the loop) and Task 4 waited for the summary with no stall deadline. Fix: one stderr progress line per row in `run_pipeline` (asserted in the disabled-rows test) and a 10-minute stall rule in Task 4 Step 2.
+
+Consensus: the operator gate, hash pinning and snapshot dry run from the pre-panel round hold; the panel's additions are the lock, the run-unique backup, and honest AC-06 scope. Disagreement: Fowler would move `description_provenance` to `cli` now; Newman and Nygard hold that a schema move during the first live write is the wrong moment. Deferred to phase 1 (F4).
+
+PANEL-VERDICT: 7.3
