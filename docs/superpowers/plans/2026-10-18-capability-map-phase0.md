@@ -316,7 +316,7 @@ Deviation from the design's "no design change; the plan is the design" (section 
 - Consumes: `populate(session, source, adapters, vocab, clock)`, `FakeSource`, `_rec` from `tests/test_populate.py`; fixtures `db`, `clock` from `tests/conftest.py` (schema from `SQLModel.metadata.create_all`, so the new model field appears automatically).
 - Produces: module constant `PRESERVED_PROVENANCE = ("manual", "static", "llm")` in `core/populate.py`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_populate.py`:
 
@@ -365,23 +365,23 @@ def test_populate_still_overwrites_feed_owned_rows(db, clock):
 
 `Cli(slug=, lang=, description=)` is the constructor shape `tests/test_catalog.py` already uses; the other columns have model defaults.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_populate.py -v -k "backfilled or feed_owned"`
 Expected: the first FAILS on the provenance assertion (the feed recreated the row, so it comes back with provenance `None` and `intent_tags` `convert`); both cases of the second (`llm`, `manual`) FAIL with `TypeError` on `description_provenance` and, once the model has the field, on the overwritten description; the last PASSES already and guards the existing behaviour. The first test's feed record carries `intent_tags` `convert` and types `text`, so its assertion also pins the trade-off the Step 5 entry names: a changed feed record does not refresh a backfilled row.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `core/models.py`: add `description_provenance: Optional[str] = None` after `provenance`, with a two-line comment saying the backfill owns descriptions marked `llm`.
 
 `core/populate.py`: define `PRESERVED_PROVENANCE = ("manual", "static", "llm")`. Move the `old_caps` query above the field assignments. Assign `cli.description = rec.description` only when no `old_caps` row has `description_provenance in PRESERVED_PROVENANCE` (the description guard stays independent of capability provenance, Global Constraints). Replace `if not any(c.provenance == "manual" ...)` with `if not any(c.provenance in PRESERVED_PROVENANCE ...)`. When the row IS recreated (feed-owned capability, e.g. a shell CLI whose only backfilled field is its description, so `provenance` is `NULL` and `description_provenance` is `llm`), pass `description_provenance=` the old row's value into the new `Capability(...)`: without that the marker dies with the deleted row and the second `populate()` overwrites the description (AC-06). Update the comment above it to name the backfill as the second owner.
 
-- [ ] **Step 4: Run the suite**
+- [x] **Step 4: Run the suite**
 
 Run: `.venv/bin/python -m pytest tests/test_populate.py tests/test_e2e.py tests/test_cli.py tests/test_plan_health.py tests/test_planner_probe.py -v`, then `.venv/bin/python -m pytest -q`
 Expected: all PASS.
 
-- [ ] **Step 5: Log the deviation and commit**
+- [x] **Step 5: Log the deviation and commit**
 
 ```bash
 cd ~/projects/00_Governance && bin/decisions add a2a-cli-registry --context US-CLIREG-CAPMAP-01 --category deviation \

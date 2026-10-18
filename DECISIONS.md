@@ -44,3 +44,14 @@
 **Outcome:** applied
 **Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 5 Step 2
 **Supersedes:** Q3 — resolved
+
+
+## Q5 — US-CLIREG-CAPMAP-01 — deviation
+
+**Question:** populate() reverts backfilled descriptions and capability rows on its next run; change populate although the design says the 07-03 plan is the design?
+**Options considered:** extend populate's preserved provenance set to static/llm and keep llm descriptions / leave populate alone and re-run the backfill after every populate / accept the risk
+**Chosen:** extend populate
+**Decided-by:** agent
+**Justification:** populate is not scheduled on this host today but one run would undo 612 descriptions; the feed's inference is what produced the path-shaped descriptions, so it is the weaker source for these rows. Trade-off: feed-side capability inference never refreshes a backfilled slug.
+**Outcome:** assumed
+**Ref:** core/populate.py, tests/test_populate.py, design section 5

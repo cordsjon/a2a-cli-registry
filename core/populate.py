@@ -9,6 +9,11 @@ class MassRemovalBreaker(RuntimeError):
     """>=threshold of existing CLIs would be removed — refuse, fail closed."""
 
 
+# Capability-row and description owners the feed must not overwrite: an
+# operator ("manual") or the capability-map backfill ("static"/"llm").
+PRESERVED_PROVENANCE = ("manual", "static", "llm")
+
+
 def _adapter_for(rec, adapters):
     for a in adapters:
         if a.detect(rec):
@@ -36,6 +41,22 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         merged = admit_ports(merged, vocab)
         launch = adapter.launch_spec(rec) if adapter else {}
 
+        # A row an operator hand-set (provenance='manual') is NOT the feed's to
+        # overwrite. Without this, the delete+recreate below silently erases
+        # every hand-fix on the next feed run: send_mail's intent_tags retag and
+        # its output_types backfill were both lost this way, leaving two planner
+        # tests red for ~2 months while the code that depended on them stayed
+        # correct. Same protected marker tools/backfill_capabilities.py honours.
+        # The capability-map backfill ('static'/'llm') is the second owner:
+        # PRESERVED_PROVENANCE covers both, for the row and for the description.
+        old_caps = session.exec(
+            select(Capability).where(Capability.cli_slug == rec.slug)
+        ).all()
+        # The description guard is keyed on description_provenance alone, never
+        # on the capability row's provenance (the two are owned independently).
+        description_owned = any(
+            c.description_provenance in PRESERVED_PROVENANCE for c in old_caps)
+
         cli = session.get(Cli, rec.slug)
         if cli is None:
             cli = Cli(slug=rec.slug); added += 1
@@ -43,7 +64,8 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.path = rec.path
         cli.bucket = rec.bucket
         cli.project = rec.project
-        cli.description = rec.description
+        if not description_owned:
+            cli.description = rec.description
         cli.source_class = rec.source_class
         cli.source_run_id = rec.source_run_id
         cli.not_standalone = rec.not_standalone
@@ -52,18 +74,15 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.launch_spec = _json.dumps(launch)
         session.add(cli)
 
-        # A row an operator hand-set (provenance='manual') is NOT the feed's to
-        # overwrite. Without this, the delete+recreate below silently erases
-        # every hand-fix on the next feed run: send_mail's intent_tags retag and
-        # its output_types backfill were both lost this way, leaving two planner
-        # tests red for ~2 months while the code that depended on them stayed
-        # correct. Same protected marker tools/backfill_capabilities.py honours.
-        old_caps = session.exec(
-            select(Capability).where(Capability.cli_slug == rec.slug)
-        ).all()
         # Scoped to this block rather than `continue`, so that anything added
-        # later in the loop body still runs for a manual row.
-        if not any(c.provenance == "manual" for c in old_caps):
+        # later in the loop body still runs for a preserved row.
+        if not any(c.provenance in PRESERVED_PROVENANCE for c in old_caps):
+            # A feed-owned row whose only backfilled field is the description
+            # (e.g. a shell CLI) is recreated, so its marker must be carried
+            # over or the next run overwrites the description.
+            description_marker = next(
+                (c.description_provenance for c in old_caps
+                 if c.description_provenance in PRESERVED_PROVENANCE), None)
             for old in old_caps:
                 session.delete(old)
             session.add(Capability(
@@ -73,6 +92,7 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
                 output_types=",".join(merged.output_types),
                 side_effect=merged.side_effect,
                 confidence=merged.confidence,
+                description_provenance=description_marker,
             ))
 
     for slug in to_remove:

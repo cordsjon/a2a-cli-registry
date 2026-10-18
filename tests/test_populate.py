@@ -101,8 +101,9 @@ def test_manual_provenance_capability_survives_a_feed_rerun(db, clock):
     restore notify,send; fails closed") but nothing enforced it.
 
     'manual' is the same protected marker tools/backfill_capabilities.py already
-    honours: provenance in (None, 'static', 'llm') is overwritable, anything
-    else is not.
+    honours. Since the capability-map phase 0 (Task 3), populate() also keeps
+    'static' and 'llm' rows (PRESERVED_PROVENANCE); only provenance None is
+    overwritable.
     """
     from sqlalchemy import text as _text
 
@@ -146,3 +147,45 @@ def test_non_manual_capability_is_still_refreshed_by_the_feed(db, clock):
     assert cap.output_types == "text:summary", (
         f"feed-owned row was not refreshed: {cap.output_types!r}"
     )
+
+
+def _seed_cli(db, description):
+    db.add(Cli(slug="tool", lang="python", description=description))
+
+
+def test_populate_preserves_backfilled_capability_row(db, clock):
+    _seed_cli(db, "old")
+    db.add(Capability(cli_slug="tool", intent_tags="export", input_types="path", output_types="json",
+                      side_effect="none", confidence="inferred", provenance="llm"))
+    db.commit()
+    vocab = VocabularyRegistry(registered={"text"}, aliases={})
+    populate(db, FakeSource([_rec("tool", ["text"], ["text"])]), [PythonAdapter()], vocab, clock)
+    caps = db.exec(select(Capability).where(Capability.cli_slug == "tool")).all()
+    assert [(c.provenance, c.intent_tags, c.input_types) for c in caps] == [("llm", "export", "path")]
+
+
+@pytest.mark.parametrize("marker", ["llm", "manual"])
+def test_populate_keeps_description_when_backfilled(db, clock, marker):
+    _seed_cli(db, "Exports things to JSON.")
+    db.add(Capability(cli_slug="tool", intent_tags="", input_types="", output_types="",
+                      side_effect="unknown", confidence="inferred", description_provenance=marker))
+    db.commit()
+    rec = _rec("tool", ["text"], ["text"]); rec.description = "scripts/tool.py"
+    vocab = VocabularyRegistry(registered={"text"}, aliases={})
+    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
+    assert db.get(Cli, "tool").description == "Exports things to JSON."
+    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)  # second run: the marker must survive the row recreation
+    assert db.get(Cli, "tool").description == "Exports things to JSON."
+    assert db.exec(select(Capability).where(Capability.cli_slug == "tool")).one().description_provenance == marker
+
+
+def test_populate_still_overwrites_feed_owned_rows(db, clock):
+    _seed_cli(db, "old")
+    db.add(Capability(cli_slug="tool", intent_tags="x", input_types="x", output_types="x",
+                      side_effect="none", confidence="inferred"))
+    db.commit()
+    rec = _rec("tool", ["text"], ["text"]); rec.description = "scripts/tool.py"
+    vocab = VocabularyRegistry(registered={"text"}, aliases={})
+    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
+    assert db.get(Cli, "tool").description == "scripts/tool.py"
+    assert db.exec(select(Capability).where(Capability.cli_slug == "tool")).one().intent_tags == "convert"

@@ -38,6 +38,9 @@ class Capability(SQLModel, table=True):
     # runtime via ensure_provenance_columns(), which is why populate (going
     # through the ORM) never saw it and erased hand-fixes anyway.
     provenance: Optional[str] = None
+    # Who owns the parent Cli.description. "llm" (the capability-map backfill)
+    # and "manual" mean populate() must not overwrite it from the feed.
+    description_provenance: Optional[str] = None
 
 
 class CliEdge(SQLModel, table=True):
