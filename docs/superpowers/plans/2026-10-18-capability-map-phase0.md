@@ -1,5 +1,7 @@
 # Capability Map Phase 0 Implementation Plan
 
+**Status 2026-10-18 19:30 (operator ruling, 20_CONSIGLIERE DECISIONS Q92): NOT cleared for execution.** This plan was written before the operator ruled "spec → architecture review → LLM panel → plans" for the capability-consolidation design. It goes through `sh:architecture-panel`, then `sh:spec-panel`, then a Codex review, and only then to execution. Do not start Task 1 until all three are recorded here with their verdicts.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every enabled CLI in the live registry a prose "can do" description and a sanity-checked capability row, by executing the already-built backfill pipeline against `~/.hermes/cli-registry.db` behind the operator gate the design names.
