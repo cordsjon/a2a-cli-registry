@@ -1,6 +1,6 @@
 # Capability Map Phase 0 Implementation Plan
 
-**Status 2026-10-18 19:30 (operator ruling, 20_CONSIGLIERE DECISIONS Q92): NOT cleared for execution.** This plan was written before the operator ruled "spec → architecture review → LLM panel → plans" for the capability-consolidation design. It goes through `sh:architecture-panel`, then `sh:spec-panel`, then a Codex review, and only then to execution. Do not start Task 1 until all three are recorded here with their verdicts. Pre-panel grounding review (Codex + DeepSeek) ran 2026-10-18 20:26; findings and the per-item triage are at the bottom of this file, and the edits they produced are folded into the tasks above. Architecture panel 2026-10-18 20:55: **7.3, PASS**, five findings applied and one demoted (section at the bottom). Spec panel and post-panel Codex review still outstanding.
+**Status 2026-10-18 19:30 (operator ruling, 20_CONSIGLIERE DECISIONS Q92): NOT cleared for execution.** This plan was written before the operator ruled "spec → architecture review → LLM panel → plans" for the capability-consolidation design. It goes through `sh:architecture-panel`, then `sh:spec-panel`, then a Codex review, and only then to execution. Do not start Task 1 until all three are recorded here with their verdicts. Pre-panel grounding review (Codex + DeepSeek) ran 2026-10-18 20:26; findings and the per-item triage are at the bottom of this file, and the edits they produced are folded into the tasks above. Architecture panel 2026-10-18 20:55: **7.3, PASS**, five findings applied and one demoted (section at the bottom). Spec panel 2026-10-18 21:10: **7.6, PASS**, one deterministic CRITICAL and three MINOR applied (section at the bottom). Post-panel Codex review still outstanding.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -17,7 +17,7 @@
 The design file is marked `spec-hierarchy: exempt`; this plan carries the phase's story. US-CLIREG-CAPMAP-01, under Epic "capability map", Solution "one discovery pipeline", Capability "the stack can say what it can do".
 
 - AC-01: `FOUNDATIONS.md` exists in this repo with the single line the design dictates and `bin/foundations open` reports it.
-- AC-02: after commit, enabled CLIs whose description contains a space, no `Error`, and is not the regenerator's `unknown purpose (<slug>)` sentinel count ≥ 550 of 612.
+- AC-02: after commit, enabled CLIs whose description contains a space, neither `Error` nor `Traceback`, and is not the regenerator's `unknown purpose (<slug>)` sentinel count ≥ 550 of 612.
 - AC-03: after commit, every enabled CLI has a capability row.
 - AC-04: after commit, `sanity_ok IS NOT NULL` on ≥ 90 % of enabled CLIs' capability rows.
 - AC-05: no field of the live DB's `cli` or `capability` tables changes before the operator resolves the escalated DECISIONS entry (the dry run targets a snapshot copy, Task 4).
@@ -34,6 +34,7 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 - Test runner: `.venv/bin/python -m pytest`. Commit-path tests carry `@needs_router` and call the real router for calibration.
 - Live DB: `~/.hermes/cli-registry.db` (`DEFAULT_DB` in `core/cli/main.py:34`). The service on :9113 reads it per request; no restart after a DB commit. The service runs from `~/MAC/nanobot/.venv`, an editable install of this checkout (`_editable_impl_a2a_cli_registry.pth`; launcher `~/.hermes/scripts/cli-registry-serve.sh:21`), so Task 3's `core/` commits are live on its next restart. The live `capability` table already has `description_provenance` (`PRAGMA table_info`, 2026-10-18), so the model field needs no migration on this database.
 - Registry write lock: every mutating CLI command serializes on the sidecar `<db>.lock` via `with_file_lock` (`core/store/db.py:44`; `core/cli/main.py:173,344,361`). The shipped backfill writer does not take it; Task 2 adds it around the live-write tail. `tools/reclassify_modulemode.py:12` already imports from `core`, so the dependency direction has precedent.
+- Not registered in the registry it serves (no `a2a-cli-registry/tools/` path is in `cli`, 2026-10-18): the backfill is an operator-gated, multi-hour batch, not an agent-invocable capability. Whether the unattended path (design section 9) gets a registry entry is a phase 1 call.
 - Gates in `tools/backfill_capabilities.py` stay as shipped: `FALLBACK_CAP = 300`, `SANITY_FAILURE_THRESHOLD = 0.10`, calibration must pass, `--commit` refuses otherwise. Never bypass with a flag.
 - Long router runs go to the background with a log file, never in a foreground tool call (612 rows, two to four router calls each; runtime unmeasured, expect more than an hour).
 - The handover asks for `/model opus` before build work. Tasks 2 and 3 are build work.
@@ -46,13 +47,14 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 3. A disabled CLI (`enabled = 0`, 24 live rows): must get no router calls and no proposal. Pinned in Task 2.
 4. Router output wrapped in a markdown fence (the handover's gotcha 8): `_extract_json` must still parse it. Pinned in Task 2.
 5. `populate()` running after the commit (not scheduled on this host today; live `source_run_id` values are `reconstructed-from-db`, `post-commit-register`, `manual-specreg-*`): must not revert descriptions or capability rows. Pinned in Task 3. Not covered: `register_cli.py` re-registering an existing slug rewrites its description (`~/projects/00_Governance/scripts/register_cli.py:181`); carried to phase 1, not fixed here.
+6. Untrusted prompt input: the regenerator's prompt carries each CLI's docstring and first 20 source lines (`tools/description_regenerator.py:37-61`), so instruction-shaped text in a source file can steer its own description. Controls in phase 0: the sanity judge and the operator's `head -40` review of the proposals file (Task 4 Step 5). No input filtering is added here; carried to phase 1 with item 5.
 
 ## Baseline (recorded at execution, Task 1 Step 3)
 
 | Measure | 2026-10-18 pre-plan | At Task 1 | After Task 5 |
 |---|---|---|---|
 | `cli` rows / enabled | 636 / 612 | | |
-| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%'`) | 153 | | |
+| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%' AND NOT LIKE '%Traceback%'`) | 145 (153 before the spec panel added the `Traceback` exclusion: 8 rows were prose-shaped tracebacks, which is why the three description rows summed to 620) | | |
 | enabled with path-shaped description (`LIKE '%/%' AND NOT LIKE '% %'`) | 355 | | |
 | enabled with error-shaped description (`LIKE '%Error%' OR LIKE '%Traceback%'`) | 112 | | |
 | `capability` rows / `provenance IS NULL` / `manual` | 489 / 477 / 12 | | |
@@ -264,6 +266,8 @@ Expected: `test_extract_json_strips_markdown_fence` PASSES already (`_extract_js
 
 `from core.store.db import with_file_lock` at module top (precedent: `tools/reclassify_modulemode.py:12`).
 
+`run_pipeline`: write `backfill_proposals.jsonl` and `sanity_report.jsonl` through `tempfile.NamedTemporaryFile(dir=".", delete=False)` followed by `Path(tmp.name).replace(target)` (`tempfile` is already imported for `backup_db`), so an interrupted run cannot leave a truncated artifact for Task 5's hash pinning to pin. The existing dry-run test's existence check still covers the success path.
+
 `_ensure_capability_row(con, slug: str) -> bool`: `SELECT 1 FROM cli WHERE slug=?`, return False if absent; `SELECT 1 FROM capability WHERE cli_slug=?`, return False if present; else `INSERT INTO capability (cli_slug, intent_tags, input_types, output_types, side_effect, confidence) VALUES (?, '', '', '', 'unknown', 'inferred')` and return True. Call it at the top of the per-row loop in `_persist_sanity` and in `write_commit`; in both, `continue` when the slug has no `cli` row.
 
 `_load_reviewed(path: Path) -> tuple[list[dict], list[dict]]`: reads `path` and `path.parent / "sanity_report.jsonl"` as JSON lines; builds `verdicts = {r["slug"]: r}` and refuses (`REFUSED: reviewed report does not cover the proposals (<detail>)` to stderr, `sys.exit(1)`) when a report slug repeats, a proposal slug has no verdict, or a verdict names a slug absent from the proposals.
@@ -426,7 +430,7 @@ import json
 P = [json.loads(l) for l in open("backfill_proposals.jsonl")]
 S = {r["slug"]: r for r in (json.loads(l) for l in open("sanity_report.jsonl"))}
 import os, sqlite3
-def is_prose(d): return " " in d and "Error" not in d and not d.startswith("unknown purpose")
+def is_prose(d): return " " in d and "Error" not in d and "Traceback" not in d and not d.startswith("unknown purpose")
 unknown = [p["slug"] for p in P if p["description"].startswith("unknown purpose")]
 prose = sum(1 for p in P if is_prose(p["description"]))
 con = sqlite3.connect(os.path.expanduser("~/.hermes/cli-registry.db"))
@@ -493,7 +497,7 @@ Expected: no `REFUSED` line; both backup files exist. The tool's `.bak-<sha>` is
 
 ```bash
 sqlite3 ~/.hermes/cli-registry.db "
-SELECT count(*) FROM cli WHERE enabled=1 AND description LIKE '% %' AND description NOT LIKE '%Error%' AND description NOT LIKE 'unknown purpose%';
+SELECT count(*) FROM cli WHERE enabled=1 AND description LIKE '% %' AND description NOT LIKE '%Error%' AND description NOT LIKE '%Traceback%' AND description NOT LIKE 'unknown purpose%';
 SELECT count(*) FROM cli WHERE enabled=1 AND slug NOT IN (SELECT cli_slug FROM capability);
 SELECT count(*) FROM capability c JOIN cli ON cli.slug=c.cli_slug WHERE cli.enabled=1 AND c.sanity_ok IS NOT NULL;
 SELECT provenance, count(*) FROM capability GROUP BY 1;" | tr '\n' ' '
@@ -755,3 +759,35 @@ Findings, all applied in the task text above:
 Consensus: the operator gate, hash pinning and snapshot dry run from the pre-panel round hold; the panel's additions are the lock, the run-unique backup, and honest AC-06 scope. Disagreement: Fowler would move `description_provenance` to `cli` now; Newman and Nygard hold that a schema move during the first live write is the wrong moment. Deferred to phase 1 (F4).
 
 PANEL-VERDICT: 7.3
+
+## Spec panel — 2026-10-18 21:10 (sh:spec-panel, critique mode, silent)
+
+Experts: Wiegers, Adzic, Fowler, Crispin (defaults) plus Nygard, Willison, Majors by auto-select (`failure`, `llm`/`model`, `cli`/`observability`). Deterministic pre-scoring checks ran first against the live DB and the test fixture; expert findings were sent to `codex exec` (read-only) for refutation at HEAD `6bb3897`. Scores are for the plan as reviewed, before the fixes.
+
+Pre-scoring checks:
+- Table reconciliation: `cli` 636 / enabled 612 / disabled 24 (matches Review Focus 3); `capability` 489 = 477 NULL + 12 manual; enabled without row 125; `sanity_ok` set 0; pre-plan test count 602 (`pytest --collect-only`). **Mismatch:** description classes 153 + 355 + 112 = 620 ≠ 612 with path∧error = 0 and none-of-three = 0, so 8 enabled rows are prose-shaped tracebacks (confirmed: `LIKE '% %' AND NOT LIKE '%Error%' AND LIKE '%Traceback%'` → 8; strict prose → 145). That is S1.
+- Fixture contract: the plan's positional `_insert_cli` matches the fixture's 17 `cli` columns (`description` 7th, `health_status` 10th NOT NULL, `enabled` 13th, `a2a_invokable` 14th NOT NULL).
+- Operator surface: every operator verb has a named command (`--from-proposals`, `bin/decisions resolve`, `bin/foundations open`); the repo has no menu/launchpad mechanism (no `MenuItem`/`add_typer`/`launchpad` in `core/`); A2A registration: see S4.
+
+| Dimension | Score | Basis |
+|---|---|---|
+| Clarity | 8.0 | Every step has a command and an expected result; vocabulary now defined. |
+| Completeness | 8.0 | Gates, backups, lock, carry-forwards present; untrusted prompt input was unnamed (S3). |
+| Testability | 7.5 | ACs are SQL-measurable; AC-02's predicate admitted tracebacks (S1). |
+| Consistency | 6.5 | Baseline arithmetic did not reconcile (S1). |
+| Operator-surface | 8.0 | Commands named; non-registration of the tool was unstated (S4). |
+| Public-readiness | 7.5 | Internal runbook with `~` paths by design; no bare excepts; non-atomic artifact writes (S2). |
+| **Overall** | **7.6** | **PASS** (threshold 7.0) |
+
+AI-production dimensions (enabled by `llm`/`model`): output-integrity 7.0 (fence-stripped JSON parse pinned by test; artifact writes non-atomic, S2); isolation-enforcement N/A (single pipeline); security-boundaries 7.5 (live-DB read-only during the dry run is enforced by the snapshot, not by intent; router token is a local literal).
+
+Findings, all applied above:
+
+- **S1 CRITICAL (deterministic, Wiegers)** — AC-02, the Baseline prose predicate, Task 4 Step 4's `is_prose` and Task 5 Step 3's query now exclude `Traceback`; the Baseline prose figure is 145 with the old 153 kept for the record.
+- **S2 MINOR (output-integrity, Nygard)** — `run_pipeline` writes both jsonl artifacts with `write_text` (`tools/backfill_capabilities.py:237-242`). Task 2 Step 3 now writes them tempfile-then-replace.
+- **S3 MINOR (Willison)** — the regenerator prompt carries the docstring and first 20 lines of each CLI (`tools/description_regenerator.py:37, :52, :61`) with no instruction filtering. Named as Review Focus item 6 with the phase 0 controls; carried to phase 1.
+- **S4 MINOR (operator-surface, Majors)** — no tool of this repo is registered in the registry (query → 0). Global Constraints now states why and defers the unattended path's registration to phase 1.
+
+Consensus: the plan is a runbook with tests, not a feature spec, and scores as one; Adzic and Crispin accept the test blocks as the executable examples. Disagreement: Cockburn wanted the operator's goal restated per task; the panel left the Goal paragraph as the single statement.
+
+PANEL-VERDICT: 7.6
