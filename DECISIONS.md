@@ -20,3 +20,15 @@
 **Justification:** Found in the post-panel round 2 triage (2026-10-18): all 12 descriptions are operator prose. A live-DB marker write before the gate would break AC-05; a one-clause rule in write_commit and populate needs no data change and is pinned by one test each. Trade-off: a manual row's description can no longer be refreshed by the backfill; the operator edits it by hand or clears provenance.
 **Outcome:** assumed
 **Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Global Constraints, Task 2, Task 3; tools/backfill_capabilities.py:290
+
+
+## Q3 — US-CLIREG-CAPMAP-01 — gate-resolution
+
+**Question:** The 12 provenance='manual' capability rows (send_mail, 11 bf-*) have hand-written descriptions and description_provenance NULL, so the first live backfill write replaces all 12 with LLM text. Q2 (assumed) coupled the two guards in code; that contradicts the 07-03 plan ('each field's guard must be checked separately, never coupled', :1878) and the shipped test test_manual_capability_provenance_protected_independently_of_description, so Q2 is withdrawn. How should the 12 descriptions be treated?
+**Options considered:** mark the 12 rows description_provenance='manual' in Task 5 Step 2, after the pre-write snapshot and before the writer / accept the overwrite (the sanity judge and the head -40 review cover quality) / couple the guards in code after all (reverses the 07-03 design)
+**Chosen:** —
+**Decided-by:** human
+**Justification:** Found at Task 2 execution 2026-10-18: the July design keeps the guards independent on purpose and a shipped test pins it, so an agent cannot settle this by assumption. Marking is a 12-row data write on the live DB, which AC-05 reserves for the operator; it needs no code change and keeps the July design. Task 2 shipped without the coupling; Task 4 Step 4 projects with the shipped rule.
+**Outcome:** escalated
+**Ref:** docs/superpowers/plans/2026-07-03-capability-backfill.md:1878; tests/test_backfill_capabilities.py:153; docs/superpowers/plans/2026-10-18-capability-map-phase0.md Global Constraints
+**Supersedes:** Q2 — superseded

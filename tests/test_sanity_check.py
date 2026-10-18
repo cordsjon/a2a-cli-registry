@@ -100,3 +100,7 @@ def test_calibration_set_covers_noarg_and_binary_output_cases():
     assert "noarg-seeder" in slugs
     assert "pdf-report" in slugs
     assert "db-seeder-mismatch" in slugs
+
+
+def test_extract_json_strips_markdown_fence():
+    assert sanity._extract_json('```json\n{"ok": true, "reason": "r"}\n```') == {"ok": True, "reason": "r"}

@@ -17,6 +17,9 @@ import tempfile
 import time
 from pathlib import Path
 
+from core.okf.serialize import _atomic_write
+from core.store.db import with_file_lock
+
 import tools.capability_extractor as capability_extractor
 import tools.capability_llm_fallback as capability_llm_fallback
 import tools.capability_repair as capability_repair
@@ -114,7 +117,7 @@ def backup_db(db_path: str) -> Path:
 
 def _fetch_all_cli_rows(con) -> list[dict]:
     rows = con.execute(
-        "SELECT slug, lang, path, description FROM cli"
+        "SELECT slug, lang, path, description FROM cli WHERE enabled = 1"
     ).fetchall()
     return [{"slug": r[0], "lang": r[1], "path": r[2], "description": r[3]} for r in rows]
 
@@ -126,6 +129,27 @@ def _read_source(path: str | None) -> str:
         return Path(path).read_text()
     except (OSError, UnicodeDecodeError):
         return ""
+
+
+def _cli_exists(con, slug: str) -> bool:
+    return con.execute("SELECT 1 FROM cli WHERE slug=?", (slug,)).fetchone() is not None
+
+
+def _ensure_capability_row(con, slug: str) -> bool:
+    """Inserts an empty feed-owned (provenance NULL) capability row for a CLI
+    that has none, so its sanity verdict and backfilled fields have a row to
+    land on. Returns whether it inserted; never creates a row for a slug that
+    is not in `cli` (no orphans)."""
+    if not _cli_exists(con, slug):
+        return False
+    if con.execute("SELECT 1 FROM capability WHERE cli_slug=?", (slug,)).fetchone():
+        return False
+    con.execute(
+        "INSERT INTO capability (cli_slug, intent_tags, input_types, output_types, side_effect, confidence) "
+        "VALUES (?, '', '', '', 'unknown', 'inferred')",
+        (slug,),
+    )
+    return True
 
 
 def _persist_sanity(db_path: str, sanity_results: list[dict], checked_at: float) -> None:
@@ -144,6 +168,9 @@ def _persist_sanity(db_path: str, sanity_results: list[dict], checked_at: float)
         for r in sanity_results:
             if r.get("unreachable"):
                 continue
+            if not _cli_exists(con, r["slug"]):
+                continue
+            _ensure_capability_row(con, r["slug"])
             con.execute(
                 """UPDATE capability SET sanity_ok=?, sanity_reason=?, sanity_checked_at=?
                    WHERE cli_slug=?""",
@@ -157,14 +184,16 @@ def _persist_sanity(db_path: str, sanity_results: list[dict], checked_at: float)
         con.close()
 
 
-def run_pipeline(db_path: str) -> dict:
+def run_pipeline(db_path: str, persist_sanity: bool = True) -> dict:
     """Dry-run body: regenerate descriptions, extract/fallback capabilities,
     sanity-check everything, write both jsonl report files. Never writes
     description/capability fields to the DB (that stays --commit-only via
     write_commit). DOES persist the sanity verdict (sanity_ok/sanity_reason/
     sanity_checked_at) on every invocation, dry-run included -- a deliberate
     behavior change so the /overview staleness label stays meaningful between
-    commits. Returns a summary dict; also the first phase of --commit."""
+    commits. Returns a summary dict; also the first phase of --commit, which
+    passes persist_sanity=False and persists the verdicts itself, behind
+    backup_db and the registry lock."""
     start = time.time()
     con = sqlite3.connect(db_path)
     try:
@@ -174,8 +203,9 @@ def run_pipeline(db_path: str) -> dict:
 
     proposals = []
     fallback_count = 0
-    for row in cli_rows:
+    for i, row in enumerate(cli_rows):
         slug, lang, path, _old_description = row["slug"], row["lang"], row["path"], row["description"]
+        print(f"[{i + 1}/{len(cli_rows)}] {slug}", file=sys.stderr)
         source = _read_source(path) if lang == "python" else ""
         description = description_regenerator.regenerate_description(slug, source)
 
@@ -199,7 +229,8 @@ def run_pipeline(db_path: str) -> dict:
     calibration_ok, calibration_detail = _run_calibration()
 
     sanity_results = []
-    for p in proposals:
+    for i, p in enumerate(proposals):
+        print(f"[{i + 1}/{len(proposals)}] {p['slug']}", file=sys.stderr)
         result = sanity_check.check_row(p["slug"], p["description"], p["capability"] or {})
         sanity_results.append({"slug": p["slug"], **result})
 
@@ -228,18 +259,17 @@ def run_pipeline(db_path: str) -> dict:
             sanity_results[i] = {"slug": p["slug"], **recheck}
             repaired_count += 1
 
-    ensure_provenance_columns(db_path)  # idempotent guard -- columns must exist before the write below
-    _persist_sanity(db_path, sanity_results, time.time())
+    if persist_sanity:
+        ensure_provenance_columns(db_path)  # idempotent guard -- columns must exist before the write below
+        _persist_sanity(db_path, sanity_results, time.time())
 
     fail_count = sum(1 for r in sanity_results if not r["ok"])
     fail_rate = fail_count / len(sanity_results) if sanity_results else 0.0
 
-    Path("backfill_proposals.jsonl").write_text(
-        "\n".join(json.dumps(p) for p in proposals) + "\n"
-    )
-    Path("sanity_report.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in sanity_results) + "\n"
-    )
+    # Atomic: a run killed mid-write must not leave a truncated artifact that
+    # a later --from-proposals replay could hash-pin and commit.
+    _atomic_write(Path("backfill_proposals.jsonl"), "\n".join(json.dumps(p) for p in proposals) + "\n")
+    _atomic_write(Path("sanity_report.jsonl"), "\n".join(json.dumps(r) for r in sanity_results) + "\n")
 
     elapsed = time.time() - start
     summary = {
@@ -280,6 +310,9 @@ def write_commit(db_path: str, proposals: list[dict]) -> None:
     try:
         for p in proposals:
             slug, description, capability = p["slug"], p["description"], p["capability"]
+            if not _cli_exists(con, slug):
+                continue  # slug left the registry since generation: never create an orphan
+            _ensure_capability_row(con, slug)
 
             row = con.execute(
                 "SELECT provenance, description_provenance FROM capability WHERE cli_slug=?",
@@ -318,14 +351,68 @@ def write_commit(db_path: str, proposals: list[dict]) -> None:
         con.close()
 
 
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _load_reviewed(path: Path) -> tuple[list[dict], list[dict]]:
+    """Loads a reviewed proposals file and its sibling sanity_report.jsonl.
+    Refuses unless the report holds exactly one verdict per proposal slug and
+    none for any other slug: a partial or unrelated report must not let
+    unjudged proposals through the aggregate fail-rate gate."""
+    proposals = _read_jsonl(path)
+    report = _read_jsonl(path.parent / "sanity_report.jsonl")
+    verdict_slugs = [r["slug"] for r in report]
+    proposal_slugs = {p["slug"] for p in proposals}
+    problems = []
+    repeated = sorted({s for s in verdict_slugs if verdict_slugs.count(s) > 1})
+    if repeated:
+        problems.append(f"repeated verdicts: {repeated[:5]}")
+    missing = sorted(proposal_slugs - set(verdict_slugs))
+    if missing:
+        problems.append(f"no verdict for: {missing[:5]}")
+    extra = sorted(set(verdict_slugs) - proposal_slugs)
+    if extra:
+        problems.append(f"verdicts for unproposed slugs: {extra[:5]}")
+    if problems:
+        print(
+            f"REFUSED: reviewed report does not cover the proposals ({'; '.join(problems)})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return proposals, report
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Registry capability backfill")
     parser.add_argument("--db", required=True, help="Path to registry.db")
     parser.add_argument("--commit", action="store_true", help="Write to the DB (default: dry-run)")
+    parser.add_argument(
+        "--from-proposals", type=Path, default=None,
+        help="Commit this reviewed proposals file (and its sibling sanity_report.jsonl) "
+             "instead of regenerating; requires --commit",
+    )
     args = parser.parse_args(argv)
+    if args.from_proposals is not None and not args.commit:
+        parser.error("--from-proposals requires --commit")
 
-    ensure_provenance_columns(args.db)
-    result = run_pipeline(args.db)
+    if args.from_proposals is not None:
+        proposals, report = _load_reviewed(args.from_proposals)
+        calibration_ok, calibration_detail = _run_calibration()
+        fails = sum(1 for r in report if not r["ok"])
+        result = {
+            "proposals": proposals,
+            "sanity_results": report,
+            "summary": {
+                "calibration_ok": calibration_ok,
+                "calibration_detail": calibration_detail,
+                "sanity_fail_rate": fails / len(report) if report else 0.0,
+            },
+        }
+    else:
+        # No ensure_provenance_columns here: the dry run adds the columns inside
+        # run_pipeline, and a commit adds them below, after the backup.
+        result = run_pipeline(args.db, persist_sanity=not args.commit)
 
     if not args.commit:
         return
@@ -354,8 +441,13 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
-    backup_db(args.db)
-    write_commit(args.db, result["proposals"])
+    # Every write to the target sits behind the backup and inside the registry
+    # lock that populate/discover/armed probe take, in this order.
+    with with_file_lock(args.db + ".lock"):
+        backup_db(args.db)
+        ensure_provenance_columns(args.db)
+        _persist_sanity(args.db, result["sanity_results"], time.time())
+        write_commit(args.db, result["proposals"])
 
 
 if __name__ == "__main__":

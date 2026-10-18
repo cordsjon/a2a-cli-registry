@@ -1,3 +1,4 @@
+import contextlib
 import json
 import sqlite3
 
@@ -396,3 +397,137 @@ def test_repair_loop_keeps_original_when_repair_fails(drifted_db, monkeypatch, t
     assert by_slug["csv2json"]["ok"] is False
     assert result["summary"]["repaired_count"] == 0
     assert result["summary"]["sanity_fail_count"] == 1
+
+
+def _insert_cli(con, slug, lang="python", enabled=1, description="30_x/orphan.py"):
+    con.execute(
+        "INSERT INTO cli VALUES (?,?,NULL,NULL,'/tmp/orphan.py','{}',?,NULL,NULL,'unknown',NULL,NULL,?,0,NULL,NULL,NULL)",
+        (slug, lang, description, enabled),
+    )
+
+
+def test_pipeline_skips_disabled_rows(drifted_db, monkeypatch, tmp_path, capsys):
+    con = sqlite3.connect(drifted_db); _insert_cli(con, "deadcli", enabled=0); con.commit(); con.close()
+    _patch_pipeline(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    result = backfill.run_pipeline(drifted_db)
+    assert "deadcli" not in {p["slug"] for p in result["proposals"]}
+    assert result["summary"]["total_rows"] == 2
+    assert capsys.readouterr().err.count("[2/2] ") == 2  # proposal loop and sanity loop each print per row, so a live run can be watched for stalls
+
+
+def test_persist_sanity_creates_placeholder_row_for_cli_without_capability(drifted_db):
+    con = sqlite3.connect(drifted_db); _insert_cli(con, "orphan"); con.commit(); con.close()
+    backfill.ensure_provenance_columns(drifted_db)
+    backfill._persist_sanity(drifted_db, [{"slug": "orphan", "ok": True, "reason": "fine"}], 1.0)
+    con = sqlite3.connect(drifted_db)
+    row = con.execute("SELECT sanity_ok, provenance, side_effect, confidence FROM capability WHERE cli_slug='orphan'").fetchone()
+    con.close()
+    assert row == (1, None, "unknown", "inferred")
+
+
+def test_ensure_capability_row_refuses_unknown_slug(drifted_db):
+    con = sqlite3.connect(drifted_db)
+    assert backfill._ensure_capability_row(con, "never-registered") is False
+    assert con.execute("SELECT count(*) FROM capability WHERE cli_slug='never-registered'").fetchone()[0] == 0
+    con.close()
+
+
+@needs_router
+def test_commit_inserts_capability_row_when_missing(drifted_db, monkeypatch, tmp_path):
+    con = sqlite3.connect(drifted_db); _insert_cli(con, "orphan"); con.commit(); con.close()
+    _patch_pipeline(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    backfill.main(["--db", drifted_db, "--commit"])
+    con = sqlite3.connect(drifted_db)
+    cap = con.execute("SELECT input_types, provenance, description_provenance FROM capability WHERE cli_slug='orphan'").fetchone()
+    desc = con.execute("SELECT description FROM cli WHERE slug='orphan'").fetchone()[0]
+    con.close()
+    assert cap == ("path", "static", "llm")
+    assert desc == "A test CLI that converts things."
+
+
+@needs_router
+def test_commit_from_proposals_writes_reviewed_file_without_rerunning_pipeline(drifted_db, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    def _boom(db): raise AssertionError("pipeline must not run")
+    monkeypatch.setattr(backfill, "run_pipeline", _boom)
+    (tmp_path / "backfill_proposals.jsonl").write_text(json.dumps({
+        "slug": "csv2json", "description": "Reviewed description.",
+        "capability": {"input_types": ["path"], "output_types": ["json"], "intent_tags": ["convert"],
+                       "side_effect": "none", "confidence": "inferred", "provenance": "static"},
+    }) + "\n")
+    (tmp_path / "sanity_report.jsonl").write_text(json.dumps({"slug": "csv2json", "ok": True, "reason": ""}) + "\n")
+    backfill.main(["--db", drifted_db, "--commit", "--from-proposals", str(tmp_path / "backfill_proposals.jsonl")])
+    con = sqlite3.connect(drifted_db)
+    assert con.execute("SELECT description FROM cli WHERE slug='csv2json'").fetchone()[0] == "Reviewed description."
+    assert con.execute("SELECT sanity_ok FROM capability WHERE cli_slug='csv2json'").fetchone()[0] == 1
+    con.close()
+
+
+def test_from_proposals_requires_commit(drifted_db, tmp_path):
+    with pytest.raises(SystemExit):
+        backfill.main(["--db", drifted_db, "--from-proposals", str(tmp_path / "x.jsonl")])
+
+
+@needs_router
+def test_commit_from_proposals_ignores_slug_not_in_cli(drifted_db, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "backfill_proposals.jsonl").write_text(json.dumps({
+        "slug": "ghost", "description": "Gone.",
+        "capability": {"input_types": [], "output_types": [], "intent_tags": [], "side_effect": "none",
+                       "confidence": "inferred", "provenance": "llm"},
+    }) + "\n")
+    (tmp_path / "sanity_report.jsonl").write_text(json.dumps({"slug": "ghost", "ok": True, "reason": ""}) + "\n")
+    backfill.main(["--db", drifted_db, "--commit", "--from-proposals", str(tmp_path / "backfill_proposals.jsonl")])
+    con = sqlite3.connect(drifted_db)
+    assert con.execute("SELECT count(*) FROM capability WHERE cli_slug='ghost'").fetchone()[0] == 0
+    con.close()
+
+
+def test_commit_from_proposals_refuses_report_missing_a_verdict(drifted_db, tmp_path, capsys):
+    (tmp_path / "backfill_proposals.jsonl").write_text(json.dumps({
+        "slug": "csv2json", "description": "Reviewed description.",
+        "capability": {"input_types": ["path"], "output_types": ["json"], "intent_tags": ["convert"],
+                       "side_effect": "none", "confidence": "inferred", "provenance": "static"},
+    }) + "\n")
+    (tmp_path / "sanity_report.jsonl").write_text(json.dumps({"slug": "other", "ok": True, "reason": ""}) + "\n")
+    with pytest.raises(SystemExit):
+        backfill.main(["--db", drifted_db, "--commit", "--from-proposals", str(tmp_path / "backfill_proposals.jsonl")])
+    assert "REFUSED: reviewed report does not cover" in capsys.readouterr().err
+    con = sqlite3.connect(drifted_db)
+    assert con.execute("SELECT description FROM cli WHERE slug='csv2json'").fetchone()[0] != "Reviewed description."
+    con.close()
+
+
+@needs_router
+def test_commit_from_proposals_holds_the_registry_lock(drifted_db, monkeypatch, tmp_path):
+    held = []
+
+    @contextlib.contextmanager
+    def _spy(path):
+        held.append(path)
+        yield
+
+    monkeypatch.setattr(backfill, "with_file_lock", _spy)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "backfill_proposals.jsonl").write_text(json.dumps({
+        "slug": "csv2json", "description": "Reviewed description.",
+        "capability": {"input_types": ["path"], "output_types": ["json"], "intent_tags": ["convert"],
+                       "side_effect": "none", "confidence": "inferred", "provenance": "static"},
+    }) + "\n")
+    (tmp_path / "sanity_report.jsonl").write_text(json.dumps({"slug": "csv2json", "ok": True, "reason": ""}) + "\n")
+    backfill.main(["--db", drifted_db, "--commit", "--from-proposals", str(tmp_path / "backfill_proposals.jsonl")])
+    assert held == [drifted_db + ".lock"]
+
+
+@needs_router
+def test_plain_commit_backs_up_before_any_write(drifted_db, monkeypatch, tmp_path):
+    order = []
+    real_backup, real_persist = backfill.backup_db, backfill._persist_sanity
+    monkeypatch.setattr(backfill, "backup_db", lambda db: (order.append("backup"), real_backup(db))[1])
+    monkeypatch.setattr(backfill, "_persist_sanity", lambda *a: (order.append("persist"), real_persist(*a))[1])
+    _patch_pipeline(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    backfill.main(["--db", drifted_db, "--commit"])
+    assert order == ["backup", "persist"]
