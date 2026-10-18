@@ -4,7 +4,7 @@
 
 ### US-CLIREG-CAPMAP-01: capability map with real can-do descriptions
 
-US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: in progress (phase 0 of the 20_CONSIGLIERE capability-consolidation design)
+US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: in progress (phase 0 of the 20_CONSIGLIERE capability-consolidation design). AC-01 met by Task 1 (62fc0d4); Task 2 writer shipped (bf0e3de); AC-02..AC-06 are measured in Task 5; operator decision a2a-cli-registry DECISIONS Q3 open.
 
 **Tags:** `[a2a-cli-registry]` `[capability-map]` `[foundation]`
 
