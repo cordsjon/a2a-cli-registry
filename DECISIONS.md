@@ -32,3 +32,15 @@
 **Outcome:** escalated
 **Ref:** docs/superpowers/plans/2026-07-03-capability-backfill.md:1878; tests/test_backfill_capabilities.py:153; docs/superpowers/plans/2026-10-18-capability-map-phase0.md Global Constraints
 **Supersedes:** Q2 — superseded
+
+
+## Q4 — US-CLIREG-CAPMAP-01 — gate-resolution
+
+**Question:** The 12 provenance='manual' capability rows (send_mail, 11 bf-*) have hand-written descriptions and description_provenance NULL, so the first live backfill write replaces all 12 with LLM text. Q2 (assumed) coupled the two guards in code; that contradicts the 07-03 plan ('each field's guard must be checked separately, never coupled', :1878) and the shipped test test_manual_capability_provenance_protected_independently_of_description, so Q2 is withdrawn. How should the 12 descriptions be treated?
+**Options considered:** mark the 12 rows description_provenance='manual' in Task 5 Step 2, after the pre-write snapshot and before the writer / accept the overwrite (the sanity judge and the head -40 review cover quality) / couple the guards in code after all (reverses the 07-03 design)
+**Chosen:** mark the 12 rows description_provenance='manual' in Task 5 Step 2, after the pre-write snapshot and before the writer
+**Decided-by:** human
+**Justification:** Operator accepted the agent's stated recommendation (option 1) with /youdrive on 2026-10-18 at about 22:25. Keeps the 07-03 independent-guard design and the 12 hand-written descriptions; the write is one UPDATE on the live DB inside Task 5, after the rollback snapshot.
+**Outcome:** applied
+**Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 5 Step 2
+**Supersedes:** Q3 — resolved
