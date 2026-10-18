@@ -2,6 +2,12 @@
 
 ## Critical Path
 
+### US-CLIREG-CAPMAP-01: capability map with real can-do descriptions
+
+US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: in progress (phase 0 of the 20_CONSIGLIERE capability-consolidation design)
+
+**Tags:** `[a2a-cli-registry]` `[capability-map]` `[foundation]`
+
 ## Ideation
 
 ### US-CLIREG-PIPELINE-CLI-01: Expose the discover→probe→capture→remediate pipeline as thin CLI subcommands

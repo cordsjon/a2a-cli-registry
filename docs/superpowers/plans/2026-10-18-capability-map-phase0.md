@@ -53,14 +53,14 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 
 | Measure | 2026-10-18 pre-plan | At Task 1 | After Task 5 |
 |---|---|---|---|
-| `cli` rows / enabled | 636 / 612 | | |
-| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%' AND NOT LIKE '%Traceback%'`) | 145 (153 before the spec panel added the `Traceback` exclusion: 8 rows were prose-shaped tracebacks, which is why the three description rows summed to 620) | | |
-| enabled with path-shaped description (`LIKE '%/%' AND NOT LIKE '% %'`) | 355 | | |
-| enabled with error-shaped description (`LIKE '%Error%' OR LIKE '%Traceback%'`) | 112 | | |
-| `capability` rows / `provenance IS NULL` / `manual` | 489 / 477 / 12 | | |
-| enabled CLIs with no capability row | 125 | | |
-| `sanity_ok IS NOT NULL` | 0 | | |
-| HEAD | `8654325` | | |
+| `cli` rows / enabled | 636 / 612 | 636 / 612 | |
+| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%' AND NOT LIKE '%Traceback%'`) | 145 (153 before the spec panel added the `Traceback` exclusion: 8 rows were prose-shaped tracebacks, which is why the three description rows summed to 620) | 145 (the three rows now partition the 612: none-of-three = 0) | |
+| enabled with path-shaped description (`LIKE '%/%' AND NOT LIKE '% %'`) | 355 | 355 | |
+| enabled with error-shaped description (`LIKE '%Error%' OR LIKE '%Traceback%'`) | 112 | 112 | |
+| `capability` rows / `provenance IS NULL` / `manual` | 489 / 477 / 12 | 489 / 477 / 12 | |
+| enabled CLIs with no capability row | 125 | 125 | |
+| `sanity_ok IS NOT NULL` | 0 | 0 | |
+| HEAD | `8654325` | `e88268c` | |
 
 ---
 
@@ -75,7 +75,7 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 - Consumes: `~/projects/00_Governance/bin/foundations` (exit 1 when any entry is not `implemented`, prints the open lines; states are `open < specced < planned < implemented`).
 - Produces: the foundation line Task 5 flips to `implemented`.
 
-- [ ] **Step 1: Create `FOUNDATIONS.md`**
+- [x] **Step 1: Create `FOUNDATIONS.md`**
 
 Four comment lines in the style of `~/projects/20_CONSIGLIERE/FOUNDATIONS.md` (format pointer; one-sentence premise: "the registry answers what each CLI on this host can do, for planners and for discovery gap matching"; what counts as a foundation; status line `drafted by agent 2026-10-18 per 20_CONSIGLIERE DECISIONS Q89`), then exactly one entry:
 
@@ -83,20 +83,20 @@ Four comment lines in the style of `~/projects/20_CONSIGLIERE/FOUNDATIONS.md` (f
 - capability map with real can-do descriptions | open | docs/superpowers/plans/2026-10-18-capability-map-phase0.md
 ```
 
-- [ ] **Step 2: Verify the gate sees it**
+- [x] **Step 2: Verify the gate sees it**
 
 Run: `cd ~/projects/00_Governance && bin/foundations open ~/projects/a2a-cli-registry; echo "exit $?"`
 Expected: the one line printed with state `open`, then `exit 1`.
 
-- [ ] **Step 3: Record the baseline**
+- [x] **Step 3: Record the baseline**
 
 Run the eight queries behind the Baseline table against `~/.hermes/cli-registry.db` (predicates as written in the table, all scoped to `enabled = 1` where the row says "enabled") plus `git rev-parse --short HEAD`, and fill the "At Task 1" column of this file. A number that differs from the pre-plan column is fine; a `cli` row count below 600 (636 pre-plan; losing 36 rows means a registry sweep ran, not drift) or a `manual` count other than 12 (the operator-owned set changed since the plan was written, by an edit or a removal, and the operator should know before the writer runs) is not: stop and report the delta before continuing.
 
-- [ ] **Step 4: Add the story to `BACKLOG.md`**
+- [x] **Step 4: Add the story to `BACKLOG.md`**
 
 Under `## Critical Path`, one entry in the surrounding entries' bullet style: `US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: in progress (phase 0 of the 20_CONSIGLIERE capability-consolidation design)`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add FOUNDATIONS.md BACKLOG.md docs/superpowers/plans/2026-10-18-capability-map-phase0.md
