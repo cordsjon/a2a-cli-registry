@@ -408,7 +408,7 @@ This is Task 7 Steps 1 to 4 of the 07-03 plan, re-run on today's corpus. The dry
 - Consumes: `tools.backfill_capabilities.main(["--db", DEFAULT_DB])`.
 - Produces: the two jsonl files and the DECISIONS question number Task 5 waits on.
 
-- [ ] **Step 1: Confirm the router answers**
+- [x] **Step 1: Confirm the router answers**
 
 Run:
 ```bash
@@ -417,7 +417,7 @@ curl -s -m 25 -X POST http://localhost:9111/v1/chat/completions -H "Content-Type
 ```
 Expected: `choices[0].message.content` of `{"ok":true}` and `http 200`. Anything else: stop; the run would mark every row unreachable and persist nothing useful.
 
-- [ ] **Step 2: Start the dry run in the background**
+- [x] **Step 2: Start the dry run in the background**
 
 ```bash
 mkdir -p ~/.local/state/a2a-cli-registry
@@ -430,12 +430,12 @@ echo "$! $SNAP"
 `.backup` is a consistent copy while the :9113 service keeps reading the live file. Every write the run makes (sanity fields, placeholder rows, the provenance columns) lands in the snapshot.
 Then wait with a Monitor (the Claude Code `Monitor` tool on the log file; a human operator uses `tail -f` in a second terminal, since `nohup` detaches the run from this shell) on the log for the line `"elapsed_seconds"` (the summary JSON is the last thing printed). Do not poll in a foreground loop. Runtime is unmeasured; the July run's elapsed was not recorded. Stall rule: the log gains one `[i/n] <slug>` line per row (Task 2); a row costs at most four router calls with one retry each at 30 s (`_call_router` in the four tools; `sanity_check.py:125` retries once, no backoff), so if the last progress line is older than 10 minutes, probe the router (`Step 1`'s curl); non-200 → kill the run, fix the router, re-run against a fresh snapshot (the run is a pure regeneration, nothing to resume); 200 → leave it, it is working through slow rows.
 
-- [ ] **Step 3: Read the summary and the gates**
+- [x] **Step 3: Read the summary and the gates**
 
 Run: `tail -11 ~/.local/state/a2a-cli-registry/backfill-dryrun-$STAMP.log` (the summary is the 11-line indented JSON `run_pipeline` prints last: nine keys plus braces)
 Expected: JSON with `total_rows` = enabled count (612 unless Task 1's baseline differed), `fallback_count ≤ 300`, `calibration_ok: true`, `sanity_fail_rate ≤ 0.10`. A `STOP:` line or any `unreachable` text in `calibration_detail` means a gate failed: do not tune the thresholds; follow Task 7 Step 3 of the 07-03 plan (fix the extractor, regenerator or checker, re-run unit tests, re-run this step) and record the reason in the DECISIONS entry below.
 
-- [ ] **Step 4: Measure the proposals against AC-02 and Review Focus item 1**
+- [x] **Step 4: Measure the proposals against AC-02 and Review Focus item 1**
 
 ```bash
 cd ~/projects/a2a-cli-registry && .venv/bin/python - <<'EOF'
@@ -466,7 +466,33 @@ shasum -a 256 backfill_proposals.jsonl sanity_report.jsonl   # both hashes go in
 ```
 Expected: `projected_prose ≥ 550`; `kept_owned` is the number of `description_provenance = 'manual'` rows (0 today; Q4 marks the 12 `manual` rows only in Task 5, so this preflight projects them as overwritten; the kept texts are prose, so `projected_prose` can understate the Task 5 Step 3 count by at most 12 and never overstate it). The script applies `write_commit`'s ownership rule to the live rows and then evaluates Task 5 Step 3's AC-02 SQL over the projected descriptions in an in-memory table, so the preflight and the acceptance share one predicate, including SQLite's case-insensitive `LIKE` and the kept operator descriptions (validated 2026-10-18 against the live DB with synthetic proposals under the coupled rule since withdrawn: 612 for prose, 12 when every proposal contained lowercase `error`; under the shipped rule the second figure is 0). `not_proposed` > 0 means CLIs were enabled after the snapshot, which Task 5 Step 1 also catches. Below 550, AC-02 cannot be met by committing; report the shortfall in the DECISIONS entry with the `unknown_purpose` list (those are CLIs whose source path is gone, a registry-hygiene finding for phase 1, not a tuning target). Paste the summary JSON and this output into this plan file under this step.
 
-- [ ] **Step 5: File the escalated decision and commit the artifacts**
+**Run record (2026-10-18 22:41 → 2026-10-19 00:01, snapshot `~/.local/state/a2a-cli-registry/registry-snapshot-20261018-2241.db`, log `backfill-dryrun-20261018-2241.log`):**
+
+Summary JSON:
+```
+{
+"total_rows": 612,
+"python_rows": 600,
+"fallback_count": 297,
+"repaired_count": 60,
+"sanity_fail_count": 39,
+"sanity_fail_rate": 0.06372549019607843,
+"calibration_ok": true,
+"calibration_detail": "all calibration cases matched",
+"elapsed_seconds": 4821.402798175812
+}
+```
+Step 4 output:
+```
+proposals=612 enabled_live=612 not_proposed=0 kept_owned=0 projected_prose=553 unknown_purpose=37 sanity_fail=39
+unknown sample: ['build', 'retag', 'hex_layout', 'generate', 'main-2', 'cli_args', 'frontend_management', 'generate_api_stubs', 'update_blueprints', 'mcp_server']
+fail sample: ['build', 'retag', 'hex_layout', 'generate', 'main-2', 'cli_args', 'frontend_management', 'generate_api_stubs', 'update_blueprints', 'mcp_server']
+e2aa9b55fd1c2d8e0c692447c4a5903d7e2c33c8c73fa442895aff4ff639a1cf  backfill_proposals.jsonl
+ca2f323067958dc13fef6d523ac15a132a44bfc60059cb136c91fc061bf81011  sanity_report.jsonl
+```
+All four Step 3 gates and the Step 4 floor pass (fallback 297 of 300; prose 553 of 550; the 12 Q4 rows are projected as overwritten, so 553 understates by at most 12). The 37 `unknown purpose` slugs are the 37 sanity failures' leading rows: registry-hygiene finding for phase 1, not tuned here.
+
+- [x] **Step 5: File the escalated decision and commit the artifacts**
 
 ```bash
 cd ~/projects/00_Governance && bin/decisions add a2a-cli-registry --context US-CLIREG-CAPMAP-01 --category gate-resolution \

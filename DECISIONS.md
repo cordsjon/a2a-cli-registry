@@ -55,3 +55,14 @@
 **Justification:** populate is not scheduled on this host today but one run would undo 612 descriptions; the feed's inference is what produced the path-shaped descriptions, so it is the weaker source for these rows. Trade-off: feed-side capability inference never refreshes a backfilled slug.
 **Outcome:** assumed
 **Ref:** core/populate.py, tests/test_populate.py, design section 5
+
+
+## Q6 — US-CLIREG-CAPMAP-01 — gate-resolution
+
+**Question:** Commit the reviewed backfill proposals to ~/.hermes/cli-registry.db? Dry run 2026-10-18 22:41 on snapshot ~/.local/state/a2a-cli-registry/registry-snapshot-20261018-2241.db: rows=612 projected_prose=553/612 kept_owned=0 fallback=297 sanity_fail_rate=0.0637 calibration_ok=true unknown_purpose=37; sha256 backfill_proposals.jsonl=e2aa9b55fd1c2d8e0c692447c4a5903d7e2c33c8c73fa442895aff4ff639a1cf sanity_report.jsonl=ca2f323067958dc13fef6d523ac15a132a44bfc60059cb136c91fc061bf81011
+**Options considered:** commit from the reviewed file / tune and re-run / stop phase 0
+**Chosen:** —
+**Decided-by:** human
+**Justification:** First live write of LLM-generated descriptions into the registry; design section 9 gates it on this report. Review: backfill_proposals.jsonl (head -40), sanity_report.jsonl ok:false rows, log at ~/.local/state/a2a-cli-registry/backfill-dryrun-20261018-2241.log. Later runs write unattended through the sanity gate.
+**Outcome:** escalated
+**Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 4
