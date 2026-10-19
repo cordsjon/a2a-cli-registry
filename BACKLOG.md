@@ -4,7 +4,7 @@
 
 ### US-CLIREG-CAPMAP-01: capability map with real can-do descriptions
 
-US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: in progress (phase 0 of the 20_CONSIGLIERE capability-consolidation design). AC-01 met by Task 1 (62fc0d4); Task 2 writer shipped (bf0e3de); Task 3 populate() guard shipped (8b8189a, DECISIONS Q5 assumed); AC-02..AC-06 are measured in Task 5; DECISIONS Q4 (operator): the 12 manual rows' descriptions are marked and kept in Task 5.
+US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..AC-06 in docs/superpowers/plans/2026-10-18-capability-map-phase0.md — status: done 2026-10-19 (phase 0; phases 1 to 4 in 20_CONSIGLIERE). AC-01 met by Task 1 (62fc0d4); Task 2 writer shipped (bf0e3de); Task 3 populate() guard shipped (8b8189a, DECISIONS Q5 assumed); Task 5 live write 2026-10-19 after DECISIONS Q7 (operator: commit from the reviewed file): AC-02 557 ≥ 550, AC-03 0, AC-04 612 ≥ 551, manual 12 kept (Q4). Live `file:pdf` search probe returned 0, so the 07-10 plan's AC-05 is not met; backfilled types are coarse (path/text/json) and carried to phase 1 (DECISIONS Q8, assumed).
 
 **Tags:** `[a2a-cli-registry]` `[capability-map]` `[foundation]`
 
