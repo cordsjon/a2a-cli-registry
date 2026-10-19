@@ -1,5 +1,7 @@
 # Registry Capability Backfill Implementation Plan
 
+**Status 2026-10-19:** Tasks 1 to 6 shipped 2026-07 (commits e5c0129 to c825cf1); Task 7 executed against the live registry by docs/superpowers/plans/2026-10-18-capability-map-phase0.md Tasks 4 and 5. Checkboxes below were never ticked and are left as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Populate `capability.input_types`/`output_types`/`intent_tags`/`side_effect` for the 471 Python-resolvable CLIs in `registry.db`, regenerate `cli.description` for all 474 rows (all are currently corrupted — path strings or traceback text), and run an LLM sanity-check pass so the final catalog is genuinely human-readable and typed, not just non-empty.

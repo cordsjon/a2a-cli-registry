@@ -1,5 +1,7 @@
 # CLI Catalog Search: Match Capability Vocabulary Implementation Plan
 
+**Status 2026-10-19:** Task 1 shipped 2026-07-10 (ae70c28); Task 2 executed as docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 5 Step 4 against the CLI on the live DB: `file:pdf` lists 3 CLIs (pdf-tools-safe, pdf-tools-redact, bf-batch), none of them generate_pdf, so AC-05 is **not met**. Cause: the backfill writes coarse capability types (path/text/json; 8 of 614 rows carry `file:<ext>`), so a `file:pdf` vocabulary query cannot reach backfilled producers. Carried to phase 1 (DECISIONS Q8). Checkboxes below were never ticked and are left as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend `search_clis` (`core/catalog/queries.py`) so a query also matches a CLI's `Capability.intent_tags`/`input_types`/`output_types`, not just its `slug`/`description` — fixing the registry-side root cause of US-CLIREG-DISCOVERY-QUALITY-01.

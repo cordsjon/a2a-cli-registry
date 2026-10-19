@@ -53,14 +53,14 @@ The design file is marked `spec-hierarchy: exempt`; this plan carries the phase'
 
 | Measure | 2026-10-18 pre-plan | At Task 1 | After Task 5 |
 |---|---|---|---|
-| `cli` rows / enabled | 636 / 612 | 636 / 612 | |
-| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%' AND NOT LIKE '%Traceback%'`) | 145 (153 before the spec panel added the `Traceback` exclusion: 8 rows were prose-shaped tracebacks, which is why the three description rows summed to 620) | 145 (the three rows now partition the 612: none-of-three = 0) | |
-| enabled with path-shaped description (`LIKE '%/%' AND NOT LIKE '% %'`) | 355 | 355 | |
-| enabled with error-shaped description (`LIKE '%Error%' OR LIKE '%Traceback%'`) | 112 | 112 | |
-| `capability` rows / `provenance IS NULL` / `manual` | 489 / 477 / 12 | 489 / 477 / 12 | |
-| enabled CLIs with no capability row | 125 | 125 | |
-| `sanity_ok IS NOT NULL` | 0 | 0 | |
-| HEAD | `8654325` | `e88268c` | |
+| `cli` rows / enabled | 636 / 612 | 636 / 612 | 636 / 612 |
+| enabled with prose description (`LIKE '% %' AND NOT LIKE '%Error%' AND NOT LIKE '%Traceback%'`) | 145 (153 before the spec panel added the `Traceback` exclusion: 8 rows were prose-shaped tracebacks, which is why the three description rows summed to 620) | 145 (the three rows now partition the 612: none-of-three = 0) | 594 (557 with the 37 `unknown purpose` rows excluded = AC-02) |
+| enabled with path-shaped description (`LIKE '%/%' AND NOT LIKE '% %'`) | 355 | 355 | 0 |
+| enabled with error-shaped description (`LIKE '%Error%' OR LIKE '%Traceback%'`) | 112 | 112 | 18 (all prose naming an exception or error path, none a traceback: the predicate undercounts AC-02) |
+| `capability` rows / `provenance IS NULL` / `manual` | 489 / 477 / 12 | 489 / 477 / 12 | 614 / 14 / 12 (llm 344, static 244) |
+| enabled CLIs with no capability row | 125 | 125 | 0 |
+| `sanity_ok IS NOT NULL` | 0 | 0 | 612 |
+| HEAD | `8654325` | `e88268c` | `26a985c` (write ran at) |
 
 ---
 
@@ -521,7 +521,7 @@ cd ~/projects/00_Governance && bin/decisions resolve a2a-cli-registry <n> --chos
 **Interfaces:**
 - Consumes: Task 2's `--from-proposals`; Task 4's committed `backfill_proposals.jsonl` at the HEAD the operator reviewed.
 
-- [ ] **Step 1: Confirm the gate is open and the file is the reviewed one**
+- [x] **Step 1: Confirm the gate is open and the file is the reviewed one**
 
 `resolve` closes Q<n> by appending a superseding entry Q<m> (`**Supersedes:** Q<n> — resolved`, written by `cmd_resolve`, `~/projects/00_Governance/scripts/decisions_cli.py:552`); read that entry. `<n>` and `<m>` are placeholders: substitute both numbers before running (`<n>` is Task 4 Step 5's question, `<m>` the entry `resolve` appended).
 Run: `cd ~/projects/00_Governance && bin/decisions show -p a2a-cli-registry <m> | grep -cE '^\*\*(Chosen:\*\* commit from the reviewed file|Decided-by:\*\* human|Supersedes:\*\* Q<n> — resolved)$'` → `3`. Any other count, including a `show` error (`show` on a missing number prints to stderr and exits 1, so the count is 0), blocks Task 5. The shape was verified 2026-10-18 against a real `resolve` output, 20_CONSIGLIERE Q93: 3 with Q93's values substituted, 2 with this step's chosen text.
@@ -534,7 +534,9 @@ UNION ALL SELECT 'new', slug FROM main.cli WHERE enabled=1 AND slug NOT IN (SELE
 Expected: no output. A `changed` row is a CLI whose language, path or enabled state moved since the dry run, so its reviewed description may describe a different tool; a `new` row is an enabled CLI the reviewed set does not cover (AC-03 would fail). Either blocks Task 5: report the slugs to the operator, who chooses "tune and re-run" or accepts them by name in a new DECISIONS entry. Slugs deleted since the snapshot need no check (the writer skips them, Task 2). Source-content edits at an unchanged path are not detected; the sanity verdicts were judged on the snapshot's sources, an accepted residual. (Query verified read-only 2026-10-18: no output against a fresh snapshot; a mutated copy returned `changed|send_mail` and `new|bf-mark`.)
 Run: `cd ~/projects/a2a-cli-registry && shasum -a 256 backfill_proposals.jsonl sanity_report.jsonl` → the two hashes recorded in Q<n>'s question. A later commit can replace either file and leave the tree clean, so the hashes, not `git status`, identify what the operator reviewed.
 
-- [ ] **Step 2: Commit from the reviewed file**
+- [x] **Step 2: Commit from the reviewed file**
+
+**Run 2026-10-19 06:25 (first attempt, no retry):** rollback artifact `~/.local/state/a2a-cli-registry/registry-prewrite-20261019-062544-18521.db`; marking `UPDATE` → `12`; `writer exit 0`; log `backfill-commit-20261019-062544-18521.log` is empty (the commit path prints only on REFUSED, `tools/backfill_capabilities.py:420-450`), 0 REFUSED lines; `cli-registry.db.bak-26a985c` present. Step 1 beforehand: Q7 grep → 3, snapshot diff → no rows, both hashes match Q6.
 
 ```bash
 cd ~/projects/a2a-cli-registry && SHA=$(git rev-parse --short HEAD) && STAMP=$(date +%Y%m%d-%H%M%S)-$$
@@ -547,7 +549,7 @@ ls -la ~/.hermes/cli-registry.db.bak-$SHA "$PRE"
 ```
 Expected: a `rollback artifact:` line, `12` from the marking `UPDATE` (DECISIONS Q4; `0` on a retry, since the first attempt already marked them), `writer exit 0`, no `REFUSED` line in the log, both backup files exist. A non-zero exit stops Task 5 here: Steps 3 to 6 do not run; report the exit, the full log at `$LOG` and the rollback path to the operator. Record the first attempt's `$PRE` path under this step before anything else: on a retry that path stays the rollback artifact, and the retry's own snapshot (a new name, since the stamp carries seconds and the shell PID) only records the state the retry started from. The tool's `.bak-<sha>` is keyed by git SHA and overwritten on a re-run at the same HEAD (`backup_db`, `tools/backfill_capabilities.py:99-113`), and the live write is two transactions (`_persist_sanity`, then `write_commit`), so a failure between them followed by a re-run would replace that backup with the half-written state. The pre-write snapshot taken here is therefore the rollback artifact. A re-run of this command is data-idempotent (every live write is an `UPDATE` keyed by slug, or a placeholder insert guarded by existence). `$SHA` is captured before the run so a future `git commit` inserted in between cannot make the `ls` check pass against the wrong file. The calibration step makes eight router calls; the regeneration does not re-run; the reviewed sanity verdicts are persisted in this same run, under the registry lock.
 
-- [ ] **Step 3: Acceptance queries (AC-02, AC-03, AC-04)**
+- [x] **Step 3: Acceptance queries (AC-02, AC-03, AC-04)**
 
 ```bash
 sqlite3 ~/.hermes/cli-registry.db "
@@ -558,12 +560,14 @@ SELECT provenance, count(*) FROM capability GROUP BY 1;" | tr '\n' ' '
 ```
 Expected: first ≥ 550, second 0, third ≥ 551 (90 % of 612), `manual` still 12. Any miss blocks Steps 5 and 6 (the foundation stays `open`): report the numbers and Step 2's rollback path to the operator. Fill the "After Task 5" column of the Baseline table from these plus the other predicates.
 
-- [ ] **Step 4: Live search probe (07-10 plan Task 2)**
+- [x] **Step 4: Live search probe (07-10 plan Task 2)**
+
+**Result 2026-10-19: 0** (below the expected ≥ 1). `file:pdf` lists pdf-tools-safe, pdf-tools-redact, bf-batch; the four `generate*pdf` CLIs carry `path`/`str`/`text` types, so the vocabulary haystack (`core/catalog/match.py`) never holds `file:pdf` for them. Not a phase 0 blocker per the done-when triple (Step 3); carried to phase 1 (DECISIONS Q8, assumed).
 
 Run: `cd ~/projects/a2a-cli-registry && .venv/bin/a2a-cli-registry overview --query file:pdf --db ~/.hermes/cli-registry.db 2>&1 | grep -ci "generate.pdf"`
 Expected: ≥ 1. Record the count under this step. If `overview` renders a page instead of listing rows, call `core.catalog.queries.search_clis(session, "file:pdf")` directly against a `sqlite:///` engine on the live DB and record the slugs.
 
-- [ ] **Step 5: Bookkeeping**
+- [x] **Step 5: Bookkeeping**
 
 `FOUNDATIONS.md`: change `| open |` to `| implemented |` on the one line. Run `cd ~/projects/00_Governance && bin/foundations open ~/projects/a2a-cli-registry; echo "exit $?"` → nothing open, `exit 0`.
 
@@ -571,7 +575,7 @@ Expected: ≥ 1. Record the count under this step. If `overview` renders a page 
 
 Under the H1 of `docs/superpowers/plans/2026-07-03-capability-backfill.md`, add: `**Status 2026-10-<dd>:** Tasks 1 to 6 shipped 2026-07 (commits e5c0129 to c825cf1); Task 7 executed against the live registry by docs/superpowers/plans/2026-10-18-capability-map-phase0.md Tasks 4 and 5. Checkboxes below were never ticked and are left as written.` Same shape under the H1 of the 07-10 plan: Task 1 shipped (`git log --oneline -1 -- core/catalog/queries.py` for the SHA), Task 2 executed as Task 5 Step 4 here.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```bash
 git add FOUNDATIONS.md BACKLOG.md docs/superpowers/plans/2026-07-03-capability-backfill.md docs/superpowers/plans/2026-07-10-cli-catalog-search-capability-vocab.md docs/superpowers/plans/2026-10-18-capability-map-phase0.md

@@ -78,3 +78,14 @@
 **Outcome:** applied
 **Ref:** 7282178 (at write time)
 **Supersedes:** Q6 — resolved
+
+
+## Q8 — US-CLIREG-CAPMAP-01 — deviation
+
+**Question:** Task 5 Step 4 live search probe returned 0 (expected >=1): 'overview --query file:pdf' does not list generate_pdf/generate-pdf. The backfill writes coarse capability types (path 201, text 136, json 51 rows; only 8/614 rows carry file:<ext>), so a file:pdf vocab query cannot reach backfilled producers. The plan does not say whether Step 4 blocks Steps 5-6.
+**Options considered:** flip the foundation on AC-02..AC-04 and record Step 4 as failed / hold FOUNDATIONS open until typed vocabulary lands
+**Chosen:** flip the foundation on AC-02..AC-04 and record Step 4 as failed
+**Decided-by:** agent
+**Justification:** Plan self-review names AC-02..AC-04 as the foundation's done-when triple (all pass: 557/0/612); Step 3, not Step 4, is the step that blocks Steps 5-6. The foundation is 'real can-do descriptions', which landed. The 07-10 plan's AC-05 (file:pdf finds generate_pdf) is recorded as NOT met and carried to phase 1: the type vocabulary needs file:<ext> output, which is a regeneration, not a phase 0 write. Reversible: one FOUNDATIONS line.
+**Outcome:** assumed
+**Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 5 Step 4
