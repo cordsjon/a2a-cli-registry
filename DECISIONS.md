@@ -89,3 +89,36 @@
 **Justification:** Plan self-review names AC-02..AC-04 as the foundation's done-when triple (all pass: 557/0/612); Step 3, not Step 4, is the step that blocks Steps 5-6. The foundation is 'real can-do descriptions', which landed. The 07-10 plan's AC-05 (file:pdf finds generate_pdf) is recorded as NOT met and carried to phase 1: the type vocabulary needs file:<ext> output, which is a regeneration, not a phase 0 write. Reversible: one FOUNDATIONS line.
 **Outcome:** assumed
 **Ref:** docs/superpowers/plans/2026-10-18-capability-map-phase0.md Task 5 Step 4
+
+
+## Q9 — US-CAPLOOP-04 plan review (Plan B, Codex-authored). Spec says the 37 enabled unknown-purpose rows have gone sources; live probe: 27 gone, 10 live tools (causa, invoice-fetcher, oc, nk, ...). — deviation
+
+**Question:** How are the 10 placeholder rows whose source still exists resolved?
+**Options considered:** a) disable them too; b) reviewed one-sentence descriptions from a committed JSON, written as manual; c) LLM regeneration run
+**Chosen:** b
+**Decided-by:** agent
+**Justification:** Disabling hides working tools; an unreviewed LLM run is not authorized by Q7. A slug whose purpose cannot be read from source stays unresolved and blocks apply.
+**Outcome:** assumed
+**Ref:** docs/superpowers/plans/2026-10-20-caploop-registry-hygiene.md Task 5 Step 7b
+
+
+## Q10 — Plan B Task 3 guards register_cli.py ON CONFLICT description assignment by cli.description_provenance. — tradeoff
+
+**Question:** Which description owners does re-registration protect, and does an explicit --description override them?
+**Options considered:** a) manual only; b) manual, static, llm — explicit --description does not override; c) add a --force flag
+**Chosen:** b
+**Decided-by:** agent
+**Justification:** Matches discovery's PRESERVED_PROVENANCE policy in core/populate.py:14; no new override surface. Behavior change: --description on an owned row is now ignored silently (exit 0).
+**Outcome:** assumed
+**Ref:** docs/superpowers/plans/2026-10-20-caploop-registry-hygiene.md Task 3
+
+
+## Q11 — Plan B Task 1 moves description_provenance from capability to cli; init_db migrates on open. — tradeoff
+
+**Question:** How are multiple legacy capability markers collapsed onto cli, and when is the live DB backed up?
+**Options considered:** a) first row wins; b) manual > llm > static > other, copied once on column creation; backup in Task 1 Step 0 before auto-migrating code lands; c) reject conflicts
+**Chosen:** b
+**Decided-by:** agent
+**Justification:** Manual-first never loses curation; one-time copy stops stale child markers resurrecting cleared ownership; the first registry command after Task 1 migrates the live DB, so the backup must predate it.
+**Outcome:** assumed
+**Ref:** docs/superpowers/plans/2026-10-20-caploop-registry-hygiene.md Task 1, Decisions 3 and 10
