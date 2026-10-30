@@ -513,9 +513,9 @@ def test_producer_terms_beat_alphabetical_tie_break(db):
     assert legacy[0].slugs == ["aaa_build"]            # alphabetical tie-break today
     ranked = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
                         producer_terms=["codename"])
-    assert ranked[0].slugs == ["zzz_codename"]         # first RETURNED chain
+    # Q13 (2026-10-30): the non-matching producers are DROPPED, not demoted.
+    assert [c.slugs for c in ranked] == [["zzz_codename"]]
     assert ranked[0].relevance_rank == 0
-    assert all(c.relevance_rank == 1 for c in ranked[1:])
 
 
 def test_omitted_and_empty_producer_terms_are_order_identical_to_legacy(db):
@@ -529,17 +529,60 @@ def test_omitted_and_empty_producer_terms_are_order_identical_to_legacy(db):
     assert [c.hops for c in legacy] == [c.hops for c in gated]
 
 
-def test_unmatched_producer_terms_fall_back_to_legacy_order(db):
-    # spec §3 (d)
+def test_unmatched_producer_terms_yield_no_chain(db):
+    # spec §3 (d) as amended by Q13 (operator ruling 2026-10-30, US-CLIREG-
+    # QUERYGOAL-PRECISION-01/AC-02): "no match means no tool". Terms given and
+    # no producer hop matches any of them -> plan_chain returns [] so the
+    # adapter fails cleanly ("no usable plan") instead of guessing the
+    # alphabetical first. The pre-Q13 behaviour was the legacy order.
     _tied_producers(db, ["aaa_build", "zzz_codename"])
     chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
                         producer_terms=["zzz-nothing-matches-this"])
-    assert chains[0].slugs == ["aaa_build"]
-    assert all(c.relevance_rank == 1 for c in chains)
+    assert chains == []
 
 
-def test_action_terminal_match_does_not_mark_chain_relevant(db):
-    # spec §3 (e): term matches ONLY the action terminal's blob -> rank stays 1.
+def test_every_producer_term_must_be_covered(db):
+    # Q16 (assumed, 2026-10-30): relevance is per TERM, not per chain. The
+    # measured repro behind Q13 was goal [] -> [text] with terms [git, status]:
+    # bf-status matches 'status' but nothing matches 'git', and the ruling's
+    # stated correct result is a clean failure. Under an any-term rule
+    # bf-status survives, so each term must be matched by SOME producer hop
+    # (different hops may cover different terms).
+    for slug, ins, outs in [("alpha_gen", "file:pdf", "text:mid"),
+                            ("beta_fmt", "text:mid", "text")]:
+        db.add(Cli(slug=slug, lang="python"))
+        db.add(Capability(cli_slug=slug, intent_tags="generate", input_types=ins,
+                          output_types=outs, side_effect="none", confidence="declared"))
+    db.add(CliEdge(from_slug="alpha_gen", to_slug="beta_fmt", via_type="text:mid"))
+    db.commit()
+    spread = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                        producer_terms=["alpha", "beta"])
+    assert [c.slugs for c in spread] == [["alpha_gen", "beta_fmt"]]
+    partial = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                         producer_terms=["alpha", "gamma"])
+    assert partial == []
+
+
+def test_relevance_outranks_confidence_in_sort_key():
+    # Q13 (2): among surviving chains relevance_rank sorts BEFORE
+    # min_confidence_rank. Pinned on sort_key directly: after the Q13 filter
+    # every returned chain has relevance_rank 0, so plan_chain alone cannot
+    # show the key order; it still governs if the filter is ever relaxed.
+    relevant_inferred = Chain(slugs=["b"], length=1, side_effect_count=0,
+                              min_confidence_rank=1, relevance_rank=0)
+    irrelevant_declared = Chain(slugs=["a"], length=1, side_effect_count=0,
+                                min_confidence_rank=0, relevance_rank=1)
+    assert relevant_inferred.sort_key() < irrelevant_declared.sort_key()
+    # length and side-effect count still come first (spec §2.2: length is king)
+    longer_relevant = Chain(slugs=["b", "c"], length=2, side_effect_count=0,
+                            min_confidence_rank=0, relevance_rank=0)
+    assert irrelevant_declared.sort_key() < longer_relevant.sort_key()
+
+
+def test_action_terminal_match_does_not_count_as_producer_match(db):
+    # spec §3 (e) as amended by Q13: a term matching ONLY the action terminal's
+    # blob is not a producer match, so under Q13 the compound chain is DROPPED
+    # (pre-Q13 it survived at rank 1). A term matching the producer keeps it.
     db.add(Cli(slug="gen", lang="python"))
     db.add(Capability(cli_slug="gen", intent_tags="generate", input_types="file:pdf",
                       output_types="text", side_effect="none", confidence="declared"))
@@ -547,10 +590,13 @@ def test_action_terminal_match_does_not_mark_chain_relevant(db):
     db.add(Capability(cli_slug="codename_mailer", intent_tags="send", input_types="text",
                       output_types="text", side_effect="external", confidence="declared"))
     db.commit()
-    chains = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
-                        goal_actions=["email"], producer_terms=["codename"])
-    assert chains, "compound chain [gen, codename_mailer] must exist via synthesized edge"
-    assert all(c.relevance_rank == 1 for c in chains)
+    terminal_only = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                               goal_actions=["email"], producer_terms=["codename"])
+    assert terminal_only == []
+    producer_hit = plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text"],
+                              goal_actions=["email"], producer_terms=["generate"])
+    assert [c.slugs for c in producer_hit] == [["gen", "codename_mailer"]]
+    assert producer_hit[0].relevance_rank == 0
 
 
 def test_producer_terms_hygiene_non_string_and_blank_dropped(db):

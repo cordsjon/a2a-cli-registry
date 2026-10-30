@@ -89,11 +89,25 @@ Changing only `planner.search.plan_chain` + the op schema would fail at the hand
 silently drop the evidence field.
 
 ### 2.2 Registry: relevance rank in `sort_key`
-`Chain` gains `relevance_rank: int` (0 = relevant, 1 = not). New sort key:
+
+> **Amendment 2026-10-30 (DECISIONS.md Q13, US-CLIREG-QUERYGOAL-PRECISION-01/AC-02,
+> operator ruling):** when `producer_terms` are given, (1) a candidate chain with no
+> producer hop matching any term is **dropped**, so `plan_chain` returns `[]` and the
+> adapter fails cleanly with "no usable plan"; (2) `relevance_rank` sorts **before**
+> `min_confidence_rank`. Without terms the legacy order stands. This supersedes the
+> "placement after confidence" and the "no-match ⇒ legacy order" clauses below and test
+> plan items (d) and (e); `tests/test_planner.py` carries the amended tests. Measured
+> basis: goal `[] → [text]` with terms `[git, status]` matched no candidate on `git`, yet
+> `bf-status` won on confidence — a clean failure is the only right answer there.
+> **Q16 (assumed):** coverage is per term — a chain survives only if **every** cleaned
+> term is matched by at least one producer hop (hops may split the terms). An any-term
+> rule keeps `bf-status` alive on `status` alone and leaves that repro unfixed.
+
+`Chain` gains `relevance_rank: int` (0 = relevant, 1 = not). Sort key (as amended):
 
 ```python
-return (self.length, self.side_effect_count, self.min_confidence_rank,
-        self.relevance_rank, tuple(self.slugs))
+return (self.length, self.side_effect_count, self.relevance_rank,
+        self.min_confidence_rank, tuple(self.slugs))
 ```
 
 - **Placement (decided):** between confidence and the slug tie-break. Every comparison

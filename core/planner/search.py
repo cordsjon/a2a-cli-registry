@@ -20,12 +20,15 @@ class Chain:
     relevance_rank: int = 1    # 0 = a producer hop matches a producer_term (§2.2)
 
     def sort_key(self):
-        # length asc, side-effect count asc, min-confidence DESC (rank asc since
-        # lower rank = higher confidence), relevance asc (0 = producer matches a
-        # requested term — resolves formerly-arbitrary slug ties, spec §2.2),
-        # slug-sequence asc (final tiebreak)
-        return (self.length, self.side_effect_count, self.min_confidence_rank,
-                self.relevance_rank, tuple(self.slugs))
+        # length asc, side-effect count asc, relevance asc (0 = producer matches
+        # a requested term), min-confidence DESC (rank asc since lower rank =
+        # higher confidence), slug-sequence asc (final tiebreak).
+        # Q13 (US-CLIREG-QUERYGOAL-PRECISION-01/AC-02, operator ruling
+        # 2026-10-30): relevance sorts BEFORE confidence. Without producer_terms
+        # every chain carries the same constant rank, so the legacy order is
+        # unchanged (spec §2.2 legacy invariance still holds).
+        return (self.length, self.side_effect_count, self.relevance_rank,
+                self.min_confidence_rank, tuple(self.slugs))
 
 
 def _cap_index(session):
@@ -224,21 +227,30 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     # the final hop is an action terminal (its verb already matched, and its
     # blob must not fake artifact relevance); ALL hops otherwise. Runs before
     # the [:max_candidate_chains] cut — rank-before-cap is the point (§1.1).
+    # Q13 (operator ruling 2026-10-30): when terms are given, a chain with NO
+    # matching producer hop is dropped — "no match means no tool" — so the
+    # caller gets [] and the adapter fails cleanly ("no usable plan") instead
+    # of guessing the alphabetical first among same-output-type CLIs. Without
+    # terms nothing is filtered (legacy behaviour).
     terms = clean_terms(producer_terms)
     if terms and candidates:
         descs = {c.slug: c.description or "" for c in session.exec(select(Cli)).all()}
         idents, vocabs = {}, {}
 
-        def _slug_matches(s):
+        def _slug_matches(s, t):
             if s not in idents:
                 idents[s] = ident_haystack(s, descs.get(s, ""))
                 vocabs[s] = vocab_haystack(caps.get(s, []))
-            return any(term_matches(t, idents[s], vocabs[s]) for t in terms)
+            return term_matches(t, idents[s], vocabs[s])
 
+        # Q16 (assumed): coverage is per TERM — every term must be matched by
+        # some producer hop (hops may split the terms). An any-term rule kept
+        # bf-status alive on 'status' alone for the [git, status] repro.
         for ch in candidates:
             producers = ch.slugs[:-1] if ch.slugs[-1] in action_terminals else ch.slugs
-            if any(_slug_matches(s) for s in producers):
+            if all(any(_slug_matches(s, t) for s in producers) for t in terms):
                 ch.relevance_rank = 0
+        candidates = [ch for ch in candidates if ch.relevance_rank == 0]
 
     candidates.sort(key=lambda c: c.sort_key())
     return candidates[:max_candidate_chains]

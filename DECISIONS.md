@@ -155,3 +155,25 @@
 **Justification:** Measured 2026-10-30: populate() deletes rows absent from the feed; live DB 641 rows vs feed (2026-08-03) 479, 165 would go (134 manual-register incl. bf-batch), 25.7% is under the 30% breaker, so the sibling apply.sh scripts are a live hazard and this one must not repeat it. The manual-register + provenance=manual route is the one populate() preserves. Probe: chains planned 1 with allow=[].
 **Outcome:** assumed
 **Ref:** 62f70e8 (at write time)
+
+
+## Q15 — US-CLIREG-QUERYGOAL-PRECISION-01/AC-02 implementation, session e24588bd 2026-10-30 — deviation
+
+**Question:** Q13 records the ruling as 'when producer_terms are given' while the operator's question said 'for query-style requests'; and under the drop rule, what happens to a compound chain whose term matches only the action terminal?
+**Options considered:** gate on producer_terms presence, as Q13 records / gate on generic goal_outputs (text,json) only / drop terminal-only matches / keep terminal-only matches
+**Chosen:** Gate on producer_terms presence exactly as Q13 records, for every goal shape; a term matching only the action terminal is not a producer match, so that compound chain is dropped too (spec 2.2 producer-hop rule kept).
+**Decided-by:** agent
+**Justification:** Q13's Chosen line is the operator's recorded wording and names the condition the code can test; 'query-style' is not a planner input, and the adapter emits producer_terms as artifact nouns regardless of goal shape, so the generic-output reading would silently leave transform goals guessing. Terminal-only match: the §2.2 producer-hop rule already says the terminal blob must not fake artifact relevance; dropping is the consistent consequence. Tests flipped: test_unmatched_producer_terms_yield_no_chain, test_action_terminal_match_does_not_count_as_producer_match, test_plan_cli_chain_orders_by_producer_terms_and_serializes_rank.
+**Outcome:** assumed
+**Ref:** BACKLOG.md US-CLIREG-QUERYGOAL-PRECISION-01; DECISIONS.md Q13
+
+
+## Q16 — US-CLIREG-QUERYGOAL-PRECISION-01/AC-02 implementation, session e24588bd 2026-10-30 — deviation
+
+**Question:** Q13 says a chain is dropped when no producer hop matches ANY term, but its measured basis (terms [git, status], bf-status matches 'status', nothing matches 'git') declares a clean failure the only right answer. Under any-term semantics bf-status survives (live probe 2026-10-30: 2 chains, bf-status chain[0]). Per chain or per term?
+**Options considered:** any-term: literal Q13 text, repro stays broken / every-term: each term matched by some producer hop, different hops may cover different terms / same-hop: one hop must match all terms
+**Chosen:** every-term: a chain survives only if each cleaned producer_term is matched by at least one producer hop; hops may split the terms.
+**Decided-by:** agent
+**Justification:** The ruling's stated outcome for the measured case is the authority over its mechanism wording; any-term fails AC-03 on the very repro that opened the story. Same-hop was rejected as over-strict for 2-hop chains where the artifact noun and the format noun live on different CLIs. Cost: one spurious LLM-emitted term now yields a clean failure instead of a guess, which is the direction the ruling chose. Reversible in one line (search.py producer-match predicate). Operator to confirm or override.
+**Outcome:** assumed
+**Ref:** DECISIONS.md Q13, Q15; tests/test_planner.py test_every_producer_term_must_be_covered

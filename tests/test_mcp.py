@@ -174,9 +174,10 @@ def test_plan_cli_chain_orders_by_producer_terms_and_serializes_rank(db):
                         {"goal_inputs": ["file:pdf"], "goal_outputs": ["text"],
                          "producer_terms": ["codename"]})
     chains = out["content"][0]["json"]
-    assert chains[0]["slugs"] == ["zzz_codename"]
+    # Q13 (2026-10-30): the non-matching producer is dropped through the full
+    # op path, not returned at rank 1.
+    assert [ch["slugs"] for ch in chains] == [["zzz_codename"]]
     assert chains[0]["relevance_rank"] == 0
-    assert chains[1]["relevance_rank"] == 1
 
 
 def test_plan_cli_chain_without_producer_terms_is_legacy_ordered(db):
