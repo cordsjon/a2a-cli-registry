@@ -122,3 +122,25 @@
 **Justification:** Manual-first never loses curation; one-time copy stops stale child markers resurrecting cleared ownership; the first registry command after Task 1 migrates the live DB, so the backup must predate it.
 **Outcome:** assumed
 **Ref:** docs/superpowers/plans/2026-10-20-caploop-registry-hygiene.md Task 1, Decisions 3 and 10
+
+
+## Q12 — US-CLIREG-MD2PDF-CATALOG-01/AC-02 — gate-resolution
+
+**Question:** Which converter is registered so that file:md -> file:pdf becomes plannable?
+**Options considered:** pandoc + weasyprint / install LaTeX for pandoc / skip the registration
+**Chosen:** pandoc with --pdf-engine=weasyprint, wrapped as a registered CLI with ports file:md -> file:pdf.
+**Decided-by:** human
+**Justification:** Operator ruling 2026-10-30 in the unblock walk; both tools are installed and measured working, LaTeX would be a multi-GB install for a P3 story.
+**Outcome:** applied
+**Ref:** BACKLOG.md US-CLIREG-MD2PDF-CATALOG-01
+
+
+## Q13 — US-CLIREG-QUERYGOAL-PRECISION-01/AC-02 — gate-resolution
+
+**Question:** For query-style goals, does producer relevance filter and outrank confidence in plan_chain?
+**Options considered:** relevance first and unmatched means no chain / relevance first but still guess / demote generic text and json producers / LLM selection
+**Chosen:** When producer_terms are given, chains with no matching producer hop are dropped and relevance_rank sorts before min_confidence_rank; without terms the current order stands.
+**Decided-by:** human
+**Justification:** Operator ruling 2026-10-30 in the unblock walk. Measured: for [git, status] no candidate matches git, so a clean failure is the correct result; today relevance is advisory and never filters (core/planner/search.py:22-29, :222-246).
+**Outcome:** applied
+**Ref:** BACKLOG.md US-CLIREG-QUERYGOAL-PRECISION-01
