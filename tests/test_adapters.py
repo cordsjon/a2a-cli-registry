@@ -39,6 +39,41 @@ def test_python_adapter_health_cmd_quotes_spaced_path():
     assert "'/Users/me/My Projects/tool.py'" in cmd
 
 
+def test_python_adapter_health_cmd_prefers_nearest_project_venv(tmp_path):
+    """A script inside a project that carries its own venv is probed with THAT
+    interpreter. The bare `python` on PATH fails every CLI whose imports live
+    in the project venv (138 of 281 unhealthy rows measured 2026-10-31)."""
+    proj = tmp_path / "proj"
+    venv_py = proj / ".venv" / "bin" / "python"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_text("#!/bin/sh\n")
+    venv_py.chmod(0o755)
+    script = proj / "scripts" / "tool.py"
+    script.parent.mkdir()
+    script.write_text("print('hi')\n")
+    rec = _rec("python", "tool")
+    rec.path = str(script)
+    cmd = PythonAdapter().health_cmd(rec, stop=tmp_path)
+    assert cmd == f"{venv_py} {script} --help"
+
+
+def test_python_adapter_health_cmd_stops_walking_at_boundary(tmp_path):
+    """The venv walk never climbs past the boundary (default: $HOME). A venv
+    sitting above it is not the script's project venv, so the bare `python`
+    fallback stays."""
+    above = tmp_path / ".venv" / "bin" / "python"
+    above.parent.mkdir(parents=True)
+    above.write_text("")
+    above.chmod(0o755)
+    script = tmp_path / "home" / "projects" / "p" / "tool.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    rec = _rec("python", "tool")
+    rec.path = str(script)
+    cmd = PythonAdapter().health_cmd(rec, stop=tmp_path / "home")
+    assert cmd == f"python {script} --help"
+
+
 def test_python_adapter_infers_none_without_signal():
     rec = _rec("python")
     rec.description = "a generic tool with no capability signal whatsoever"

@@ -136,7 +136,8 @@ def _find_adapter(cli: Cli, adapters):
 def probe_fleet(session, adapters, clock, concurrency: int = 8,
                 probe_timeout: float = 10.0,
                 max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
-                staleness_ttl: int = _STALE_TTL_SECONDS) -> dict:
+                staleness_ttl: int = _STALE_TTL_SECONDS,
+                dry_run: bool = False) -> dict:
     """Probe all CLIs in the session using bounded concurrency.
 
     - Finds the health command for each CLI via its adapter.
@@ -145,6 +146,8 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     - Marks CLIs with no probeable command as unknown; if their
       health_checked_at is older than staleness_ttl, marks stale.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
+    - dry_run=True runs the full sweep and returns the full summary but
+      touches no row and never commits (the CLI's --dry-run contract).
     - Returns a summary dict with counts by final state.
 
     Threading choice: ThreadPoolExecutor because probe_one is subprocess-bound
@@ -203,28 +206,35 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
 
     for cli, _cmd in to_probe:
         status = results.get(cli.slug, "unhealthy")
+        counts["probed"] += 1
+        counts[status] = counts.get(status, 0) + 1
+        if dry_run:
+            continue
         cli.health_status = status
         cli.health_checked_at = now
         session.add(cli)
-        counts["probed"] += 1
-        counts[status] = counts.get(status, 0) + 1
 
     for cli in no_cmd:
         checked = cli.health_checked_at
         if checked is not None and (now - checked) > staleness_ttl:
-            cli.health_status = "stale"
-            session.add(cli)
-            counts["stale"] += 1
+            status = "stale"
         else:
-            cli.health_status = "unknown"
-            session.add(cli)
-            counts["unknown"] += 1
+            status = "unknown"
+        counts[status] += 1
+        if dry_run:
+            continue
+        cli.health_status = status
+        session.add(cli)
 
     for cli in not_standalone_rows:
+        counts["not_standalone"] += 1
+        if dry_run:
+            continue
         cli.health_status = "not_standalone"
         cli.health_checked_at = now
         session.add(cli)
-        counts["not_standalone"] += 1
 
-    session.commit()
+    counts["dry_run"] = dry_run
+    if not dry_run:
+        session.commit()
     return counts

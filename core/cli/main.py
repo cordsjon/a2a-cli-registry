@@ -377,6 +377,7 @@ def main(argv=None) -> int:
                     probe_timeout=pc["probe_timeout"],
                     max_output_bytes=pc["max_probe_output_bytes"],
                     staleness_ttl=pc["staleness_ttl"],
+                    dry_run=args.dry_run,
                 )
         print(json.dumps(summary))
         return 0

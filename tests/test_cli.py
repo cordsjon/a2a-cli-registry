@@ -70,6 +70,34 @@ def test_unimplemented_subcommand_fails_loudly(tmp_path, capsys):
     assert "not implemented" in captured.err
 
 
+def test_probe_dry_run_writes_nothing(tmp_path, capsys):
+    """The parser accepts --dry-run for every command, but the probe branch
+    ignored it: a 'dry run' on 2026-10-31 rewrote every health row of the
+    live registry. The flag must reach probe_fleet and the DB must stay as is."""
+    import sqlite3
+    from core.models import Cli
+    from core.store.db import get_session, init_db
+    script = tmp_path / "tool.py"
+    script.write_text("print('ok')\n")
+    db = tmp_path / "r.db"
+    engine = init_db(str(db))
+    with get_session(engine) as s:
+        s.add(Cli(slug="tool", lang="python", path=str(script)))
+        s.commit()
+    engine.dispose()
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+
+    rc = main(["probe", "--db", str(db), "--config", cfg, "--dry-run"])
+
+    out = _json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert out["dry_run"] is True
+    assert out["probed"] == 1
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT health_status, health_checked_at FROM cli").fetchone() == ("unknown", None)
+    con.close()
+
+
 def test_populate_command_writes_and_summarizes(tmp_path, capsys):
     # minimal cli-audit fixture
     fleet = tmp_path / "fleet.json"
@@ -325,10 +353,12 @@ def _capture_probe_fleet(monkeypatch):
     captured = {}
     def fake_probe_fleet(session, adapters, clock, concurrency=8,
                          probe_timeout=10.0, max_output_bytes=65536,
-                         staleness_ttl=3600):
+                         staleness_ttl=3600, dry_run=False):
         captured.update(concurrency=concurrency, probe_timeout=probe_timeout,
-                        max_output_bytes=max_output_bytes, staleness_ttl=staleness_ttl)
-        return {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0}
+                        max_output_bytes=max_output_bytes, staleness_ttl=staleness_ttl,
+                        dry_run=dry_run)
+        return {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0,
+                "dry_run": dry_run}
     monkeypatch.setattr("core.cli.main.probe_fleet", fake_probe_fleet)
     return captured
 
@@ -341,7 +371,8 @@ def test_probe_passes_config_values(tmp_path, monkeypatch, capsys):
     rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
     assert rc == 0
     assert captured == {"concurrency": 2, "probe_timeout": 3,
-                        "max_output_bytes": 222, "staleness_ttl": 99}
+                        "max_output_bytes": 222, "staleness_ttl": 99,
+                        "dry_run": False}
     out = _json.loads(capsys.readouterr().out)
     assert out["probed"] == 0
 
@@ -352,7 +383,8 @@ def test_probe_falls_back_to_defaults_when_no_probe_section(tmp_path, monkeypatc
     rc = main(["probe", "--db", str(tmp_path / "r.db"), "--config", str(cfg)])
     assert rc == 0
     assert captured == {"concurrency": 8, "probe_timeout": 10.0,
-                        "max_output_bytes": 65536, "staleness_ttl": 3600}
+                        "max_output_bytes": 65536, "staleness_ttl": 3600,
+                        "dry_run": False}
 
 
 def test_overview_renders_populated_catalog(tmp_path, capsys):

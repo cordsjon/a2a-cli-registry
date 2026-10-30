@@ -289,3 +289,19 @@ def test_probe_fleet_preserves_not_standalone(db, clock, monkeypatch):
     assert refreshed.health_checked_at == clock.now()
     assert summary["not_standalone"] == 1
     assert spawned == []                 # not_standalone rows are never probed
+
+
+def test_probe_fleet_dry_run_counts_but_writes_nothing(db, clock):
+    """`probe --dry-run` rewrote 611 health rows of the live registry on
+    2026-10-31 because the flag never reached probe_fleet. A dry run is the
+    full sweep with the full summary and zero session writes."""
+    _seed_cli(db, "mypkg", lang="true")
+
+    summary = probe_fleet(db, [_TrueAdapter()], clock, dry_run=True)
+
+    assert summary["healthy"] == 1
+    assert summary["dry_run"] is True
+    db.expire_all()
+    cli = db.get(Cli, "mypkg")
+    assert cli.health_status == "unknown"
+    assert cli.health_checked_at is None
