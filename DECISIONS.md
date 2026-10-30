@@ -201,3 +201,25 @@
 **Outcome:** applied
 **Ref:** c7e43cb (at write time)
 **Supersedes:** Q16 — resolved
+
+
+## Q19 — US-CLIREG-PROBE-VENV-01 / resume 2026-10-31 — irreversible-action
+
+**Question:** a2a-cli-registry 'probe --dry-run' rewrote the live registry (00:13 CET): the parser accepts --dry-run globally but the probe branch never read it. 611 rows re-probed with the global interpreter; unknown 89 and stale 13 became unhealthy, all check timestamps overwritten. What now?
+**Options considered:** restore from an old .bak / leave and fix the flag / fix the flag, re-probe with the venv-aware adapter, keep a backup from now on
+**Chosen:** fix the flag, re-probe with the venv-aware adapter, keep a backup
+**Decided-by:** agent
+**Justification:** No backup of tonight's pre-state existed (newest .bak 2026-09-19), so restore was impossible; the overwritten verdicts came from the same broken probe and were replaced within 20 min by the venv-aware probe (healthy 299 -> 431, unhealthy 313 -> 180). Backup taken before the real re-probe: cli-registry.db.bak-20261031-pre-venvprobe. Fix in 5921013 with a CLI-level test that the DB stays unchanged.
+**Outcome:** applied
+**Ref:** a2a-cli-registry 5921013; tests/test_cli.py::test_probe_dry_run_writes_nothing
+
+
+## Q20 — US-CLIREG-PROBE-VENV-01 / resume 2026-10-31 — tradeoff
+
+**Question:** Operator asked to task Hermes with 'fixing the 213 unhealthy rows'. Measured: the probe ran every script with the global pyenv python; 138 of 281 existing-path Python rows pass with their project venv; 28 paths are gone; the rest need per-project triage. Who does what?
+**Options considered:** Claude fixes probe + re-probes, Hermes triages the residual via one-shot cron / Hermes does all via cron / Claude does all / file only
+**Chosen:** Claude fixes probe + re-probes, Hermes triages the residual via one-shot cron
+**Decided-by:** human
+**Justification:** Operator ruling 2026-10-31 00:2x CET. The probe fix is a deterministic code change with tests (token-frugality); the residual triage of ~150 scripts across projects is agent work and exercises Hermes on a CLI-heavy task. Hermes runs under hermes cron because cron_mode=deny fails closed on dangerous commands, whereas a non-interactive 'hermes chat -q' auto-approves them (tools/approval.py, historical fail-open default). Hermes writes a report, no code and no DB writes.
+**Outcome:** applied
+**Ref:** ~/.hermes/reports/cli-registry-unhealthy-2026-10-31.json; BACKLOG US-CLIREG-SHELLUTIL-01 (sliver of the same gap)
