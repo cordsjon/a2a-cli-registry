@@ -1,6 +1,6 @@
 import json
 
-from core.mcp.http import build_mcp_app
+from core.mcp.http import build_mcp_app, mcp_tool_names
 from core.mcp.server import build_mcp_tools
 from fastapi.testclient import TestClient
 from core.server.app import create_app
@@ -81,6 +81,39 @@ def test_mcp_endpoint_mounted_and_authed_reachable(app_session_factory, monkeypa
     assert resp.status_code != 404          # mounted
     assert resp.status_code != 401          # authed through the gate
     assert resp.status_code != 500          # session manager was started via lifespan
+
+
+def test_mcp_tools_list_carries_real_descriptions(app_session_factory, monkeypatch):
+    """US-CLIREG-HERMES-DISCOVERY-01 AC-01: every advertised tool carries a
+    one-sentence capability description (not 'Registry op: <name>') and every
+    inputSchema property carries a description.
+
+    Why: Hermes tool_search matches deferred tools on their descriptions.
+    With 'Registry op: <name>' the registry's 8 tools were unfindable, and
+    ~/.hermes/state.db showed 0 registry calls in 14 days (2026-10-31)."""
+    monkeypatch.setenv("A2A_BEARER_TOKEN", _TOKEN)
+    app = create_app(app_session_factory)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        init = client.post("/mcp/", headers=_mcp_headers(), json={
+            "jsonrpc": "2.0", "method": "initialize", "id": 1,
+            "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                       "clientInfo": {"name": "test-client", "version": "0.0.1"}},
+        })
+        sid = init.headers.get("mcp-session-id")
+        client.post("/mcp/", headers=_mcp_headers({"mcp-session-id": sid}),
+                    json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        listed = client.post("/mcp/", headers=_mcp_headers({"mcp-session-id": sid}),
+                             json={"jsonrpc": "2.0", "method": "tools/list", "id": 2})
+        tools = {t["name"]: t
+                 for m in _parse_sse(listed.text) if "result" in m
+                 for t in m["result"].get("tools", [])}
+    assert set(tools) == set(mcp_tool_names())
+    for name, tool in tools.items():
+        desc = tool.get("description") or ""
+        assert not desc.startswith("Registry op"), name
+        assert len(desc.split()) >= 8, f"{name}: description too thin: {desc!r}"
+        for pname, pschema in tool["inputSchema"].get("properties", {}).items():
+            assert (pschema.get("description") or "").strip(), f"{name}.{pname} has no description"
 
 
 def test_mcp_tools_call_accepts_top_level_args(app_session_factory, monkeypatch):

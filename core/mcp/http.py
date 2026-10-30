@@ -177,7 +177,16 @@ def build_mcp_app(session):
         # the advertised schema, keeping inputSchema clean).
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", PydanticJsonSchemaWarning)
-            server.add_tool(handler, name=name, description=f"Registry op: {name}")
+            server.add_tool(handler, name=name, description=op.description)
+
+        # func_metadata derives inputSchema from the signature's types only;
+        # the per-parameter descriptions live in op.input_schema, so copy them
+        # onto the advertised schema. A tool search client matches on these.
+        tool = server._tool_manager.get_tool(name)
+        advertised = tool.parameters.setdefault("properties", {})
+        for pname, pschema in op.input_schema.get("properties", {}).items():
+            if pname in advertised and pschema.get("description"):
+                advertised[pname]["description"] = pschema["description"]
 
     return server.streamable_http_app()
 

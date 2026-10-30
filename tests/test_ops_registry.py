@@ -22,3 +22,14 @@ def test_op_by_a2a_skill_round_trips():
 def test_every_op_has_input_schema():
     for o in OPS:
         assert o.input_schema["type"] == "object"
+
+
+def test_every_op_and_parameter_carries_a_description():
+    """US-CLIREG-HERMES-DISCOVERY-01 AC-01: the op table is the single source
+    of the text MCP tools/list advertises; a thin or missing description here
+    makes the tool invisible to description-matching tool search."""
+    for o in OPS:
+        assert len(o.description.split()) >= 8, o.canonical_id
+        assert not o.description.startswith("Registry op"), o.canonical_id
+        for pname, pschema in o.input_schema.get("properties", {}).items():
+            assert pschema.get("description", "").strip(), f"{o.canonical_id}.{pname}"
