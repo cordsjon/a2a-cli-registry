@@ -177,3 +177,27 @@
 **Justification:** The ruling's stated outcome for the measured case is the authority over its mechanism wording; any-term fails AC-03 on the very repro that opened the story. Same-hop was rejected as over-strict for 2-hop chains where the artifact noun and the format noun live on different CLIs. Cost: one spurious LLM-emitted term now yields a clean failure instead of a guess, which is the direction the ruling chose. Reversible in one line (search.py producer-match predicate). Operator to confirm or override.
 **Outcome:** assumed
 **Ref:** DECISIONS.md Q13, Q15; tests/test_planner.py test_every_producer_term_must_be_covered
+
+
+## Q17 — US-CLIREG-QUERYGOAL-PRECISION-01/AC-02 implementation, session e24588bd 2026-10-30 — deviation
+
+**Question:** Q13 records the ruling as 'when producer_terms are given' while the operator's question said 'for query-style requests'; and under the drop rule, what happens to a compound chain whose term matches only the action terminal?
+**Options considered:** gate on producer_terms presence, as Q13 records / gate on generic goal_outputs (text,json) only / drop terminal-only matches / keep terminal-only matches
+**Chosen:** Confirmed: gate on producer_terms presence for every goal shape; a term matching only the action terminal is not a producer match.
+**Decided-by:** human
+**Justification:** Operator ruling 2026-10-31 (/unblock walk): confirmed as-is. Clean failure over guessing is the wanted behaviour; the catalog gap behind the five failing shell-style goals is closed by a separate story (US-CLIREG-SHELLUTIL-01: git-ro + fs-read guarded wrappers), not by loosening the planner.
+**Outcome:** applied
+**Ref:** c7e43cb (at write time)
+**Supersedes:** Q15 — resolved
+
+
+## Q18 — US-CLIREG-QUERYGOAL-PRECISION-01/AC-02 implementation, session e24588bd 2026-10-30 — deviation
+
+**Question:** Q13 says a chain is dropped when no producer hop matches ANY term, but its measured basis (terms [git, status], bf-status matches 'status', nothing matches 'git') declares a clean failure the only right answer. Under any-term semantics bf-status survives (live probe 2026-10-30: 2 chains, bf-status chain[0]). Per chain or per term?
+**Options considered:** any-term: literal Q13 text, repro stays broken / every-term: each term matched by some producer hop, different hops may cover different terms / same-hop: one hop must match all terms
+**Chosen:** Confirmed every-term: a chain survives only if each cleaned producer_term is matched by at least one producer hop; hops may split the terms. Any-term stays rejected.
+**Decided-by:** human
+**Justification:** Operator ruling 2026-10-31 (/unblock walk): confirmed as-is. Clean failure over guessing is the wanted behaviour; the catalog gap behind the five failing shell-style goals is closed by a separate story (US-CLIREG-SHELLUTIL-01: git-ro + fs-read guarded wrappers), not by loosening the planner.
+**Outcome:** applied
+**Ref:** c7e43cb (at write time)
+**Supersedes:** Q16 — resolved
