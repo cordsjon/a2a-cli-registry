@@ -1,0 +1,19 @@
+{
+  "_comment": "Committed source-of-truth for the md2pdf registry entry (US-CLIREG-MD2PDF-CATALOG-01). The live feed (demo/cli-audit/latest.json) and the registry DB are gitignored generated state, so this entry does NOT travel with git. Apply it on any machine with `sh fleet-clis/md2pdf/seed/apply.sh`. lang=python so the Python adapter emits kind=python_module with script_path, the only launch_spec kind hermes-adapter's _resolve_command can dispatch (a lang=shell entry registers as kind=executable and never reaches the gateway). side_effect writes-fs is DECLARED: the planner keeps a declared writes-fs hop under an empty allow_side_effects (core/planner/search.py _hop_excluded), which is what AC-02 asks for. Path is resolved at apply time — do not hardcode it here.",
+  "entries": [
+    {
+      "slug": "md2pdf",
+      "lang": "python",
+      "path": "__RESOLVED_AT_APPLY__",
+      "description": "Render a Markdown file to PDF: pandoc -t html5 -s --pdf-engine=weasyprint (no LaTeX; operator ruling 2026-10-30). Usage: md2pdf.py <in.md> [-o <out.pdf>]; default output is <in>.pdf next to the input. Writes the PDF atomically and prints its path. Local, no network.",
+      "not_standalone": false,
+      "capability": {
+        "intent_tags": ["convert", "render", "export", "pdf"],
+        "input_types": ["file:md"],
+        "output_types": ["file:pdf"],
+        "side_effect": "writes-fs",
+        "confidence": "declared"
+      }
+    }
+  ]
+}

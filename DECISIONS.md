@@ -144,3 +144,14 @@
 **Justification:** Operator ruling 2026-10-30 in the unblock walk. Measured: for [git, status] no candidate matches git, so a clean failure is the correct result; today relevance is advisory and never filters (core/planner/search.py:22-29, :222-246).
 **Outcome:** applied
 **Ref:** BACKLOG.md US-CLIREG-QUERYGOAL-PRECISION-01
+
+
+## Q14 — US-CLIREG-MD2PDF-CATALOG-01/AC-02 — deviation
+
+**Question:** Q12 ruled pandoc+weasyprint. Unsettled: how the entry reaches the live DB, and the wrapper's argv contract.
+**Options considered:** fleet seed + populate (pdf-tools/funroadtrip pattern) / fleet seed + register_cli.py + manual-provenance capability row, no populate (bf-batch pattern) / register_cli.py only
+**Chosen:** fleet-clis/md2pdf with seed/feed-entries.json + apply.sh that writes the feed entry, upserts the cli row via register_cli.py (lang python -> python_module + script_path, the only kind hermes-adapter dispatches) and upserts the capability row with provenance=manual; apply.sh does NOT run populate. Wrapper: md2pdf.py <in.md> [-o out.pdf], default <in>.pdf beside the input, atomic write, prints the path, pandoc exit code propagates.
+**Decided-by:** agent
+**Justification:** Measured 2026-10-30: populate() deletes rows absent from the feed; live DB 641 rows vs feed (2026-08-03) 479, 165 would go (134 manual-register incl. bf-batch), 25.7% is under the 30% breaker, so the sibling apply.sh scripts are a live hazard and this one must not repeat it. The manual-register + provenance=manual route is the one populate() preserves. Probe: chains planned 1 with allow=[].
+**Outcome:** assumed
+**Ref:** 62f70e8 (at write time)
