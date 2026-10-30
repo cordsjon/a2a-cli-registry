@@ -13,12 +13,78 @@ class FakeSource:
     def discover(self): return self._recs
 
 
-def _rec(slug, ins, outs):
+def _rec(slug, ins, outs, source_class="cli_audit"):
+    # source_class defaults to the feed-owned class so the removal tests below
+    # keep exercising removal (US-CLIREG-POPULATE-DELETE-GUARD-01: populate()
+    # removes feed-owned rows only).
     return CliRecord(slug=slug, lang="python", path="/x", bucket=None, project=None,
-                     description="", source_class="t", source_run_id="r",
+                     description="", source_class=source_class, source_run_id="r",
                      declared_capability=CapabilityRecord(
                          intent_tags=["convert"], input_types=ins, output_types=outs,
                          side_effect="none", confidence="declared"))
+
+
+def _hand_registered(db, slug, source_class="manual-register"):
+    """A row the feed never owned (register_cli.py / bf-batch route)."""
+    db.add(Cli(slug=slug, lang="python", path="/y", source_class=source_class))
+    db.add(Capability(cli_slug=slug, intent_tags="convert", input_types="file:pdf",
+                      output_types="text:doc", side_effect="none", confidence="declared",
+                      provenance="manual"))
+    db.commit()
+
+
+_FOUR = [("pdf2text", ["file:pdf"], ["text:doc"]), ("summarize", ["text:doc"], ["text:summary"]),
+         ("reporter", ["text:summary"], ["text:report"]), ("doomed", ["file:pdf"], ["text:doc"])]
+_VOCAB4 = {"file:pdf", "text:doc", "text:summary", "text:report"}
+
+
+def test_populate_never_removes_rows_the_feed_does_not_own(db, clock):
+    """US-CLIREG-POPULATE-DELETE-GUARD-01 AC-02. Measured 2026-10-30: the
+    committed feed (479 slugs) would have removed 165 of 641 live rows, 159 of
+    them hand-registered (manual-register, external:nosignups, manual_spec3)
+    and under the 30 % breaker. A row whose source_class is not feed-owned is
+    never removed, whatever the feed says."""
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    populate(db, FakeSource([_rec(*r) for r in _FOUR]), [PythonAdapter()], vocab, clock)
+    _hand_registered(db, "bf_batch")
+    _hand_registered(db, "nosignups_cli", source_class="external:nosignups")
+    # a feed that lacks all of them and drops one of its own rows
+    reduced = [_rec(*r) for r in _FOUR if r[0] != "doomed"]
+    result = populate(db, FakeSource(reduced), [PythonAdapter()], vocab, clock)
+    assert result["removed"] == 1                      # doomed only
+    assert db.get(Cli, "doomed") is None
+    assert db.get(Cli, "bf_batch") is not None
+    assert db.get(Cli, "nosignups_cli") is not None
+    assert result["protected"] == {"external:nosignups": ["nosignups_cli"],
+                                   "manual-register": ["bf_batch"]}
+
+
+def test_populate_dry_run_reports_removals_grouped_and_writes_nothing(db, clock):
+    """AC-01: dry_run prints the would-be removals grouped by source_class
+    before any write; the DB is byte-for-byte untouched afterwards."""
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    populate(db, FakeSource([_rec(*r) for r in _FOUR]), [PythonAdapter()], vocab, clock)
+    _hand_registered(db, "bf_batch")
+    before = sorted((c.slug, c.source_class, c.updated_at) for c in db.exec(select(Cli)).all())
+    reduced = [_rec(*r) for r in _FOUR if r[0] != "doomed"] + [_rec("newcomer", ["file:pdf"], ["text:doc"])]
+    plan = populate(db, FakeSource(reduced), [PythonAdapter()], vocab, clock, dry_run=True)
+    assert plan["dry_run"] is True
+    assert plan["would_remove"] == {"cli_audit": ["doomed"]}
+    assert plan["protected"] == {"manual-register": ["bf_batch"]}
+    assert plan["would_add"] == 1
+    after = sorted((c.slug, c.source_class, c.updated_at) for c in db.exec(select(Cli)).all())
+    assert after == before
+    assert db.get(Cli, "newcomer") is None
+
+
+def test_populate_dry_run_reports_breaker_instead_of_raising(db, clock):
+    vocab = VocabularyRegistry(registered={"file:pdf", "text:doc"}, aliases={})
+    populate(db, FakeSource([_rec("a", ["file:pdf"], ["text:doc"]),
+                             _rec("b", ["file:pdf"], ["text:doc"])]), [PythonAdapter()], vocab, clock)
+    plan = populate(db, FakeSource([]), [PythonAdapter()], vocab, clock, dry_run=True)
+    assert plan["breaker_would_trip"] is True
+    assert plan["would_remove"] == {"cli_audit": ["a", "b"]}
+    assert db.get(Cli, "a") is not None
 
 
 def test_not_standalone_flag_persists_to_cli_row(db, clock):

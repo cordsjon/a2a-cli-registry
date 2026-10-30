@@ -94,6 +94,40 @@ def test_populate_command_writes_and_summarizes(tmp_path, capsys):
     assert out["edges"] >= 1   # pdf2text -> summarize via text:doc
 
 
+def test_populate_dry_run_prints_grouped_removals_exits_3_and_writes_nothing(tmp_path, capsys):
+    """US-CLIREG-POPULATE-DELETE-GUARD-01 AC-01/AC-03: the seed apply.sh
+    scripts gate their real populate on this exit code."""
+    import sqlite3
+    fleet = tmp_path / "fleet.json"
+    two = [{"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+            "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                           "output_types": ["text:doc"], "side_effect": "none"}},
+           {"slug": "summarize", "lang": "python", "path": "/x/summarize",
+            "capability": {"intent_tags": ["summarize"], "input_types": ["text:doc"],
+                           "output_types": ["text:summary"], "side_effect": "none"}}]
+    fleet.write_text(_json.dumps({"clis": two}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'cli_audit_path = "{fleet}"\n'
+                   '[vocabulary]\nregistered = ["file:pdf", "text:doc", "text:summary"]\n'
+                   '[vocabulary.aliases]\n')
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    capsys.readouterr()
+    # the feed goes stale: it no longer carries 'summarize'
+    fleet.write_text(_json.dumps({"clis": two[:1]}))
+    rc = main(["populate", "--db", str(db), "--config", str(cfg), "--dry-run"])
+    plan = _json.loads(capsys.readouterr().out)
+    assert rc == 3
+    assert plan["would_remove"] == {"cli_audit": ["summarize"]}
+    assert plan["breaker_would_trip"] is True       # 1 of 2 = 50 % >= 30 %: reported, not raised
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT count(*) FROM cli").fetchone()[0] == 2   # nothing written
+    con.close()
+    # a feed that removes nothing exits 0
+    fleet.write_text(_json.dumps({"clis": two}))
+    assert main(["populate", "--db", str(db), "--config", str(cfg), "--dry-run"]) == 0
+
+
 def test_discover_dry_run_lists_without_writing(tmp_path, capsys):
     fleet = tmp_path / "fleet.json"
     fleet.write_text(_json.dumps({"clis": [

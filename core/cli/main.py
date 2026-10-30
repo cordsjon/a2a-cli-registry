@@ -341,14 +341,25 @@ def main(argv=None) -> int:
 
     if args.command == "populate":
         _cfg, src, vocab = _build_source_and_vocab(args.config)
+        # US-CLIREG-POPULATE-DELETE-GUARD-01 AC-01: --dry-run prints the plan
+        # (would-be removals grouped by source_class, protected rows, breaker)
+        # and writes nothing. Exit 3 when anything would be removed so a seed
+        # apply.sh can gate its real populate on it. Only passed when set, so
+        # callers stubbing populate() with the old signature keep working.
+        extra = {"dry_run": True} if args.dry_run else {}
         with with_file_lock(_db_lock_path(args.db)):
             with get_session(engine) as session:
                 result = populate(session, src, _adapters(), vocab, _RealClock(),
-                                  mass_removal_threshold=_mass_removal_threshold(_cfg))
+                                  mass_removal_threshold=_mass_removal_threshold(_cfg),
+                                  **extra)
+                if args.dry_run:
+                    print(json.dumps(result, indent=2))
+                    return 3 if result["would_remove"] else 0
                 edges = len(queries.cli_graph(session))
         print(json.dumps({
             "added": result["added"],
             "removed": result["removed"],
+            "protected": result.get("protected", {}),
             "edges": edges,
         }))
         return 0

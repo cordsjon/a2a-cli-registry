@@ -13,6 +13,16 @@ class MassRemovalBreaker(RuntimeError):
 # operator ("manual") or the capability-map backfill ("static"/"llm").
 PRESERVED_PROVENANCE = ("manual", "static", "llm")
 
+# US-CLIREG-POPULATE-DELETE-GUARD-01: the feed may only remove rows it owns.
+# `to_remove = existing - incoming` used to cover every row; measured
+# 2026-10-30 the committed feed (479 slugs, 2026-08-03) would have deleted 165
+# of 641 live rows — 134 manual-register (bf-batch and every post-commit
+# register_cli.py row), 24 external:nosignups, 1 manual_spec3 — at 25.7 %,
+# under the 30 % breaker. A row whose source_class is outside this set was
+# never the feed's to delete, whatever the feed says. (core/models.py calls
+# source_class opaque; this guard is its one engine branch.)
+FEED_OWNED_SOURCE_CLASSES = ("cli_audit",)
+
 
 def _adapter_for(rec, adapters):
     for a in adapters:
@@ -21,14 +31,37 @@ def _adapter_for(rec, adapters):
     return None
 
 
-def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.30):
+def _by_source_class(existing_by_slug, slugs) -> dict:
+    groups: dict[str, list[str]] = {}
+    for s in sorted(slugs):
+        groups.setdefault(existing_by_slug[s].source_class or "", []).append(s)
+    return groups
+
+
+def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.30,
+             feed_owned_source_classes=FEED_OWNED_SOURCE_CLASSES, dry_run=False):
     incoming = source.discover()                   # may raise SchemaError (fail closed)
     incoming_slugs = {r.slug for r in incoming}
     existing = session.exec(select(Cli)).all()
-    existing_slugs = {c.slug for c in existing}
+    existing_by_slug = {c.slug: c for c in existing}
+    existing_slugs = set(existing_by_slug)
 
-    to_remove = existing_slugs - incoming_slugs
-    if existing_slugs and (len(to_remove) / len(existing_slugs)) >= mass_removal_threshold:
+    absent = existing_slugs - incoming_slugs
+    to_remove = {s for s in absent
+                 if existing_by_slug[s].source_class in feed_owned_source_classes}
+    protected = absent - to_remove
+    breaker = bool(existing_slugs) and \
+        (len(to_remove) / len(existing_slugs)) >= mass_removal_threshold
+    if dry_run:
+        # AC-01: the plan, grouped by source_class, before any write — nothing
+        # above this line touched the session.
+        return {"dry_run": True,
+                "would_add": len(incoming_slugs - existing_slugs),
+                "would_remove": _by_source_class(existing_by_slug, to_remove),
+                "protected": _by_source_class(existing_by_slug, protected),
+                "breaker_would_trip": breaker,
+                "mass_removal_threshold": mass_removal_threshold}
+    if breaker:
         raise MassRemovalBreaker(
             f"{len(to_remove)}/{len(existing_slugs)} removal >= {mass_removal_threshold}")
 
@@ -106,4 +139,6 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
     session.commit()
 
     edge_delta = compute_edges(session, vocab, clock)   # ONE batched recompute
-    return {"added": added, "removed": len(to_remove), "edge_delta": edge_delta}
+    return {"added": added, "removed": len(to_remove),
+            "protected": _by_source_class(existing_by_slug, protected),
+            "edge_delta": edge_delta}

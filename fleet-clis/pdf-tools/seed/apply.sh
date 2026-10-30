@@ -86,6 +86,17 @@ PY
 # 3. populate + probe (use the repo venv — needs portalocker etc.)
 PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
+# 3a. US-CLIREG-POPULATE-DELETE-GUARD-01: populate() removes every feed-owned
+#     row the feed no longer carries (measured 2026-10-30: the committed feed
+#     would have removed 165 of 641 live rows, under the 30 % breaker). The
+#     dry run prints the plan grouped by source_class and exits 3 when
+#     anything would be removed — refuse to populate from a stale feed.
+echo "apply: populate dry-run (refuses if the feed would remove live rows)..."
+if ! "$PY" -m core.cli.main populate --config "$CONFIG" --dry-run; then
+  echo "apply: REFUSED — the feed at $FEED would remove live rows (see would_remove above)." >&2
+  echo "apply: refresh the feed first, or register this CLI without populate (fleet-clis/md2pdf/seed/apply.sh route)." >&2
+  exit 1
+fi
 echo "apply: populating registry..."
 "$PY" -m core.cli.main populate --config "$CONFIG" 2>&1 | tail -3
 
