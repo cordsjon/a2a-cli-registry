@@ -5,8 +5,8 @@ as its smoke. That proves import plus entry, and the tier says so. Runs each row
 --help serially, then writes one seed per row for apply_smoke_seed.py --seed-dir.
 
 Tier 'project-tests': a row whose repo has a test file importing or naming its
-script gets that file as its smoke. Runs no test here. The seeds are held behind
---allow-network, and 15_belegfluss is left out (DECISIONS Q41).
+script gets that file as its smoke. Collects but runs no test here. The seeds are
+held behind --allow-network, and 15_belegfluss is left out (DECISIONS Q41).
 
 Seeds are gitignored: they regenerate from the DB, and this repo is public while
 their argv name private scripts (DECISIONS Q39).
@@ -106,8 +106,17 @@ def _has_pytest(python: str, timeout: float) -> bool:
         return _run([python, "-c", "import pytest"], cwd, timeout, _DEFAULT_MAX_OUTPUT_BYTES)[0] == 0
 
 
+def _all_deselected(python: str, root: Path, test: str) -> bool:
+    """pytest exit 5: the project's config selects nothing here, so the smoke would
+    read as a broken row. A collection error stays a seed: that one is a real fail."""
+    code, _ = _run([python, "-B", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", test],
+                   str(root), _PROJECT_TEST_TIMEOUT, _DEFAULT_MAX_OUTPUT_BYTES)
+    return code == 5
+
+
 def derive_project_tests(con, out: Path, timeout: float) -> dict:
-    counts = {"rows": 0, "seeded": 0, "not_in_git": 0, "frozen": 0, "no_test": 0, "no_pytest": 0}
+    counts = {"rows": 0, "seeded": 0, "not_in_git": 0, "frozen": 0, "no_test": 0, "no_pytest": 0,
+              "no_selected": 0}
     for slug, path, launch_spec in con.execute(_ROWS).fetchall():
         counts["rows"] += 1
         real = Path(path or "").resolve()
@@ -126,6 +135,9 @@ def derive_project_tests(con, out: Path, timeout: float) -> dict:
         argv = json.loads(launch_spec).get("argv")
         if not argv or not _has_pytest(argv[0], timeout):
             counts["no_pytest"] += 1
+            continue
+        if _all_deselected(argv[0], root, test):
+            counts["no_selected"] += 1
             continue
         # -B and no cacheprovider: this runs in a checkout other sessions are editing.
         # The regex: pytest also exits 0 when every test is skipped.

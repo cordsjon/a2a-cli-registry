@@ -131,6 +131,7 @@ def _project_tests(tmp_path, root, script="scripts/tool.py", over=None):
 
 # Only a cwd in the checkout finds scripts.tool: pytest puts just tests/ on sys.path.
 _IMPORTS = "from scripts.tool import VALUE\n\ndef test_it():\n    assert VALUE == {expected}\n"
+_A_TEST = "\ndef test_it():\n    pass\n"
 
 
 def test_a_project_test_seed_is_gated_and_runs_in_its_checkout(tmp_path):
@@ -157,6 +158,20 @@ def test_a_project_test_that_skips_everything_is_a_fail(tmp_path):
     assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
 
 
+def test_a_test_the_project_config_deselects_earns_no_seed(tmp_path):
+    # Exit 5 at run time would read as a broken row. It is a row with no proxy.
+    source = "import pytest\nfrom scripts.tool import VALUE\n\n@pytest.mark.slow\ndef test_it():\n    pass\n"
+    root = _repo(tmp_path, {"test_tool.py": source})
+    (root / "pytest.ini").write_text('[pytest]\naddopts = -m "not slow"\nmarkers =\n    slow: slow\n')
+    assert _seeded(_project_tests(tmp_path, root)) == []
+
+
+def test_a_test_file_that_fails_to_collect_still_gets_a_seed_that_fails(tmp_path):
+    root = _repo(tmp_path, {"test_tool.py": "from scripts.tool import VALUE\nimport no_such_module\n"})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
+
+
 def test_a_test_that_only_mentions_the_stem_earns_no_seed(tmp_path):
     root = _repo(tmp_path, {"test_other.py": "# the tool is great\ndef test_it():\n    pass\n",
                             "tool_data.py": "from scripts.tool import VALUE\n"})
@@ -167,14 +182,14 @@ def test_a_shared_stem_needs_the_full_path_or_module(tmp_path):
     bare = "from cli import VALUE\n"
     root = _repo(tmp_path, {"test_cli.py": bare}, scripts=("a/cli.py", "b/cli.py"))
     assert _seeded(_project_tests(tmp_path, root, "a/cli.py")) == []
-    qualified = _repo(tmp_path, {"test_cli.py": "from a.cli import VALUE\n"}, name="qualified",
+    qualified = _repo(tmp_path, {"test_cli.py": "from a.cli import VALUE\n" + _A_TEST}, name="qualified",
                       scripts=("a/cli.py", "b/cli.py"))
     assert _seeded(_project_tests(tmp_path / "qualified", qualified, "a/cli.py")) == ["tool"]
 
 
 def test_a_unique_stem_may_be_imported_bare_or_named_by_file(tmp_path):
     for name, source in [("bare", "import tool\n"), ("named", "SCRIPT = 'tool.py'\n")]:
-        root = _repo(tmp_path, {"test_x.py": source}, name=name)
+        root = _repo(tmp_path, {"test_x.py": source + _A_TEST}, name=name)
         assert _seeded(_project_tests(tmp_path / name, root)) == ["tool"], name
 
 
