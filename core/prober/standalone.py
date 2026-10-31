@@ -28,12 +28,13 @@ import ast
 # Names whose *call* constitutes "this file parses CLI args".
 # Matched on the attribute/func name, so both `argparse.ArgumentParser(...)`
 # and a bare `ArgumentParser(...)` import-aliased call are caught.
+# Not `group`/`command`: `re.match(...).group(1)` and Tk's `.command()` are calls
+# too, and matching them ran batch scripts for real on every sweep. Click and
+# Typer declare those as decorators, which _has_parser_call checks separately.
 _PARSER_CALL_NAMES = {
     "ArgumentParser",   # argparse
     "Typer",            # typer.Typer
     "Group",            # click.Group
-    "group",            # click.group decorator
-    "command",          # click.command / typer.command decorator
     "Fire",             # fire.Fire
     "OptionParser",     # optparse (legacy)
 }
@@ -93,11 +94,22 @@ def _reads_sys_argv(tree: ast.Module) -> bool:
     return False
 
 
+def _mentions_help_flag(tree: ast.Module) -> bool:
+    """True if a string in the module names --help or -h."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if "--help" in node.value or node.value == "-h":
+                return True
+    return False
+
+
 def _has_parser_call(tree: ast.Module) -> bool:
     """True if ANY parser-constructing call, click/typer decorator, or manual
-    sys.argv inspection appears anywhere in the module
-    (argparse/click/typer/fire/optparse or hand-rolled sys.argv)."""
-    if _reads_sys_argv(tree):
+    sys.argv inspection that knows --help appears anywhere in the module
+    (argparse/click/typer/fire/optparse or hand-rolled sys.argv). Reading
+    sys.argv alone proves nothing: `DRY_RUN = "--dry-run" in sys.argv` ignores
+    --help and does the real work, which is how sweeps rewrote BACKLOG.md."""
+    if _reads_sys_argv(tree) and _mentions_help_flag(tree):
         return True
     for node in ast.walk(tree):
         name = _call_name(node)
@@ -119,8 +131,8 @@ _REAL_PARSER_NAMES = {"ArgumentParser", "OptionParser", "Typer", "Fire"}
 
 def _blocks_without_real_parser(tree: ast.Module) -> bool:
     """True if the module starts an event loop or server and nothing in it
-    could answer --help first. `_has_parser_call` matches any `.command()` or
-    `.group()`, which Tk menus and FastAPI routers also have, so this checks
+    could answer --help first. `_has_parser_call` matches any `@x.command()` or
+    `@x.group()` decorator, which FastAPI routers can also have, so this checks
     the parser constructors and sys.argv only."""
     if _reads_sys_argv(tree):
         return False

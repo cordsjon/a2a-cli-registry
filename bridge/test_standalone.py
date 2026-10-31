@@ -2,13 +2,13 @@
 files and classifies them WITHOUT executing (ast only). Mirrors the two
 US-CLIAUDIT-83 ground-truth shapes verified from real source:
   - subapp:    consigliere/cli/memory_commands.py (typer.Typer, no __main__)
-  - no_parser: a __main__-guarded batch script with no parser AND no sys.argv.
+  - no_parser: a __main__-guarded batch script with no parser that answers --help.
 
-NOTE on the spec's named AC-02 example: keto-data/scripts/categorize_ai.py was
-cited as a no_parser case, but it actually parses sys.argv for --dry-run /
---batch-size, so it is correctly 'standalone' (a CLI surface). The genuine
-no_parser ground truth used here is simonw-tools/build_index.py (a build script
-with a __main__ guard and zero arg access). See _REAL_NO_PARSER below.
+NOTE on the spec's named AC-02 example: keto-data/scripts/categorize_ai.py reads
+sys.argv for --dry-run / --batch-size but ignores --help, so a probe runs it for
+real. It is no_parser since DECISIONS Q31 (an earlier revision called it
+standalone). simonw-tools/build_index.py, a build script with a __main__ guard
+and zero arg access, is the other ground truth. See _REAL_NO_PARSER below.
 """
 from __future__ import annotations
 
@@ -122,15 +122,15 @@ def test_argparse_no_main_still_standalone(tmp_path):
     assert classify_standalone(f) == "standalone"
 
 
-def test_sys_argv_under_main_is_standalone(tmp_path):
-    """A __main__-guarded script that reads sys.argv parses args MANUALLY -> it
-    is a real CLI surface, not a no_parser batch script."""
+def test_sys_argv_that_handles_help_is_standalone(tmp_path):
+    """A __main__-guarded script that reads sys.argv and knows --help parses args
+    MANUALLY -> it is a real CLI surface, not a no_parser batch script."""
     f = _w(tmp_path / "manual.py", """
         import sys
 
         def main():
-            if len(sys.argv) > 1:
-                print(sys.argv[1])
+            if "--help" in sys.argv:
+                print("usage: manual")
 
         if __name__ == "__main__":
             main()
@@ -138,13 +138,59 @@ def test_sys_argv_under_main_is_standalone(tmp_path):
     assert classify_standalone(f) == "standalone"
 
 
-def test_sys_argv_indexed_access_is_standalone(tmp_path):
-    """Direct sys.argv[1] indexing under __main__ also counts as manual parsing."""
+def test_sys_argv_that_ignores_help_is_no_parser(tmp_path):
+    """`--dry-run in sys.argv` proves nothing: under a probe the flag is absent and
+    the script does its real work. apply_body_fixes.py rewrote BACKLOG.md this way
+    (DECISIONS Q31)."""
+    f = _w(tmp_path / "batch.py", """
+        import sys
+        DRY_RUN = "--dry-run" in sys.argv
+        if __name__ == "__main__":
+            print(DRY_RUN)
+    """)
+    assert classify_standalone(f) == "no_parser"
+
+
+def test_sys_argv_indexed_access_ignoring_help_is_no_parser(tmp_path):
+    """sys.argv[1] with no help handling takes --help as its value and carries on."""
     f = _w(tmp_path / "idx.py", """
         import sys
         if __name__ == "__main__":
             target = sys.argv[1]
             print(target)
+    """)
+    assert classify_standalone(f) == "no_parser"
+
+
+def test_regex_group_call_is_not_a_parser(tmp_path):
+    """`m.group(1)` is no click group: sweeps ran heise_login for real on this."""
+    f = _w(tmp_path / "rx.py", """
+        import re
+        if __name__ == "__main__":
+            print(re.match("(a)", "a").group(1))
+    """)
+    assert classify_standalone(f) == "no_parser"
+
+
+def test_tk_command_call_is_not_a_parser(tmp_path):
+    f = _w(tmp_path / "tk.py", """
+        if __name__ == "__main__":
+            menu.command(label="x")
+    """)
+    assert classify_standalone(f) == "no_parser"
+
+
+def test_click_group_decorator_is_a_parser(tmp_path):
+    """Real click CLIs declare group/command as decorators; those still count."""
+    f = _w(tmp_path / "tool.py", """
+        import click
+
+        @click.group()
+        def cli():
+            pass
+
+        if __name__ == "__main__":
+            cli()
     """)
     assert classify_standalone(f) == "standalone"
 
