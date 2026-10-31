@@ -175,6 +175,49 @@ def test_health_cmd_runs_dunder_main_as_a_module(tmp_path):
     assert PythonAdapter().health_cmd(_path_rec(script), stop=tmp_path) == "python -m ytx --help"
 
 
+def test_stub_adapter_never_probes_a_shell_script_that_ignores_help(tmp_path):
+    """make-bundle.sh has no --help branch: `make-bundle.sh --help` builds and
+    writes a zip, on every sweep and on every dry run."""
+    ran = tmp_path / "ran"
+    script = _executable(tmp_path / "tool.sh", f"#!/usr/bin/env bash\ntouch {ran}\n")
+    rec = _path_rec(script)
+    rec.lang = "shell"
+    assert StubAdapter().health_cmd(rec) == ""
+
+
+@pytest.mark.parametrize("body", [
+    'case "$1" in --help) echo usage; exit 0;; esac\n',
+    'exec /bin/true "$@"\n',
+])
+def test_stub_adapter_probes_a_shell_script_that_reads_help(tmp_path, body):
+    script = _executable(tmp_path / "tool", f"#!/bin/sh\n{body}")
+    rec = _path_rec(script)
+    rec.lang = "shell"
+    assert StubAdapter().health_cmd(rec) == f"{script} --help"
+
+
+def test_stub_adapter_launches_an_executable_by_path(tmp_path):
+    script = _executable(tmp_path / "tool.sh", "#!/bin/sh\n")
+    rec = _path_rec(script)
+    rec.lang = "shell"
+    assert StubAdapter().launch_fields(rec) == {"argv": [str(script)]}
+    assert StubAdapter().launch_spec(rec)["argv"] == [str(script)]
+
+
+@pytest.mark.parametrize("make", [
+    lambda p: p.write_text("#!/bin/sh\n"),   # not executable
+    lambda p: p.mkdir(),                     # a directory passes the X_OK check
+    lambda p: None,                          # missing
+])
+def test_stub_adapter_has_no_argv_when_the_path_cannot_run(tmp_path, make):
+    path = tmp_path / "tool"
+    make(path)
+    rec = _path_rec(path)
+    rec.lang = "shell"
+    assert StubAdapter().launch_fields(rec) == {}
+    assert "argv" not in StubAdapter().launch_spec(rec)
+
+
 def test_launch_spec_carries_the_project_interpreter_and_no_env(tmp_path, monkeypatch):
     """The row records what the probe ran, and a launcher cannot send
     PYTHONPATH (DECISIONS Q32), so neither the project's nor the caller's."""
