@@ -410,3 +410,13 @@
 **Justification:** Cheapest to reverse. Deleting could not restore any earlier same-day zip, and leaving it makes a bare publish ship an unrequested build instead of the 2026-09-28-d98 one. Owner of 75_Coaching should confirm.
 **Outcome:** assumed
 **Ref:** port/publish-bundle.sh line 18
+
+
+## Q38 — docs/plans/2026-10-31-does-real-work.md Task 8 — deviation
+
+**Question:** The plan smoke table names commands the CLIs do not have. What should each hand seed run instead?
+**Chosen:** ytx: --fetch on a fixture cache entry, regex on the gate0 hit line, instead of a .vtt file. decisions_cli: --root on a fixture directory, instead of -p with a path. invoice-fetcher: list with side_effects none, no fixture inbox. gmail_attachments: a query that matches nothing, expect exit 5, instead of a real message.
+**Decided-by:** agent
+**Justification:** Measured from each --help and source: no ytx verb reads a .vtt, decisions open -p only filters by project name, invoice-fetcher has no inbox input, and this repo is public so a real Gmail id or query cannot be committed. Cost: these passes prove less than real work. YouTube fetch, invoice fetch and attachment listing stay unproven, and each seed says so in its note. Worth the operator checking whether the invoice-fetcher and gmail passes meet the does-real-work bar.
+**Outcome:** assumed
+**Ref:** seed/smoke/*.json
