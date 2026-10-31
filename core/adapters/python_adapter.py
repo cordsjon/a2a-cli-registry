@@ -1,6 +1,7 @@
 import os
 import re
 import shlex
+import shutil
 from pathlib import Path
 from typing import Optional
 from core.discovery.base import CliRecord
@@ -43,6 +44,7 @@ _SHELL_HELP_BRANCH = re.compile(r"--help|getopts|^\s*-h\)", re.MULTILINE)
 _SHELL_EXEC_PASSTHROUGH = re.compile(r'^\s*exec\s.*"\$@"', re.MULTILINE)
 _SHELL_SHEBANG = re.compile(rb"^#!.*\b(ba|z|da|k)?sh\b")
 _UNPROBEABLE_SUFFIXES = (".ts", ".js", ".mjs", ".cjs")
+_PEP723_BLOCK = re.compile(r"^# /// script\s*$", re.MULTILINE)
 
 
 def _read_text(path: str) -> str:
@@ -109,11 +111,17 @@ class PythonAdapter:
         if not path:
             return f"python -m {rec.slug}"
         if path.endswith(".py"):
-            interpreter = shlex.quote(project_interpreter(path, stop) or "python")
+            venv_python = project_interpreter(path, stop)
+            interpreter = shlex.quote(venv_python or "python")
             if os.path.basename(path) == "__main__.py":
                 # Run by path, a package's __main__ fails its relative imports.
                 package = os.path.basename(os.path.dirname(path))
                 return f"{interpreter} -m {shlex.quote(package)}"
+            if venv_python is None and _PEP723_BLOCK.search(_read_text(path)):
+                # Offline: a sweep must not fetch unpinned packages. Green means
+                # the declared deps are already in uv's cache.
+                uv = shlex.quote(shutil.which("uv") or "uv")
+                return f"{uv} run --offline --script {shlex.quote(path)}"
             return f"{interpreter} {shlex.quote(path)}"
         # "" = unknown, never run. Registered under lang=python but not Python
         # (the feed infers lang loosely): .ts/.js, shell scripts, bare entrypoints.

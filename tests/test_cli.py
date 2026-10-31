@@ -78,7 +78,7 @@ def test_probe_dry_run_writes_nothing(tmp_path, capsys):
     from core.models import Cli
     from core.store.db import get_session, init_db
     script = tmp_path / "tool.py"
-    script.write_text("print('ok')\n")
+    script.write_text("import argparse\nargparse.ArgumentParser().parse_args()\n")
     db = tmp_path / "r.db"
     engine = init_db(str(db))
     with get_session(engine) as s:

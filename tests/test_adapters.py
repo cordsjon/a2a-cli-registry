@@ -1,5 +1,9 @@
 import os
 import shlex
+import shutil
+import subprocess
+
+import pytest
 
 from core.adapters.base import LanguageAdapter
 from core.adapters.python_adapter import PythonAdapter
@@ -230,6 +234,43 @@ def test_launch_argv_is_the_probe_invocation_for_every_shape(tmp_path):
         rec = _path_rec(path)
         spec = adapter.launch_spec(rec, stop=tmp_path)
         assert shlex.join(spec["argv"]) + " --help" == adapter.health_cmd(rec, stop=tmp_path)
+
+
+_PEP723_NO_DEPS = '# /// script\n# dependencies = []\n# ///\nimport sys\nsys.exit(0)\n'
+
+
+def test_pep723_script_without_a_venv_runs_through_uv_offline(tmp_path):
+    """AC-04: it declares its own deps. Offline, so a sweep never fetches unpinned
+    packages: green means they are already cached."""
+    script = tmp_path / "tool.py"
+    script.write_text(_PEP723_NO_DEPS)
+    argv = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)["argv"]
+    assert argv[1:] == ["run", "--offline", "--script", str(script)]
+    assert os.path.basename(argv[0]) == "uv"
+
+
+def test_project_venv_outranks_pep723(tmp_path):
+    venv_py = _executable(tmp_path / ".venv" / "bin" / "python", "#!/bin/sh\n")
+    script = tmp_path / "tool.py"
+    script.write_text(_PEP723_NO_DEPS)
+    argv = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path.parent)["argv"]
+    assert argv == [str(venv_py), str(script)]
+
+
+def test_plain_script_without_a_venv_gets_no_borrowed_interpreter(tmp_path):
+    """Q22 stands: a foreign venv's green says nothing about this script."""
+    script = tmp_path / "tool.py"
+    script.write_text("import sys\n")
+    argv = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)["argv"]
+    assert argv == ["python", str(script)]
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_pep723_invocation_runs_under_real_uv(tmp_path):
+    script = tmp_path / "tool.py"
+    script.write_text(_PEP723_NO_DEPS)
+    cmd = PythonAdapter().health_cmd(_path_rec(script), stop=tmp_path)
+    assert subprocess.run(shlex.split(cmd), cwd=tmp_path, capture_output=True).returncode == 0
 
 
 def test_launch_spec_has_no_argv_when_the_probe_has_no_safe_invocation(tmp_path):
