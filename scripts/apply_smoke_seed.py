@@ -50,7 +50,7 @@ def main(argv=None) -> int:
         print(f"\nDRY RUN: {len(specs)} seeds, re-run with --apply to write.")
         return 0
 
-    bak = f"{args.db}.bak-pre-smoke-seed"
+    bak = f"{args.db}.bak-pre-seed-{args.seed_dir.name}"    # per dir: keeps the earlier undo point
     shutil.copy2(args.db, bak)
     print(f"backed up -> {bak}")
     with con:

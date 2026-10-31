@@ -18,4 +18,6 @@ HANDOVER-*.md
 demo/*
 !demo/config.toml
 .remediate-runs/
+# Regenerated from the DB by scripts/derive_smoke.py. Their argv name private scripts.
+seed/smoke/derived/
 .codex-runs/
