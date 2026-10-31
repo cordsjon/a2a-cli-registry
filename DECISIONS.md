@@ -322,3 +322,14 @@
 **Justification:** Same delegation path without the side effects of argument-less runs. Gateway status alone cannot score it: it reports success for exit 1. The route code above the seam was checked separately by resolving playbooks over live MCP, running none.
 **Outcome:** applied
 **Ref:** c63ac3b (at write time)
+
+
+## Q30 — US-CLIREG-LAUNCH-01 — gate-resolution
+
+**Question:** Hermes tirith holds PYTHONPATH + interpreter as interpreter_hijack_env, and the adapter cannot approve. 19 of 372 sampled healthy rows need PYTHONPATH to import. Allowlist the rule for registry-authored launches, or leave those rows failing on import (or change the projects so they need no PYTHONPATH)?
+**Options considered:** allowlist the rule / leave them failing on import / install those projects into their venvs
+**Chosen:** —
+**Decided-by:** agent
+**Justification:** It relaxes a security control on the path Hermes uses to run commands, which is the operator decision, not an agent default. Meanwhile launchers send argv only (fails safe, honest ImportError). Row list: ~/.hermes/reports/cli-registry-launch-needs-pythonpath-2026-10-31.json.
+**Outcome:** escalated
+**Ref:** hermes-adapter 96cec05
