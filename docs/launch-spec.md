@@ -16,7 +16,8 @@
 | `expect_exit` | Default 0. |
 | `expect_stdout_re` | Searched in stdout only, capped at 64 KB. Optional. |
 | `expect_file` | Must exist in the cwd afterwards. Optional. |
-| `side_effects` | `none` or `tmp` run unattended. `network`, `spend`, or anything else needs `--allow-network`. |
+| `cwd` | Run here instead of the throwaway cwd. Only for `tier: project-tests`, whose suite needs its checkout. Optional. |
+| `side_effects` | `none` or `tmp` run unattended. `network`, `spend`, `project-tests`, or anything else needs `--allow-network`. |
 | `tier` | How much a pass proves: `hand` (real work), `project-tests` (the owning project's tests for this file), `version` (import and entry only). |
 | `timeout` | Seconds. Default 60. |
 | `note` | What a pass does not prove. Not read by the runner. |
