@@ -1,0 +1,9 @@
+{
+  "argv": ["/Users/jcords-macmini/.local/bin/invoice-fetcher", "list"],
+  "expect_exit": 0,
+  "expect_stdout_re": "@\\S+\\s+(google|imap)",
+  "side_effects": "none",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "Offline: reads the account profile store and touches neither the keychain nor the network. Proves an account is configured. Fetching invoices stays unproven, and no verb takes a fixture inbox (DECISIONS Q38)."
+}

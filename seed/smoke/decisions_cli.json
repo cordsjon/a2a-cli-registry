@@ -1,0 +1,10 @@
+{
+  "argv": ["/Users/jcords-macmini/projects/00_Governance/bin/decisions", "--root", ".", "open"],
+  "fixture": "seed/smoke/decisions_cli/.fixture/",
+  "expect_exit": 0,
+  "expect_stdout_re": "Smoke fixture question",
+  "side_effects": "none",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "--root is the fixture seam: -p only filters by project name. The ledger sits in a dot directory so the real sweep of ~/projects skips it."
+}

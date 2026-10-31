@@ -1,0 +1,11 @@
+{
+  "argv": ["/Users/jcords-macmini/projects/00_Governance/.venv/bin/python", "-m", "ytx",
+           "--fetch", "clireg-smk0", "--cache-root", ".", "--verbose"],
+  "fixture": "seed/smoke/ytx/",
+  "expect_exit": 0,
+  "expect_stdout_re": "\\[gate0\\] cache hit",
+  "side_effects": "none",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "Proves the import, the cache read and envelope validation with no PYTHONPATH. Fetching from YouTube stays unproven. No ytx verb reads a .vtt file (DECISIONS Q38)."
+}

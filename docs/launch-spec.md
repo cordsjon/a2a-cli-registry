@@ -19,6 +19,9 @@
 | `side_effects` | `none` or `tmp` run unattended. `network`, `spend`, or anything else needs `--allow-network`. |
 | `tier` | How much a pass proves: `hand` (real work), `project-tests` (the owning project's tests for this file), `version` (import and entry only). |
 | `timeout` | Seconds. Default 60. |
+| `note` | What a pass does not prove. Not read by the runner. |
+
+Seeds live in `seed/smoke/<slug>.json`, and `scripts/apply_smoke_seed.py --apply` writes them to the rows. A fixture holding a `DECISIONS.md` must sit in a dot directory, or the real `decisions` sweep of `~/projects` reads it as a live ledger.
 
 ## Results
 

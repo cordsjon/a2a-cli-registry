@@ -1,0 +1,9 @@
+{
+  "argv": ["/Users/jcords-macmini/projects-local/00_Governance/bin/wa-bridge", "status"],
+  "expect_exit": 0,
+  "expect_stdout_re": "state=",
+  "side_effects": "network",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "Exit 0 and a device line need the service up, its HTTP ready, an API key and a linked device."
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "video_id": "clireg-smk0",
+  "title": "Registry smoke fixture",
+  "channel": "a2a-cli-registry",
+  "duration_s": 8.0,
+  "language": "en",
+  "track": "manual/en",
+  "transport": "captions-cli",
+  "fetched_at": "2026-11-01T00:00:00Z",
+  "segments": [
+    {"start": 0.0, "end": 4.0, "text": "This transcript exists only for the registry smoke."},
+    {"start": 4.0, "end": 8.0, "text": "It was never fetched from anywhere."}
+  ]
+}
