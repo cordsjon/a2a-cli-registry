@@ -31,10 +31,16 @@ class Chain:
                 self.min_confidence_rank, tuple(self.slugs))
 
 
+def _disabled_slugs(session) -> set[str]:
+    return set(session.exec(select(Cli.slug).where(Cli.enabled == False)).all())  # noqa: E712
+
+
 def _cap_index(session):
+    disabled = _disabled_slugs(session)
     idx = {}
     for c in session.exec(select(Capability)).all():
-        idx.setdefault(c.cli_slug, []).append(c)
+        if c.cli_slug not in disabled:
+            idx.setdefault(c.cli_slug, []).append(c)
     return idx
 
 
@@ -136,8 +142,10 @@ def plan_chain(session, goal_inputs, goal_outputs, allow_side_effects=None,
     # §2.2: validates verbs and enforces max-one-verb-per-live-terminal.
     action_terminals = _action_terminals(caps, goal_actions) if goal_actions else set()
     adjacency = {}
+    disabled = _disabled_slugs(session)
     for e in session.exec(select(CliEdge)).all():
-        adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
+        if e.from_slug not in disabled and e.to_slug not in disabled:
+            adjacency.setdefault(e.from_slug, []).append((e.to_slug, e.via_type))
 
     # §2.5: planning-time terminal edge synthesis — send_mail-class terminals
     # have zero persisted incoming edges (edges.py:30 down-weights bare hub

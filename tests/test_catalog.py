@@ -258,3 +258,12 @@ def test_overview_rows_query_count_is_bounded_not_per_cli(db):
 
     assert len(rows["clis"]) == 10
     assert len(statements) == 3
+
+
+def test_search_hides_disabled_rows(db):
+    """AC-05: a disabled row points at nothing runnable, so it is not offered."""
+    db.add(Cli(slug="live", lang="python"))
+    db.add(Cli(slug="dead", lang="python", enabled=False))
+    db.commit()
+    assert [r["slug"] for r in search_clis(db)] == ["live"]
+    assert [r["slug"] for r in search_clis(db, "dead")] == []

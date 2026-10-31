@@ -255,3 +255,62 @@ def test_populate_still_overwrites_feed_owned_rows(db, clock):
     populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
     assert db.get(Cli, "tool").description == "scripts/tool.py"
     assert db.exec(select(Capability).where(Capability.cli_slug == "tool")).one().intent_tags == "convert"
+
+
+def _rec_at(slug, path):
+    return CliRecord(slug=slug, lang="python", path=str(path), bucket=None, project=None,
+                     description="", source_class="cli_audit", source_run_id="r",
+                     declared_capability=None)
+
+
+def test_populate_drops_feed_rows_whose_path_is_gone(db, clock, tmp_path):
+    """AC-05: 28 cli_audit rows pointed at deleted scripts, and every feed run
+    re-listed them. A dropped row is then absent from the feed like any other."""
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    live = tmp_path / "live.py"
+    live.write_text("")
+    gone = tmp_path / "gone.py"
+    module_form = _rec_at("module_form", "")
+    db.add(Cli(slug="gone", lang="python", path=str(gone), source_class="cli_audit"))
+    for i in range(4):                                 # stay under the 30 % breaker
+        _hand_registered(db, f"h{i}")
+    db.commit()
+
+    result = populate(db, FakeSource([_rec_at("live", live), _rec_at("gone", gone), module_form]),
+                      [PythonAdapter()], vocab, clock, drop_missing_paths=True)
+
+    assert result["dropped_missing_path"] == ["gone"]
+    assert result["removed"] == 1
+    assert db.get(Cli, "gone") is None
+    assert db.get(Cli, "live") is not None
+    assert db.get(Cli, "module_form") is not None      # no path to check
+
+
+def test_populate_keeps_missing_paths_unless_asked(db, clock, tmp_path):
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    result = populate(db, FakeSource([_rec_at("gone", tmp_path / "gone.py")]),
+                      [PythonAdapter()], vocab, clock)
+    assert result["dropped_missing_path"] == []
+    assert db.get(Cli, "gone") is not None
+
+
+def test_populate_dropping_missing_paths_still_trips_the_breaker(db, clock, tmp_path):
+    """An unmounted volume makes every path look deleted. That must fail closed."""
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    recs = [_rec_at(f"c{i}", tmp_path / f"c{i}.py") for i in range(4)]
+    populate(db, FakeSource(recs), [PythonAdapter()], vocab, clock)
+    with pytest.raises(MassRemovalBreaker):
+        populate(db, FakeSource(recs), [PythonAdapter()], vocab, clock, drop_missing_paths=True)
+    assert db.get(Cli, "c0") is not None
+
+
+def test_populate_dry_run_reports_dropped_paths(db, clock, tmp_path):
+    vocab = VocabularyRegistry(registered=_VOCAB4, aliases={})
+    gone = tmp_path / "gone.py"
+    db.add(Cli(slug="gone", lang="python", path=str(gone), source_class="cli_audit"))
+    db.commit()
+    plan = populate(db, FakeSource([_rec_at("gone", gone)]), [PythonAdapter()], vocab, clock,
+                    drop_missing_paths=True, dry_run=True)
+    assert plan["dropped_missing_path"] == ["gone"]
+    assert plan["would_remove"] == {"cli_audit": ["gone"]}
+    assert db.get(Cli, "gone") is not None

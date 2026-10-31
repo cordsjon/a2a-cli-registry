@@ -623,3 +623,14 @@ def test_relevant_producer_survives_candidate_cap(db):
                         max_candidate_chains=100, producer_terms=["target"])
     assert ranked[0].slugs == ["zzz_target"]
     assert ranked[0].relevance_rank == 0
+
+
+def test_planner_never_routes_through_a_disabled_cli(db):
+    """AC-05: both the capability index and the persisted edges must skip it."""
+    _fleet(db)
+    assert plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"])
+    summarize = db.get(Cli, "summarize")
+    summarize.enabled = False
+    db.add(summarize)
+    db.commit()
+    assert plan_chain(db, goal_inputs=["file:pdf"], goal_outputs=["text:summary"]) == []

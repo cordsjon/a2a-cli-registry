@@ -69,7 +69,7 @@ def overview_rows(session):
 
 
 def search_clis(session, query: str = ""):
-    rows = session.exec(select(Cli)).all()
+    rows = session.exec(select(Cli).where(Cli.enabled == True)).all()  # noqa: E712
     q = query.strip().lower()
     if not q:
         return [_search_row(c) for c in rows]

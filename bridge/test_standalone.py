@@ -176,3 +176,25 @@ def test_real_subapp_ground_truth():
 def test_real_no_parser_ground_truth():
     """AC-02 against a real genuine batch script: build_index.py -> no_parser."""
     assert classify_standalone(_REAL_NO_PARSER) == "no_parser"
+
+
+@pytest.mark.parametrize("call", ["root.mainloop()", "uvicorn.run(app)", "httpd.serve_forever()"])
+def test_long_running_entrypoint_without_a_real_parser_is_no_parser(tmp_path, call):
+    """svg-paint toolbar.py hides behind a Tk `.command()` that the parser check
+    counts, and opens a window for the whole probe timeout."""
+    f = _w(tmp_path / "gui.py", f"""
+        menu.command()
+        if __name__ == "__main__":
+            {call}
+    """)
+    assert classify_standalone(f) == "no_parser"
+
+
+def test_long_running_entrypoint_with_argparse_stays_standalone(tmp_path):
+    f = _w(tmp_path / "srv.py", """
+        import argparse, uvicorn
+        if __name__ == "__main__":
+            argparse.ArgumentParser().parse_args()
+            uvicorn.run(app)
+    """)
+    assert classify_standalone(f) == "standalone"
