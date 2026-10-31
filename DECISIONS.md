@@ -267,3 +267,58 @@
 **Justification:** AC-05 names disabling with provenance. Search and the planner ignored enabled, so disabling alone would not have stopped Hermes being offered dead rows. Side effect: the 25 already-disabled rows also leave search results. Registry populate stays unrun until the feed is refreshed.
 **Outcome:** assumed
 **Ref:** 2c247e9, e95b9c1
+
+
+## Q25 — US-CLIREG-LAUNCH-01 — tradeoff
+
+**Question:** AC-01 says launch_spec carries the interpreter and PYTHONPATH. Which fields, given that 3 healthy rows are package __main__ files and 10 are shell or extensionless, where interpreter + script_path is the wrong command?
+**Options considered:** interpreter field, consumer assembles / argv and env fields from the invocation the probe runs
+**Chosen:** argv and env, built from the same _invocation as health_cmd. argv[0] is the project interpreter on .py rows.
+**Decided-by:** agent
+**Justification:** Green must predict a launch; one code path means they cannot drift. Cost: no separate interpreter field to query, consumers read argv[0].
+**Outcome:** assumed
+**Ref:** 8f55142
+
+
+## Q26 — US-CLIREG-LAUNCH-01 — deviation
+
+**Question:** The story and handover name compose_command as the launch gap. hermes_adapter/tools/cli_registry.py _resolve_command builds its own python3 <script_path> for run_cli. Change it too?
+**Options considered:** compose_command only, as written / both launchers
+**Chosen:** Both share recorded_invocation. A spec with argv also skips the python_module kind gate in _resolve_command.
+**Decided-by:** agent
+**Justification:** The story goal is that a healthy row runs when Hermes picks it, and run_cli is the path that picks. Specs with no argv keep their old forms.
+**Outcome:** applied
+**Ref:** hermes-adapter b139d1a
+
+
+## Q27 — US-CLIREG-LAUNCH-01 — deviation
+
+**Question:** Q23 says parser-less scripts never run, but classify_standalone returned standalone for no guard and no parser, so every sweep executed 11 live rows (eventlog, core_api, ics_*). Close it?
+**Options considered:** leave / classify as no_parser
+**Chosen:** Classify as no_parser. Those rows keep status and timestamp and are not executed.
+**Decided-by:** agent
+**Justification:** Restores the property Q23 claims. Cost: skipped healthy rows rose from 34 to 45, none re-verified. A guardless __main__.py that delegates its parser would stop being probed; none exists today (fails safe).
+**Outcome:** assumed
+**Ref:** 8f55142
+
+
+## Q28 — US-CLIREG-LAUNCH-01/AC-04 — gate-resolution
+
+**Question:** AC-04: decide the no-venv rows. Measured 105 on bare python, not the 64 in the story (64 is the healthy subset): 17 PEP 723, 88 plain.
+**Options considered:** fallback interpreter / uv run --script / uv run --offline --script for PEP 723, nothing for plain
+**Chosen:** PEP 723 rows use uv run --offline --script. Plain rows stay on bare python; no fallback interpreter (Q22 stands).
+**Decided-by:** agent
+**Justification:** All 15 unhealthy PEP 723 rows are unpinned, q3_tts wants mlx-audio==0.3.0rc1, and an unattended sweep must not fetch them. Offline, green means already cached. Re-probe: 4 of the 15 turned green, unhealthy 81 to 78 after other movement, uv cache unchanged at 7001312 kB. Cost: 11 stay red until an operator warms them with uv sync --script. A fallback venv would be green for reasons unrelated to the script, even with launch_spec able to carry it.
+**Outcome:** assumed
+**Ref:** c63ac3b
+
+
+## Q29 — US-CLIREG-LAUNCH-01/AC-03 — deviation
+
+**Question:** AC-03 asks for launches through the playbook route with --help, but the route has no argv binding and a real step would run each CLI with no arguments. How to measure?
+**Options considered:** POST the route with temporary playbooks / call the route step seam _run_step with compose_command + --help
+**Chosen:** The _run_step seam against the live gateway, scored on an EXIT=0 marker. Sample excludes no-parser rows.
+**Decided-by:** agent
+**Justification:** Same delegation path without the side effects of argument-less runs. Gateway status alone cannot score it: it reports success for exit 1. The route code above the seam was checked separately by resolving playbooks over live MCP, running none.
+**Outcome:** applied
+**Ref:** c63ac3b (at write time)
