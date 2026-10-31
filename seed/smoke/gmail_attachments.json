@@ -1,0 +1,11 @@
+{
+  "argv": ["/Users/jcords-macmini/projects/00_Governance/.venv/bin/python",
+           "/Users/jcords-macmini/projects/00_Governance/scripts/cli/gmail_attachments.py",
+           "list", "--query", "rfc822msgid:clireg-smoke-no-such-message"],
+  "expect_exit": 5,
+  "expect_stdout_re": "no message matches query",
+  "side_effects": "network",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "A search that matches nothing. Exit 5 needs the keychain credential (else 3), a token refresh and an API answer (else 4). Listing a real message's attachments stays unproven: its id or query would not belong in a public repo."
+}
