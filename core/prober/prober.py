@@ -180,8 +180,8 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     - Marks CLIs with no probeable command as unknown; if their
       health_checked_at is older than staleness_ttl, marks stale.
     - Never executes a script with no argument parser: it ignores --help and
-      does its real work. A healthy one keeps its status and timestamp
-      (skipped_no_parser); any other becomes not_standalone.
+      does its real work. It becomes not_standalone; a healthy one is also
+      counted in skipped_no_parser, the rows this sweep demoted.
     - Runs every probe in one throwaway cwd, so a script that writes relative
       to its cwd cannot touch the caller's directory.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
@@ -234,6 +234,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
         standalone_class = classify_standalone(cli.path or "")
         if standalone_class == "no_parser" and cli.health_status == "healthy":
             skipped_no_parser += 1
+            not_standalone_rows.append(cli)
             continue
         if standalone_class != "standalone" and cli.health_status != "healthy":
             not_standalone_rows.append(cli)
@@ -301,6 +302,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
         if dry_run:
             continue
         cli.not_standalone = True
+        cli.a2a_invokable = False
         cli.health_status = "not_standalone"
         cli.health_checked_at = now
         session.add(cli)
@@ -308,8 +310,8 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
     counts["dry_run"] = dry_run
     counts["unhealthy_slugs"] = sorted(s for s, status in results.items() if status == "unhealthy")
     if not dry_run:
-        # Every enabled row, not only the probed: a healthy no-parser script is
-        # never run here but still launches when Hermes picks it.
+        # Every selected row, not only the probed: a no-parser script is never
+        # run here but the row still records how it would be launched.
         for cli in clis:
             _refresh_launch_fields(cli, adapters)
             session.add(cli)

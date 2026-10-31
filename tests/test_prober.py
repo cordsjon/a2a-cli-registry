@@ -554,21 +554,23 @@ def test_probe_fleet_never_executes_a_no_parser_script(db, clock, tmp_path):
     assert summary["probed"] == 0
 
 
-def test_probe_fleet_keeps_healthy_no_parser_row_without_running_it(db, clock, tmp_path):
-    """Never demote a healthy row (scripts/reeval_not_standalone.py precision
-    guard), and never execute it either."""
+def test_probe_fleet_demotes_healthy_no_parser_row_without_running_it(db, clock, tmp_path):
+    """Its green came from an old sweep running it for real. Healthy means it
+    parses --help and exits 0, so a script with no parser cannot be (Q35)."""
     from core.adapters.python_adapter import PythonAdapter
     sentinel = tmp_path / "ran"
     _seed_py(db, "batch", _no_parser_script(tmp_path / "batch.py", sentinel),
-             health_status="healthy", health_checked_at=123.0)
+             health_status="healthy", health_checked_at=123.0, a2a_invokable=True)
 
     summary = probe_fleet(db, [PythonAdapter()], clock)
 
     assert not sentinel.exists()
     db.expire_all()
     cli = db.get(Cli, "batch")
-    assert cli.health_status == "healthy"
-    assert cli.health_checked_at == 123.0
+    assert cli.health_status == "not_standalone"
+    assert cli.not_standalone is True
+    assert cli.a2a_invokable is False
+    assert summary["not_standalone"] == 1
     assert summary["skipped_no_parser"] == 1
 
 
