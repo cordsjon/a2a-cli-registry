@@ -143,11 +143,10 @@ def _find_adapter(cli: Cli, adapters):
     return None, None
 
 
-def _probe_env(adapter, rec) -> dict | None:
-    """The adapter's extra probe environment on top of ours; None inherits."""
-    health_env = getattr(adapter, "health_env", None)
-    extra = health_env(rec) if health_env else {}
-    return {**os.environ, **extra} if extra else None
+def _probe_env() -> dict:
+    """The environment a launcher can send: tirith holds PYTHONPATH (DECISIONS
+    Q32), so a probe that had it would be green for a row that fails at launch."""
+    return {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
 
 
 def _refresh_launch_fields(cli: Cli, adapters) -> None:
@@ -220,7 +219,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
     now = clock.now()
 
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
-    to_probe: list[tuple[Cli, str, dict | None]] = []   # (cli, cmd, env)
+    to_probe: list[tuple[Cli, str]] = []   # (cli, cmd)
     no_cmd: list[Cli] = []
     # US-CLIAUDIT-83: rows statically known not to be standalone CLIs (Typer/click
     # sub-apps, no-parser batch scripts) are never probed — probing them yields a
@@ -248,19 +247,20 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
             if not cmd:
                 no_cmd.append(cli)
             else:
-                to_probe.append((cli, cmd, _probe_env(adapter, rec)))
+                to_probe.append((cli, cmd))
         except Exception:
             no_cmd.append(cli)
 
     # --- Phase 2: run probes concurrently, one future per CLI ---
     results: dict[str, str] = {}   # slug -> status string
+    env = _probe_env()
 
     with tempfile.TemporaryDirectory(prefix="clireg-probe-") as probe_cwd:
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             future_to_slug = {
                 pool.submit(probe_one, cmd, probe_timeout, max_output_bytes,
                             cwd=probe_cwd, env=env): cli.slug
-                for cli, cmd, env in to_probe
+                for cli, cmd in to_probe
             }
             for future in as_completed(future_to_slug):
                 slug = future_to_slug[future]
@@ -274,7 +274,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
     counts = {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0,
               "not_standalone": 0, "skipped_no_parser": skipped_no_parser}
 
-    for cli, _cmd, _env in to_probe:
+    for cli, _cmd in to_probe:
         status = results.get(cli.slug, "unhealthy")
         counts["probed"] += 1
         counts[status] = counts.get(status, 0) + 1
@@ -306,6 +306,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
         session.add(cli)
 
     counts["dry_run"] = dry_run
+    counts["unhealthy_slugs"] = sorted(s for s, status in results.items() if status == "unhealthy")
     if not dry_run:
         # Every enabled row, not only the probed: a healthy no-parser script is
         # never run here but still launches when Hermes picks it.

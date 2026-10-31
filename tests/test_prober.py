@@ -441,19 +441,39 @@ def _argparse_script(path, body=""):
     return path
 
 
-def test_probe_fleet_puts_project_root_on_pythonpath(db, clock, tmp_path):
-    from core.adapters.python_adapter import PythonAdapter
+def _script_needing_its_project_root(tmp_path):
     proj = tmp_path / "proj"
     (proj / "mylib").mkdir(parents=True)
     (proj / "pyproject.toml").write_text("")
     (proj / "mylib" / "__init__.py").write_text("")
-    script = _argparse_script(proj / "scripts" / "tool.py", "import mylib")
+    return proj, _argparse_script(proj / "scripts" / "tool.py", "import mylib")
+
+
+def test_probe_fleet_does_not_lend_a_script_its_project_root(db, clock, tmp_path):
+    """Launchers cannot send PYTHONPATH (DECISIONS Q32). A script that only
+    imports with it would be green here and fail on import at launch."""
+    from core.adapters.python_adapter import PythonAdapter
+    _, script = _script_needing_its_project_root(tmp_path)
+    _seed_py(db, "tool", script)
+
+    summary = probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert db.get(Cli, "tool").health_status == "unhealthy"
+    assert summary["unhealthy_slugs"] == ["tool"]
+
+
+def test_probe_fleet_ignores_the_callers_pythonpath(db, clock, tmp_path, monkeypatch):
+    """Same false green, from whoever's shell started the sweep."""
+    from core.adapters.python_adapter import PythonAdapter
+    proj, script = _script_needing_its_project_root(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", str(proj))
     _seed_py(db, "tool", script)
 
     probe_fleet(db, [PythonAdapter()], clock)
 
     db.expire_all()
-    assert db.get(Cli, "tool").health_status == "healthy"
+    assert db.get(Cli, "tool").health_status == "unhealthy"
 
 
 def test_probe_slugs_touches_only_the_named_rows(db, clock, tmp_path):

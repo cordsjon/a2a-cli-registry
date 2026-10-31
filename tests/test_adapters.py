@@ -167,35 +167,18 @@ def test_health_cmd_skips_typescript_and_javascript(tmp_path):
 
 
 def test_health_cmd_runs_dunder_main_as_a_module(tmp_path):
-    """ytx/__main__.py run by path fails its relative import; `-m ytx` with the
-    package's parent on PYTHONPATH is how it actually runs."""
+    """ytx/__main__.py run by path fails its relative import; `-m ytx` is how
+    it actually runs, with the package's parent on the venv's sys.path."""
     script = tmp_path / "scripts" / "ytx" / "__main__.py"
     script.parent.mkdir(parents=True)
     script.write_text("")
-    adapter = PythonAdapter()
-    rec = _path_rec(script)
-    assert adapter.health_cmd(rec, stop=tmp_path) == "python -m ytx --help"
-    assert str(tmp_path / "scripts") in adapter.health_env(rec)["PYTHONPATH"].split(os.pathsep)
+    assert PythonAdapter().health_cmd(_path_rec(script), stop=tmp_path) == "python -m ytx --help"
 
 
-def test_health_env_adds_project_root_and_keeps_existing_pythonpath(tmp_path, monkeypatch):
-    monkeypatch.setenv("PYTHONPATH", "/already/there")
-    (tmp_path / "pyproject.toml").write_text("")
-    script = tmp_path / "scripts" / "tool.py"
-    script.parent.mkdir()
-    script.write_text("")
-    entries = PythonAdapter().health_env(_path_rec(script))["PYTHONPATH"].split(os.pathsep)
-    assert entries == [str(tmp_path), "/already/there"]
-
-
-def test_health_env_is_empty_without_a_project_root(tmp_path):
-    rec = _rec("python", "black")
-    rec.path = ""
-    assert PythonAdapter().health_env(rec) == {}
-
-
-def test_launch_spec_carries_project_interpreter_and_pythonpath(tmp_path):
-    """US-CLIREG-LAUNCH-01 AC-01: the row records what the probe ran with."""
+def test_launch_spec_carries_the_project_interpreter_and_no_env(tmp_path, monkeypatch):
+    """The row records what the probe ran, and a launcher cannot send
+    PYTHONPATH (DECISIONS Q32), so neither the project's nor the caller's."""
+    monkeypatch.setenv("PYTHONPATH", "/only/in/the/prober")
     (tmp_path / "pyproject.toml").write_text("")
     venv_py = _executable(tmp_path / ".venv" / "bin" / "python", "#!/bin/sh\n")
     script = tmp_path / "scripts" / "tool.py"
@@ -203,18 +186,7 @@ def test_launch_spec_carries_project_interpreter_and_pythonpath(tmp_path):
     script.write_text("")
     spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path.parent)
     assert spec["argv"] == [str(venv_py), str(script)]
-    assert spec["env"] == {"PYTHONPATH": str(tmp_path)}
-
-
-def test_launch_spec_does_not_persist_the_callers_pythonpath(tmp_path, monkeypatch):
-    """health_env appends the prober's own PYTHONPATH for the child it spawns.
-    Stored in the row, that would hand every launch the prober's environment."""
-    monkeypatch.setenv("PYTHONPATH", "/only/in/the/prober")
-    (tmp_path / "pyproject.toml").write_text("")
-    script = tmp_path / "tool.py"
-    script.write_text("")
-    spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)
-    assert spec["env"] == {"PYTHONPATH": str(tmp_path)}
+    assert "env" not in spec
 
 
 def test_launch_argv_is_the_probe_invocation_for_every_shape(tmp_path):

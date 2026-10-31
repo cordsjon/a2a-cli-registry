@@ -7,7 +7,6 @@ from typing import Optional
 from core.discovery.base import CliRecord
 from core.capability.model import CapabilityRecord
 from core.capability.infer import infer_python_capability
-from core.paths.module_root import _project_root
 
 
 _VENV_DIRS = (".venv", "venv")
@@ -82,17 +81,12 @@ class PythonAdapter:
         return spec
 
     def launch_fields(self, rec: CliRecord, stop: Optional[Path] = None) -> dict:
-        """What the probe runs, for a launcher to run the same thing: `argv`
-        and `env`. Empty when there is no safe invocation."""
+        """What the probe runs, for a launcher to run the same thing: `argv`.
+        Empty when there is no safe invocation."""
         invocation = self._invocation(rec, stop)
         if not invocation:
             return {}
-        fields = {"argv": shlex.split(invocation)}
-        # Never the caller's PYTHONPATH: this is stored on the row.
-        entries = self._project_pythonpath(rec)
-        if entries:
-            fields["env"] = {"PYTHONPATH": os.pathsep.join(entries)}
-        return fields
+        return {"argv": shlex.split(invocation)}
 
     def health_cmd(self, rec: CliRecord, stop: Optional[Path] = None) -> str:
         # US-77 two-stage filter resolves a safe --help/--version probe.
@@ -137,31 +131,6 @@ class PythonAdapter:
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return shlex.quote(path)
         return ""
-
-    def health_env(self, rec: CliRecord) -> dict:
-        """PYTHONPATH additions the probe needs on top of what it inherits."""
-        entries = self._project_pythonpath(rec)
-        if not entries:
-            return {}
-        inherited = os.environ.get("PYTHONPATH")
-        if inherited:
-            entries.append(inherited)
-        return {"PYTHONPATH": os.pathsep.join(entries)}
-
-    def _project_pythonpath(self, rec: CliRecord) -> list:
-        """The script's project root, and a package's parent for `-m`. Scripts
-        import their own project's code, which nothing on the default sys.path
-        can resolve."""
-        path = (rec.path or "").strip()
-        if not path:
-            return []
-        entries = []
-        if os.path.basename(path) == "__main__.py":
-            entries.append(os.path.dirname(os.path.dirname(os.path.abspath(path))))
-        root = _project_root(path)
-        if root and root not in entries:
-            entries.append(root)
-        return entries
 
     def infer_capability(self, rec: CliRecord) -> Optional[CapabilityRecord]:
         return infer_python_capability(rec)
