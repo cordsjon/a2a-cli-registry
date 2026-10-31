@@ -1,4 +1,5 @@
 # core/prober/prober.py
+import json
 import os
 import shlex
 import signal
@@ -149,6 +150,24 @@ def _probe_env(adapter, rec) -> dict | None:
     return {**os.environ, **extra} if extra else None
 
 
+def _refresh_launch_fields(cli: Cli, adapters) -> None:
+    """Record on the row how it is launched, so green predicts a launch without
+    a feed populate. Only argv/env are ours: other keys may be hand-set."""
+    adapter, rec = _find_adapter(cli, adapters)
+    launch_fields = getattr(adapter, "launch_fields", None)
+    if launch_fields is None:
+        return
+    try:
+        spec = json.loads(cli.launch_spec or "{}")
+    except ValueError:
+        return      # 'install:<url>' placeholder rows are not specs
+    if not isinstance(spec, dict):
+        return
+    spec = {k: v for k, v in spec.items() if k not in ("argv", "env")}
+    spec.update(launch_fields(rec))
+    cli.launch_spec = json.dumps(spec)
+
+
 def probe_fleet(session, adapters, clock, concurrency: int = 8,
                 probe_timeout: float = 10.0,
                 max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
@@ -268,5 +287,10 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
 
     counts["dry_run"] = dry_run
     if not dry_run:
+        # Every enabled row, not only the probed: a healthy no-parser script is
+        # never run here but still launches when Hermes picks it.
+        for cli in clis:
+            _refresh_launch_fields(cli, adapters)
+            session.add(cli)
         session.commit()
     return counts

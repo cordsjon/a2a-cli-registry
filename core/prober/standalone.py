@@ -7,9 +7,9 @@ US-CLIAUDIT-83 (continuation of US-CLIAUDIT-77) targets:
                  into a parent CLI via add_typer / add_command and are never run
                  directly — probing them as files yields a non-zero --help exit
                  that the audit mislabels "code-bug".
-  - "no_parser": a script WITH an `if __name__ == "__main__"` guard but NO
-                 argument parser anywhere (argparse / click / typer / fire).
-                 A batch script, not a CLI surface.
+  - "no_parser": a file with NO argument parser anywhere (argparse / click /
+                 typer / fire / sys.argv), guarded or not. A batch script or a
+                 library module, not a CLI surface.
 
 Everything else -> "standalone".
 
@@ -183,6 +183,7 @@ def classify_standalone(path: str) -> str:
     if _module_level_subapp(tree):
         return "subapp"
 
-    # No __main__, no sub-app object: e.g. argparse at module top-level (runs on
-    # file execution) — treat as standalone, don't suppress.
-    return "standalone"
+    # No __main__, no sub-app object: argparse at module top-level (runs on file
+    # execution) is standalone, don't suppress. With no parser either, nothing can
+    # answer --help: a library module, or a script that does its work on import.
+    return "standalone" if _has_parser_call(tree) else "no_parser"

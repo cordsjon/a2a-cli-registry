@@ -1,4 +1,5 @@
 import os
+import shlex
 
 from core.adapters.base import LanguageAdapter
 from core.adapters.python_adapter import PythonAdapter
@@ -187,3 +188,51 @@ def test_health_env_is_empty_without_a_project_root(tmp_path):
     rec = _rec("python", "black")
     rec.path = ""
     assert PythonAdapter().health_env(rec) == {}
+
+
+def test_launch_spec_carries_project_interpreter_and_pythonpath(tmp_path):
+    """US-CLIREG-LAUNCH-01 AC-01: the row records what the probe ran with."""
+    (tmp_path / "pyproject.toml").write_text("")
+    venv_py = _executable(tmp_path / ".venv" / "bin" / "python", "#!/bin/sh\n")
+    script = tmp_path / "scripts" / "tool.py"
+    script.parent.mkdir()
+    script.write_text("")
+    spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path.parent)
+    assert spec["argv"] == [str(venv_py), str(script)]
+    assert spec["env"] == {"PYTHONPATH": str(tmp_path)}
+
+
+def test_launch_spec_does_not_persist_the_callers_pythonpath(tmp_path, monkeypatch):
+    """health_env appends the prober's own PYTHONPATH for the child it spawns.
+    Stored in the row, that would hand every launch the prober's environment."""
+    monkeypatch.setenv("PYTHONPATH", "/only/in/the/prober")
+    (tmp_path / "pyproject.toml").write_text("")
+    script = tmp_path / "tool.py"
+    script.write_text("")
+    spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)
+    assert spec["env"] == {"PYTHONPATH": str(tmp_path)}
+
+
+def test_launch_argv_is_the_probe_invocation_for_every_shape(tmp_path):
+    """Green predicts a launch only if both run the same thing. `python <path>`
+    is wrong for a package's __main__ and for a shell wrapper."""
+    main = tmp_path / "ytx" / "__main__.py"
+    main.parent.mkdir()
+    main.write_text("")
+    shapes = [
+        main,
+        _executable(tmp_path / "wrapper", '#!/usr/bin/env bash\nexec python3 cli.py "$@"\n'),
+        _executable(tmp_path / "entry", "#!/usr/bin/env python3\nprint('hi')\n"),
+        _executable(tmp_path / "branch.sh", '#!/bin/sh\ncase "$1" in --help) echo u ;; esac\n'),
+    ]
+    adapter = PythonAdapter()
+    for path in shapes:
+        rec = _path_rec(path)
+        spec = adapter.launch_spec(rec, stop=tmp_path)
+        assert shlex.join(spec["argv"]) + " --help" == adapter.health_cmd(rec, stop=tmp_path)
+
+
+def test_launch_spec_has_no_argv_when_the_probe_has_no_safe_invocation(tmp_path):
+    script = _executable(tmp_path / "sync.sh", "#!/usr/bin/env bash\nrm -f \"$1\"\n")
+    spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)
+    assert "argv" not in spec and "env" not in spec

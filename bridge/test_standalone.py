@@ -149,6 +149,13 @@ def test_sys_argv_indexed_access_is_standalone(tmp_path):
     assert classify_standalone(f) == "standalone"
 
 
+def test_no_guard_and_no_parser_is_no_parser(tmp_path):
+    """A library module or a do-it-on-import script: nothing answers --help, so
+    the probe must not execute it (11 live rows, measured 2026-10-31)."""
+    f = _w(tmp_path / "lib.py", "import os\nVALUE = os.sep\n")
+    assert classify_standalone(f) == "no_parser"
+
+
 def test_missing_file_fails_open(tmp_path):
     """A path that does not exist must NOT be suppressed -> standalone."""
     assert classify_standalone(str(tmp_path / "gone.py")) == "standalone"

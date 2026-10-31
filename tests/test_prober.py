@@ -1,8 +1,10 @@
+import json
 import os
 import subprocess
 import sys
 import time
 import pytest
+from core.adapters.python_adapter import PythonAdapter
 from core.prober.prober import probe_one, probe_fleet, _STALE_TTL_SECONDS
 from core.models import Cli
 from core.discovery.base import CliRecord
@@ -155,6 +157,79 @@ def test_probe_fleet_writes_health_status_and_timestamp(db, clock):
     assert cli.health_checked_at == clock.now()
     assert summary["healthy"] == 1
     assert summary["probed"] == 1
+
+
+def _python_row(db, slug, path, launch_spec):
+    cli = Cli(slug=slug, lang="python", path=str(path), launch_spec=launch_spec)
+    db.add(cli)
+    db.commit()
+
+
+def _parser_script(path):
+    path.write_text("import argparse\nargparse.ArgumentParser().parse_args()\n")
+    return path
+
+
+def test_probe_fleet_writes_launch_fields_without_a_populate(db, clock, tmp_path):
+    """US-CLIREG-LAUNCH-01 AC-01: the feed is behind and must not be populated,
+    so the probe records the invocation. Keys it does not own survive."""
+    script = _parser_script(tmp_path / "tool.py")
+    _python_row(db, "tool", script, '{"kind": "executable", "entrypoint": "/keep/me"}')
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    spec = json.loads(db.get(Cli, "tool").launch_spec)
+    assert spec["argv"][-1] == str(script)
+    assert spec["kind"] == "executable" and spec["entrypoint"] == "/keep/me"
+
+
+def test_probe_fleet_records_launch_fields_for_a_healthy_row_it_will_not_run(db, clock, tmp_path):
+    """Q23 keeps no-parser scripts from executing. They still launch when picked."""
+    sentinel = tmp_path / "ran"
+    script = tmp_path / "batch.py"
+    script.write_text(f"open({str(sentinel)!r}, 'w').close()\n")
+    _python_row(db, "batch", script, "{}")
+    db.get(Cli, "batch").health_status = "healthy"
+    db.commit()
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert json.loads(db.get(Cli, "batch").launch_spec)["argv"][-1] == str(script)
+    assert not sentinel.exists()
+
+
+def test_probe_fleet_drops_launch_fields_that_no_longer_apply(db, clock, tmp_path):
+    script = tmp_path / "sync.sh"
+    script.write_text("#!/usr/bin/env bash\nrm -f \"$1\"\n")
+    _python_row(db, "sync", script, '{"kind": "python_module", "argv": ["old"], "env": {"A": "b"}}')
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert json.loads(db.get(Cli, "sync").launch_spec) == {"kind": "python_module"}
+
+
+def test_probe_fleet_leaves_a_non_json_launch_spec_alone(db, clock, tmp_path):
+    """24 live rows hold 'install:<url>': a placeholder, not a spec."""
+    script = _parser_script(tmp_path / "tool.py")
+    _python_row(db, "ns", script, "install:https://example.com/x")
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert db.get(Cli, "ns").launch_spec == "install:https://example.com/x"
+
+
+def test_probe_fleet_dry_run_writes_no_launch_fields(db, clock, tmp_path):
+    script = _parser_script(tmp_path / "tool.py")
+    _python_row(db, "tool", script, "{}")
+
+    probe_fleet(db, [PythonAdapter()], clock, dry_run=True)
+
+    db.expire_all()
+    assert db.get(Cli, "tool").launch_spec == "{}"
 
 
 def test_probe_fleet_isolation_one_failure_does_not_abort(db, clock):
