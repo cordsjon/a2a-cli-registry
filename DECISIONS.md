@@ -379,3 +379,14 @@
 **Justification:** 3.6.0 is the blessed pin, but a real OCR call is unverified and the clone now diverges from upstream by one commit. publish-bundle uploads to the live site when run bare and has no --help, so marking it means no probe touches it. A sweep would execute --help on Consigliere rows during the job.
 **Outcome:** assumed
 **Ref:** 4b041a3 (at write time)
+
+
+## Q35 — docs/plans/2026-10-31-does-real-work.md — tradeoff
+
+**Question:** Operator set the bar at 'does real work' for every row. The plan had to settle: how to prove it across ~490 rows, what happens to the probe's injected PYTHONPATH, and what happens to the 82 healthy no-parser rows.
+**Options considered:** row-by-row hand smokes / tiered smokes (hand, --version, project-tests, unknown filed) ; keep injecting PYTHONPATH in probes / probe with the launcher's env ; keep no_parser healthy status (Q27) / demote to not_standalone
+**Chosen:** Tiered smokes with a separate work_status; probe with the launcher's environment and fix reds with .pth; no_parser healthy rows become not_standalone
+**Decided-by:** agent
+**Justification:** 466 of 492 healthy rows carry an env the launcher cannot send, so green does not predict a launch; removing the injection is the only way the probe measures launch truth. The 82 no-parser rows are green because old sweeps ran them for real. Hand smokes for ~490 rows are months, so tiers make the proven part explicit and the tail a backlog. Reverses Q27's keep-status and the launch_spec env field from LAUNCH-01 AC-01.
+**Outcome:** assumed
+**Ref:** 07cb094 (at write time)
