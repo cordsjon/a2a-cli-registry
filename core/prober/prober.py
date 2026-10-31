@@ -3,11 +3,13 @@ import os
 import shlex
 import signal
 import subprocess
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlmodel import select
 from core.models import Cli
 from core.discovery.base import CliRecord
+from core.prober.standalone import classify_standalone
 
 # A probed health command may itself spawn children. start_new_session puts the
 # child in its own process group so a timeout can kill the WHOLE tree (killpg),
@@ -59,7 +61,8 @@ def _drain_bounded(pipe, max_bytes: int) -> None:
 
 
 def probe_one(cmd: str, timeout: float = 10.0,
-              max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES) -> str:
+              max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
+              cwd: str | None = None, env: dict | None = None) -> str:
     """Run a health probe in isolation. 10s default timeout, killed on hang.
     Returns 'healthy' (exit 0) or 'unhealthy'.
 
@@ -69,12 +72,18 @@ def probe_one(cmd: str, timeout: float = 10.0,
     enforces the wall-time budget; on timeout the child is killed, which closes
     the pipe and unblocks the drain thread.
 
+    stdin is /dev/null: a child that reads it gets EOF, instead of the caller's
+    bytes or a block until the timeout.
+
     This is a HEALTH probe, not a managed-CLI invocation for a network caller."""
     try:
         proc = subprocess.Popen(
             shlex.split(cmd),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            cwd=cwd,
+            env=env,
             start_new_session=_POSIX,  # own process group so killpg reaches children
         )
     except (OSError, ValueError):
@@ -133,6 +142,13 @@ def _find_adapter(cli: Cli, adapters):
     return None, None
 
 
+def _probe_env(adapter, rec) -> dict | None:
+    """The adapter's extra probe environment on top of ours; None inherits."""
+    health_env = getattr(adapter, "health_env", None)
+    extra = health_env(rec) if health_env else {}
+    return {**os.environ, **extra} if extra else None
+
+
 def probe_fleet(session, adapters, clock, concurrency: int = 8,
                 probe_timeout: float = 10.0,
                 max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
@@ -145,6 +161,11 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     - Skips CLIs with enabled=False.
     - Marks CLIs with no probeable command as unknown; if their
       health_checked_at is older than staleness_ttl, marks stale.
+    - Never executes a script with no argument parser: it ignores --help and
+      does its real work. A healthy one keeps its status and timestamp
+      (skipped_no_parser); any other becomes not_standalone.
+    - Runs every probe in one throwaway cwd, so a script that writes relative
+      to its cwd cannot touch the caller's directory.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
     - dry_run=True runs the full sweep and returns the full summary but
       touches no row and never commits (the CLI's --dry-run contract).
@@ -160,15 +181,23 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     clis = [c for c in clis if c.enabled]
 
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
-    to_probe: list[tuple[Cli, str]] = []   # (cli, cmd)
+    to_probe: list[tuple[Cli, str, dict | None]] = []   # (cli, cmd, env)
     no_cmd: list[Cli] = []
     # US-CLIAUDIT-83: rows statically known not to be standalone CLIs (Typer/click
     # sub-apps, no-parser batch scripts) are never probed — probing them yields a
     # non-zero --help that the audit mislabels broken. Their status is preserved.
     not_standalone_rows: list[Cli] = []
+    skipped_no_parser = 0
 
     for cli in clis:
         if getattr(cli, "not_standalone", False):
+            not_standalone_rows.append(cli)
+            continue
+        standalone_class = classify_standalone(cli.path or "")
+        if standalone_class == "no_parser" and cli.health_status == "healthy":
+            skipped_no_parser += 1
+            continue
+        if standalone_class != "standalone" and cli.health_status != "healthy":
             not_standalone_rows.append(cli)
             continue
         try:
@@ -180,31 +209,33 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
             if not cmd:
                 no_cmd.append(cli)
             else:
-                to_probe.append((cli, cmd))
+                to_probe.append((cli, cmd, _probe_env(adapter, rec)))
         except Exception:
             no_cmd.append(cli)
 
     # --- Phase 2: run probes concurrently, one future per CLI ---
     results: dict[str, str] = {}   # slug -> status string
 
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        future_to_slug = {
-            pool.submit(probe_one, cmd, probe_timeout, max_output_bytes): cli.slug
-            for cli, cmd in to_probe
-        }
-        for future in as_completed(future_to_slug):
-            slug = future_to_slug[future]
-            try:
-                results[slug] = future.result()
-            except Exception:
-                # Isolation: one probe crashing doesn't abort the fleet.
-                results[slug] = "unhealthy"
+    with tempfile.TemporaryDirectory(prefix="clireg-probe-") as probe_cwd:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            future_to_slug = {
+                pool.submit(probe_one, cmd, probe_timeout, max_output_bytes,
+                            cwd=probe_cwd, env=env): cli.slug
+                for cli, cmd, env in to_probe
+            }
+            for future in as_completed(future_to_slug):
+                slug = future_to_slug[future]
+                try:
+                    results[slug] = future.result()
+                except Exception:
+                    # Isolation: one probe crashing doesn't abort the fleet.
+                    results[slug] = "unhealthy"
 
     # --- Phase 3: write results on main thread ---
     counts = {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0,
-              "not_standalone": 0}
+              "not_standalone": 0, "skipped_no_parser": skipped_no_parser}
 
-    for cli, _cmd in to_probe:
+    for cli, _cmd, _env in to_probe:
         status = results.get(cli.slug, "unhealthy")
         counts["probed"] += 1
         counts[status] = counts.get(status, 0) + 1
@@ -230,6 +261,7 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
         counts["not_standalone"] += 1
         if dry_run:
             continue
+        cli.not_standalone = True
         cli.health_status = "not_standalone"
         cli.health_checked_at = now
         session.add(cli)

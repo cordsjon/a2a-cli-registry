@@ -1,3 +1,5 @@
+import os
+import subprocess
 import sys
 import time
 import pytest
@@ -229,7 +231,7 @@ def test_probe_fleet_default_ttl_does_not_mark_recent_stale(db, clock):
 def test_probe_fleet_forwards_timeout_and_max_output(db, clock, monkeypatch):
     """probe_timeout + max_output_bytes are forwarded into probe_one."""
     captured = {}
-    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536, cwd=None, env=None):
         captured["timeout"] = timeout
         captured["max_output_bytes"] = max_output_bytes
         return "healthy"
@@ -256,7 +258,7 @@ def test_probe_fleet_concurrency_sets_max_workers(db, clock, monkeypatch):
 def test_probe_fleet_skips_disabled_cli(db, clock, monkeypatch):
     """A CLI with enabled=False is never spawned (probe_one not called for it)."""
     spawned = []
-    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536, cwd=None, env=None):
         spawned.append(cmd)
         return "healthy"
     monkeypatch.setattr("core.prober.prober.probe_one", fake_probe_one)
@@ -272,7 +274,7 @@ def test_probe_fleet_preserves_not_standalone(db, clock, monkeypatch):
     """US-CLIAUDIT-83: a not_standalone CLI ends the run with
     health_status='not_standalone', is counted, and is NEVER probed."""
     spawned = []
-    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536):
+    def fake_probe_one(cmd, timeout=10.0, max_output_bytes=65536, cwd=None, env=None):
         spawned.append(cmd)
         return "healthy"
     monkeypatch.setattr("core.prober.prober.probe_one", fake_probe_one)
@@ -305,3 +307,174 @@ def test_probe_fleet_dry_run_counts_but_writes_nothing(db, clock):
     cli = db.get(Cli, "mypkg")
     assert cli.health_status == "unknown"
     assert cli.health_checked_at is None
+
+
+# ---------------------------------------------------------------------------
+# US-CLIREG-HERMES-DISCOVERY-01: probe cwd/env/stdin and the no-parser gate
+# ---------------------------------------------------------------------------
+
+def test_probe_one_runs_in_given_cwd(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    script = tmp_path / "where.py"
+    script.write_text(
+        "import os, sys\n"
+        f"sys.exit(0 if os.path.realpath(os.getcwd()) == {os.path.realpath(work)!r} else 1)\n")
+    cmd = f"{sys.executable} {script}"
+    assert probe_one(cmd) == "unhealthy"
+    assert probe_one(cmd, cwd=str(work)) == "healthy"
+
+
+def test_probe_one_passes_env_so_sibling_package_imports(tmp_path):
+    """Largest class of the 181 unhealthy rows on 2026-10-31: a script inside a
+    project fails with ModuleNotFoundError on the project's own package."""
+    (tmp_path / "mylib").mkdir()
+    (tmp_path / "mylib" / "__init__.py").write_text("")
+    script = tmp_path / "scripts" / "tool.py"
+    script.parent.mkdir()
+    script.write_text("import mylib\n")
+    cmd = f"{sys.executable} {script}"
+    assert probe_one(cmd) == "unhealthy"
+    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    assert probe_one(cmd, env=env) == "healthy"
+
+
+def test_probe_one_gives_child_empty_stdin(tmp_path):
+    """The caller's stdin must not reach the child: scripts that read it crashed
+    on the caller's bytes (UnicodeDecodeError, 5 rows) or blocked until timeout."""
+    script = tmp_path / "reads_stdin.py"
+    script.write_text("import sys\nsys.exit(1 if sys.stdin.buffer.read() else 0)\n")
+    driver = ("from core.prober.prober import probe_one; "
+              f"print(probe_one({sys.executable + ' ' + str(script)!r}))")
+    out = subprocess.run([sys.executable, "-c", driver], input=b"\x99 caller bytes",
+                         capture_output=True, check=True)
+    assert out.stdout.decode().strip() == "healthy"
+
+
+def _seed_py(session, slug, path, health_status="unknown", health_checked_at=None):
+    cli = Cli(slug=slug, lang="python", path=str(path), health_status=health_status,
+              health_checked_at=health_checked_at)
+    session.add(cli)
+    session.commit()
+
+
+def _argparse_script(path, body=""):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"import argparse\n{body}\n"
+                    "if __name__ == '__main__':\n"
+                    "    argparse.ArgumentParser().parse_args()\n")
+    return path
+
+
+def test_probe_fleet_puts_project_root_on_pythonpath(db, clock, tmp_path):
+    from core.adapters.python_adapter import PythonAdapter
+    proj = tmp_path / "proj"
+    (proj / "mylib").mkdir(parents=True)
+    (proj / "pyproject.toml").write_text("")
+    (proj / "mylib" / "__init__.py").write_text("")
+    script = _argparse_script(proj / "scripts" / "tool.py", "import mylib")
+    _seed_py(db, "tool", script)
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert db.get(Cli, "tool").health_status == "healthy"
+
+
+def test_probe_fleet_runs_scripts_in_a_throwaway_cwd(db, clock, tmp_path, monkeypatch):
+    """A script that writes to its cwd during --help must not touch the caller's
+    directory, and the directory must not outlive the sweep."""
+    from core.adapters.python_adapter import PythonAdapter
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    record = tmp_path / "cwd.txt"
+    script = _argparse_script(
+        tmp_path / "proj" / "tool.py",
+        f"import os\nopen({str(record)!r}, 'w').write(os.getcwd())\nopen('stray.txt', 'w').close()")
+    _seed_py(db, "tool", script)
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    used = record.read_text()
+    assert os.path.realpath(used) != os.path.realpath(str(caller))
+    assert list(caller.iterdir()) == []
+    assert not os.path.exists(used)
+
+
+def _no_parser_script(path, sentinel):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"if __name__ == '__main__':\n    open({str(sentinel)!r}, 'w').close()\n")
+    return path
+
+
+def test_probe_fleet_never_executes_a_no_parser_script(db, clock, tmp_path):
+    """A script with no argument parser ignores --help and does its real work,
+    so probing it runs it. It is classified statically and left unexecuted."""
+    from core.adapters.python_adapter import PythonAdapter
+    sentinel = tmp_path / "ran"
+    _seed_py(db, "batch", _no_parser_script(tmp_path / "batch.py", sentinel),
+             health_status="unhealthy")
+
+    summary = probe_fleet(db, [PythonAdapter()], clock)
+
+    assert not sentinel.exists()
+    db.expire_all()
+    cli = db.get(Cli, "batch")
+    assert cli.health_status == "not_standalone"
+    assert cli.not_standalone is True
+    assert summary["not_standalone"] == 1
+    assert summary["probed"] == 0
+
+
+def test_probe_fleet_keeps_healthy_no_parser_row_without_running_it(db, clock, tmp_path):
+    """Never demote a healthy row (scripts/reeval_not_standalone.py precision
+    guard), and never execute it either."""
+    from core.adapters.python_adapter import PythonAdapter
+    sentinel = tmp_path / "ran"
+    _seed_py(db, "batch", _no_parser_script(tmp_path / "batch.py", sentinel),
+             health_status="healthy", health_checked_at=123.0)
+
+    summary = probe_fleet(db, [PythonAdapter()], clock)
+
+    assert not sentinel.exists()
+    db.expire_all()
+    cli = db.get(Cli, "batch")
+    assert cli.health_status == "healthy"
+    assert cli.health_checked_at == 123.0
+    assert summary["skipped_no_parser"] == 1
+
+
+def test_probe_fleet_subapp_keeps_probing_when_healthy(db, clock, tmp_path):
+    """Importing a mounted sub-app is harmless, so a healthy one stays probed;
+    an unhealthy one is the false positive the classifier exists for."""
+    from core.adapters.python_adapter import PythonAdapter
+    src = "import typer\napp = typer.Typer()\n"
+    good = tmp_path / "good.py"
+    good.write_text("Typer = lambda: None\napp = Typer()\n")
+    bad = tmp_path / "bad.py"
+    bad.write_text(src)
+    _seed_py(db, "good", good, health_status="healthy")
+    _seed_py(db, "bad", bad, health_status="unhealthy")
+
+    probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert db.get(Cli, "good").health_checked_at == clock.now()
+    assert db.get(Cli, "bad").health_status == "not_standalone"
+
+
+def test_probe_fleet_dry_run_leaves_gated_row_untouched(db, clock, tmp_path):
+    from core.adapters.python_adapter import PythonAdapter
+    sentinel = tmp_path / "ran"
+    _seed_py(db, "batch", _no_parser_script(tmp_path / "batch.py", sentinel),
+             health_status="unhealthy")
+
+    summary = probe_fleet(db, [PythonAdapter()], clock, dry_run=True)
+
+    assert summary["not_standalone"] == 1
+    assert not sentinel.exists()
+    db.expire_all()
+    cli = db.get(Cli, "batch")
+    assert cli.health_status == "unhealthy"
+    assert not cli.not_standalone

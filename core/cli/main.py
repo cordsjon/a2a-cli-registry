@@ -104,6 +104,14 @@ def _mass_removal_threshold(cfg: dict) -> float:
     return cfg.get("thresholds", {}).get("mass_removal", _DEFAULT_MASS_REMOVAL)
 
 
+def _populate_options(cfg: dict) -> dict:
+    """Keyword arguments populate() takes from config. Absent keys are omitted,
+    so callers stubbing populate() with the old signature keep working."""
+    if cfg.get("populate", {}).get("drop_missing_paths"):
+        return {"drop_missing_paths": True}
+    return {}
+
+
 _PROBE_DEFAULTS = {"probe_timeout": 10.0, "max_probe_output_bytes": 65536,
                    "probe_concurrency": 8, "staleness_ttl": 3600}
 
@@ -174,7 +182,8 @@ def main(argv=None) -> int:
                 engine = init_db(args.db)
                 with get_session(engine) as session:
                     populate(session, src, _adapters(), vocab, _RealClock(),
-                             mass_removal_threshold=_mass_removal_threshold(_cfg))
+                             mass_removal_threshold=_mass_removal_threshold(_cfg),
+                             **_populate_options(_cfg))
         return 0
 
     if args.command == "ard-resolve":
@@ -347,6 +356,7 @@ def main(argv=None) -> int:
         # apply.sh can gate its real populate on it. Only passed when set, so
         # callers stubbing populate() with the old signature keep working.
         extra = {"dry_run": True} if args.dry_run else {}
+        extra.update(_populate_options(_cfg))
         with with_file_lock(_db_lock_path(args.db)):
             with get_session(engine) as session:
                 result = populate(session, src, _adapters(), vocab, _RealClock(),
@@ -360,6 +370,7 @@ def main(argv=None) -> int:
             "added": result["added"],
             "removed": result["removed"],
             "protected": result.get("protected", {}),
+            "dropped_missing_path": result.get("dropped_missing_path", []),
             "edges": edges,
         }))
         return 0

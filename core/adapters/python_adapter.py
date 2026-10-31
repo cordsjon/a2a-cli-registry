@@ -1,9 +1,12 @@
+import os
+import re
 import shlex
 from pathlib import Path
 from typing import Optional
 from core.discovery.base import CliRecord
 from core.capability.model import CapabilityRecord
 from core.capability.infer import infer_python_capability
+from core.paths.module_root import _project_root
 
 
 _VENV_DIRS = (".venv", "venv")
@@ -31,6 +34,30 @@ def project_interpreter(script_path: str, stop: Optional[Path] = None) -> Option
                     return str(py)
         d = d.parent
     return None
+
+
+# A shell script is only safe to call with --help if it reads that flag, or hands
+# its arguments to another program with `exec`. Anything else ignores --help and
+# does its real work: sync-global-hooks.sh syncs, log-truncate.sh truncates.
+_SHELL_HELP_BRANCH = re.compile(r"--help|getopts|^\s*-h\)", re.MULTILINE)
+_SHELL_EXEC_PASSTHROUGH = re.compile(r'^\s*exec\s.*"\$@"', re.MULTILINE)
+_SHELL_SHEBANG = re.compile(rb"^#!.*\b(ba|z|da|k)?sh\b")
+_UNPROBEABLE_SUFFIXES = (".ts", ".js", ".mjs", ".cjs")
+
+
+def _read_text(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _is_shell_script(path: str) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            return bool(_SHELL_SHEBANG.match(fh.readline(200)))
+    except OSError:
+        return False
 
 
 class PythonAdapter:
@@ -61,10 +88,49 @@ class PythonAdapter:
         # as the fallback); fall back to the module form (US-80) for
         # module-style entries with no script path.
         path = (rec.path or "").strip()
+        if not path:
+            return f"python -m {rec.slug} --help"
         if path.endswith(".py"):
-            interpreter = project_interpreter(path, stop) or "python"
-            return f"{shlex.quote(interpreter)} {shlex.quote(path)} --help"
-        return f"python -m {rec.slug} --help"
+            interpreter = shlex.quote(project_interpreter(path, stop) or "python")
+            if os.path.basename(path) == "__main__.py":
+                # Run by path, a package's __main__ fails its relative imports.
+                package = os.path.basename(os.path.dirname(path))
+                return f"{interpreter} -m {shlex.quote(package)} --help"
+            return f"{interpreter} {shlex.quote(path)} --help"
+        # "" = unknown, never run. Registered under lang=python but not Python
+        # (the feed infers lang loosely): .ts/.js, shell scripts, bare entrypoints.
+        if path.endswith(_UNPROBEABLE_SUFFIXES):
+            return ""
+        if path.endswith(".sh") or _is_shell_script(path):
+            text = _read_text(path)
+            if _SHELL_EXEC_PASSTHROUGH.search(text) and os.access(path, os.X_OK):
+                return f"{shlex.quote(path)} --help"
+            if _SHELL_HELP_BRANCH.search(text):
+                return f"bash {shlex.quote(path)} --help"
+            return ""
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return f"{shlex.quote(path)} --help"
+        return ""
+
+    def health_env(self, rec: CliRecord) -> dict:
+        """PYTHONPATH additions the probe needs: the script's project root, and
+        a package's parent for `-m`. Scripts import their own project's code,
+        which nothing on the default sys.path can resolve."""
+        path = (rec.path or "").strip()
+        if not path:
+            return {}
+        entries = []
+        if os.path.basename(path) == "__main__.py":
+            entries.append(os.path.dirname(os.path.dirname(os.path.abspath(path))))
+        root = _project_root(path)
+        if root and root not in entries:
+            entries.append(root)
+        if not entries:
+            return {}
+        inherited = os.environ.get("PYTHONPATH")
+        if inherited:
+            entries.append(inherited)
+        return {"PYTHONPATH": os.pathsep.join(entries)}
 
     def infer_capability(self, rec: CliRecord) -> Optional[CapabilityRecord]:
         return infer_python_capability(rec)

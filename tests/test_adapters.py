@@ -1,3 +1,5 @@
+import os
+
 from core.adapters.base import LanguageAdapter
 from core.adapters.python_adapter import PythonAdapter
 from core.adapters.stub_adapter import StubAdapter
@@ -98,3 +100,90 @@ def test_stub_adapter_requires_declared_never_infers():
 def test_adapters_satisfy_protocol():
     assert isinstance(PythonAdapter(), LanguageAdapter)
     assert isinstance(StubAdapter(), LanguageAdapter)
+
+
+def _executable(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    path.chmod(0o755)
+    return path
+
+
+def _path_rec(path):
+    rec = _rec("python", "tool")
+    rec.path = str(path)
+    return rec
+
+
+def test_health_cmd_never_runs_a_shell_script_without_a_help_branch(tmp_path):
+    """`bash sync-global-hooks.sh --help` ignores the flag and syncs. All 8 .sh
+    rows measured 2026-10-31 had no help branch. Unknown beats executed."""
+    script = _executable(tmp_path / "sync.sh", "#!/usr/bin/env bash\nrm -f \"$1\"\n")
+    assert PythonAdapter().health_cmd(_path_rec(script)) == ""
+
+
+def test_health_cmd_does_not_count_a_function_call_as_a_passthrough(tmp_path):
+    """log-truncate.sh uses "$@" inside a function and acts on its arguments."""
+    script = _executable(tmp_path / "trunc.sh",
+                         '#!/usr/bin/env bash\nf() { truncate "$@"; }\nf -s 0 "$1"\n')
+    assert PythonAdapter().health_cmd(_path_rec(script)) == ""
+
+
+def test_health_cmd_probes_a_shell_script_with_a_help_branch(tmp_path):
+    script = _executable(tmp_path / "tool.sh",
+                         '#!/bin/sh\ncase "$1" in --help) echo usage ;; esac\n')
+    assert PythonAdapter().health_cmd(_path_rec(script)) == f"bash {script} --help"
+
+
+def test_health_cmd_probes_an_exec_wrapper_directly(tmp_path):
+    """bin/decisions is `exec python3 decisions_cli.py "$@"`: --help reaches the
+    wrapped CLI's parser."""
+    script = _executable(tmp_path / "decisions",
+                         '#!/usr/bin/env bash\nexec python3 "$ROOT/cli.py" "$@"\n')
+    assert PythonAdapter().health_cmd(_path_rec(script)) == f"{script} --help"
+
+
+def test_health_cmd_probes_an_extensionless_python_entrypoint(tmp_path):
+    script = _executable(tmp_path / "tool", "#!/usr/bin/env python3\nprint('hi')\n")
+    assert PythonAdapter().health_cmd(_path_rec(script)) == f"{script} --help"
+
+
+def test_health_cmd_skips_non_executable_extensionless_file(tmp_path):
+    script = tmp_path / "tool"
+    script.write_text("#!/usr/bin/env python3\n")
+    assert PythonAdapter().health_cmd(_path_rec(script)) == ""
+
+
+def test_health_cmd_skips_typescript_and_javascript(tmp_path):
+    for name in ("legal.ts", "legal.js"):
+        script = tmp_path / name
+        script.write_text("")
+        assert PythonAdapter().health_cmd(_path_rec(script)) == ""
+
+
+def test_health_cmd_runs_dunder_main_as_a_module(tmp_path):
+    """ytx/__main__.py run by path fails its relative import; `-m ytx` with the
+    package's parent on PYTHONPATH is how it actually runs."""
+    script = tmp_path / "scripts" / "ytx" / "__main__.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    adapter = PythonAdapter()
+    rec = _path_rec(script)
+    assert adapter.health_cmd(rec, stop=tmp_path) == "python -m ytx --help"
+    assert str(tmp_path / "scripts") in adapter.health_env(rec)["PYTHONPATH"].split(os.pathsep)
+
+
+def test_health_env_adds_project_root_and_keeps_existing_pythonpath(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "/already/there")
+    (tmp_path / "pyproject.toml").write_text("")
+    script = tmp_path / "scripts" / "tool.py"
+    script.parent.mkdir()
+    script.write_text("")
+    entries = PythonAdapter().health_env(_path_rec(script))["PYTHONPATH"].split(os.pathsep)
+    assert entries == [str(tmp_path), "/already/there"]
+
+
+def test_health_env_is_empty_without_a_project_root(tmp_path):
+    rec = _rec("python", "black")
+    rec.path = ""
+    assert PythonAdapter().health_env(rec) == {}

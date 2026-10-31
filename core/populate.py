@@ -1,4 +1,5 @@
 import json as _json
+import os
 from sqlmodel import select
 from core.models import Cli, Capability
 from core.capability.model import CapabilityRecord, merge_capabilities, admit_ports
@@ -39,8 +40,17 @@ def _by_source_class(existing_by_slug, slugs) -> dict:
 
 
 def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.30,
-             feed_owned_source_classes=FEED_OWNED_SOURCE_CLASSES, dry_run=False):
+             feed_owned_source_classes=FEED_OWNED_SOURCE_CLASSES, dry_run=False,
+             drop_missing_paths=False):
     incoming = source.discover()                   # may raise SchemaError (fail closed)
+    # A feed row whose script is gone is treated as absent from the feed, so it
+    # goes through the same removal rules and the same breaker: an unmounted
+    # volume reads as "everything deleted" and must trip it. Only an absolute
+    # path can be checked; "" is a module-form row.
+    dropped = sorted(r.slug for r in incoming
+                     if drop_missing_paths and os.path.isabs(r.path or "")
+                     and not os.path.exists(r.path))
+    incoming = [r for r in incoming if r.slug not in dropped]
     incoming_slugs = {r.slug for r in incoming}
     existing = session.exec(select(Cli)).all()
     existing_by_slug = {c.slug: c for c in existing}
@@ -59,6 +69,7 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
                 "would_add": len(incoming_slugs - existing_slugs),
                 "would_remove": _by_source_class(existing_by_slug, to_remove),
                 "protected": _by_source_class(existing_by_slug, protected),
+                "dropped_missing_path": dropped,
                 "breaker_would_trip": breaker,
                 "mass_removal_threshold": mass_removal_threshold}
     if breaker:
@@ -141,4 +152,5 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
     edge_delta = compute_edges(session, vocab, clock)   # ONE batched recompute
     return {"added": added, "removed": len(to_remove),
             "protected": _by_source_class(existing_by_slug, protected),
+            "dropped_missing_path": dropped,
             "edge_delta": edge_delta}
