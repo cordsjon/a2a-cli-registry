@@ -333,3 +333,38 @@
 **Justification:** It relaxes a security control on the path Hermes uses to run commands, which is the operator decision, not an agent default. Meanwhile launchers send argv only (fails safe, honest ImportError). Row list: ~/.hermes/reports/cli-registry-launch-needs-pythonpath-2026-10-31.json.
 **Outcome:** escalated
 **Ref:** hermes-adapter 96cec05
+
+
+## Q31 — US-CLIREG-LAUNCH-01 — tradeoff
+
+**Question:** The classifier decides what a sweep may execute, and it read m.group(1), Tk .command() and any sys.argv read as a CLI parser. Sweeps ran batch scripts for real: heise_login, apply_body_fixes, task_reconciler, inject-theme. An earlier revision of bridge/test_standalone.py called categorize_ai standalone on purpose because it reads --dry-run. Tighten, given installing deps would arm more of them?
+**Options considered:** tighten / leave and rely on import crashes / per-row denylist
+**Chosen:** Tighten: group/command count only as decorators; a hand-rolled sys.argv script counts only if it names --help or -h.
+**Decided-by:** agent
+**Justification:** Probing executes the file, so standalone must mean it answers --help, not that it takes arguments. 83 rows stop executing (21 regex/Tk false positives, 62 sys.argv). Cost: healthy ones keep a status nothing re-verifies, unhealthy ones become not_standalone, and a real CLI that handles help some other way goes unprobed. A sweep fell from about 12 min to about 1.5 min and rewrote nothing.
+**Outcome:** assumed
+**Ref:** a2a-cli-registry d255054
+
+
+## Q32 — US-CLIREG-LAUNCH-01 — gate-resolution
+
+**Question:** Hermes tirith holds PYTHONPATH + interpreter as interpreter_hijack_env, and the adapter cannot approve. 19 of 372 sampled healthy rows need PYTHONPATH to import. Allowlist the rule for registry-authored launches, or leave those rows failing on import (or change the projects so they need no PYTHONPATH)?
+**Options considered:** allowlist the rule / leave them failing on import / install those projects into their venvs
+**Chosen:** Install those projects into their venvs. No allowlist; tirith is unchanged.
+**Decided-by:** human
+**Justification:** Operator, 2026-10-31: 'install all missing depts or path'. Reading it as this option is the agent's interpretation. Done with a .pth carrying the row's recorded project root in each venv, which is what an editable install writes and leaves tracked files alone; governance gets symlinks for morning_brief and ytx only, because scripts/ is too wide. Launchers still send no PYTHONPATH. Lost if a venv is rebuilt; a re-probe would not catch that, because the probe still sets PYTHONPATH.
+**Outcome:** applied
+**Ref:** ~/.hermes/reports/cli-registry-deps-install-2026-10-31.json
+**Supersedes:** Q30 — resolved
+
+
+## Q33 — US-CLIREG-LAUNCH-01/AC-04 — gate-resolution
+
+**Question:** Q28 kept plain no-venv rows on bare python and left PEP 723 caches cold pending a decision. The operator now asks for all missing deps. How, without capturing neighbouring rows or touching live venvs?
+**Options considered:** new nested venvs at blessed pins / install into the bare python / add to existing project venvs
+**Chosen:** 17 new nested venvs on uv-managed 3.13 at deps-registry blessed pins, as deep as each row allows; existing venvs get no third-party packages; 10 PEP 723 scripts warmed with uv sync --script.
+**Decided-by:** human
+**Justification:** project_interpreter walks upward, so a venv high in a tree captures every row below it, and PEP 723 rows would flip off uv. Consigliere's venv serves live processes and uv sync would prune additions, so gmaps_scraper and mint_dev_token got their own. q3_tts keeps its own mlx-audio==0.3.0rc1 pin, against the blessed 0.6.3: the script's metadata wins, and it was not edited.
+**Outcome:** applied
+**Ref:** ~/.hermes/reports/cli-registry-deps-install-2026-10-31.json
+**Supersedes:** Q28 — superseded
