@@ -149,6 +149,14 @@ def test_a_failing_project_test_is_a_fail(tmp_path):
     assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
 
 
+def test_a_project_test_that_skips_everything_is_a_fail(tmp_path):
+    # pytest exits 0 here: only the summary line says nothing ran.
+    source = "import pytest\nfrom scripts.tool import VALUE\n\n@pytest.mark.skip\ndef test_it():\n    pass\n"
+    root = _repo(tmp_path, {"test_tool.py": source})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
+
+
 def test_a_test_that_only_mentions_the_stem_earns_no_seed(tmp_path):
     root = _repo(tmp_path, {"test_other.py": "# the tool is great\ndef test_it():\n    pass\n",
                             "tool_data.py": "from scripts.tool import VALUE\n"})

@@ -128,10 +128,12 @@ def derive_project_tests(con, out: Path, timeout: float) -> dict:
             counts["no_pytest"] += 1
             continue
         # -B and no cacheprovider: this runs in a checkout other sessions are editing.
+        # The regex: pytest also exits 0 when every test is skipped.
         _atomic_write_json(out / f"{slug}.json",
                            {"argv": [argv[0], "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", test],
-                            "cwd": str(root), "expect_exit": 0, "side_effects": "project-tests",
-                            "tier": "project-tests", "timeout": _PROJECT_TEST_TIMEOUT})
+                            "cwd": str(root), "expect_exit": 0, "expect_stdout_re": r"\d+ passed",
+                            "side_effects": "project-tests", "tier": "project-tests",
+                            "timeout": _PROJECT_TEST_TIMEOUT})
         counts["seeded"] += 1
     return counts
 
