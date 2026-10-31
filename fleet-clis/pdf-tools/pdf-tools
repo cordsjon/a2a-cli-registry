@@ -30,7 +30,7 @@ verbs:
 Stirling backend auto-starts on demand (Docker, port 9141).
 bundle/unbundle need no backend — pure Python (lib/bundle.py, .venv).
 EOF
-  exit 2
+  exit "${1:-2}"
 }
 
 _bundle_py() {
@@ -166,6 +166,6 @@ case "$cmd" in
     _bundle_py unbundle "$infile" --out "$out"
     ;;
 
-  -h|--help|help) usage ;;
+  -h|--help|help) usage 0 ;;
   *) echo "pdf-tools: unknown verb '$cmd'" >&2; usage ;;
 esac

@@ -69,6 +69,12 @@ assert_nofile    "split: tmp removed on failure"        "/tmp/pdft_fail.pdf.tmp"
 out=$("$CLI" bogus 2>&1); st=$?
 assert_nonzero   "dispatch: unknown verb non-zero" "$st"
 assert_contains  "dispatch: usage names split"     "$out" "split"
+# usage/dispatch: asking for help is success, a missing verb is not
+out=$("$CLI" --help 2>&1); st=$?
+assert_zero      "dispatch: --help exits 0"        "$st"
+assert_contains  "dispatch: --help names split"    "$out" "split"
+"$CLI" >/dev/null 2>&1; st=$?
+assert_nonzero   "dispatch: no verb non-zero"      "$st"
 
 # ---- form-fill: mocked (always runs) ------------------------------------
 
