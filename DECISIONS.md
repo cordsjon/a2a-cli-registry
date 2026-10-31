@@ -368,3 +368,14 @@
 **Outcome:** applied
 **Ref:** ~/.hermes/reports/cli-registry-deps-install-2026-10-31.json
 **Supersedes:** Q28 — superseded
+
+
+## Q34 — CLIREG-UNHEALTHY-ROWS-2026-10-31 — tradeoff
+
+**Question:** Three calls while clearing the 7 unhealthy rows: mistral_ocr pin or code fix, publish-bundle status, and how to re-probe with a job running on Consigliere
+**Options considered:** pin mistralai below 2 / fix imports for blessed 3.6.0 ; fix the script / mark it not_standalone ; full sweep / named rows only
+**Chosen:** Fix imports for 3.6.0 as a local unpushed commit on the simonw/tools clone; mark coaching-publish-bundle not_standalone; re-probe named rows through the prober functions
+**Decided-by:** agent
+**Justification:** 3.6.0 is the blessed pin, but a real OCR call is unverified and the clone now diverges from upstream by one commit. publish-bundle uploads to the live site when run bare and has no --help, so marking it means no probe touches it. A sweep would execute --help on Consigliere rows during the job.
+**Outcome:** assumed
+**Ref:** 4b041a3 (at write time)
