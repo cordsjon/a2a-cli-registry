@@ -195,9 +195,29 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     failing probe does not abort others. Session writes are kept on the main
     thread after all futures complete.
     """
+    clis = [c for c in session.exec(select(Cli)).all() if c.enabled]
+    return _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                       max_output_bytes, staleness_ttl, dry_run)
+
+
+def probe_slugs(session, adapters, clock, slugs, concurrency: int = 8,
+                probe_timeout: float = 10.0,
+                max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
+                staleness_ttl: int = _STALE_TTL_SECONDS,
+                dry_run: bool = False) -> dict:
+    """probe_fleet over the named rows only; no other row is run or written.
+    The summary's not_probed lists the names that are absent or disabled."""
+    wanted = set(slugs)
+    clis = [c for c in session.exec(select(Cli).where(Cli.slug.in_(wanted))).all() if c.enabled]
+    summary = _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                          max_output_bytes, staleness_ttl, dry_run)
+    summary["not_probed"] = sorted(wanted - {c.slug for c in clis})
+    return summary
+
+
+def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                max_output_bytes, staleness_ttl, dry_run) -> dict:
     now = clock.now()
-    clis = session.exec(select(Cli)).all()
-    clis = [c for c in clis if c.enabled]
 
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
     to_probe: list[tuple[Cli, str, dict | None]] = []   # (cli, cmd, env)

@@ -5,7 +5,7 @@ import sys
 import time
 import pytest
 from core.adapters.python_adapter import PythonAdapter
-from core.prober.prober import probe_one, probe_fleet, _STALE_TTL_SECONDS
+from core.prober.prober import probe_one, probe_fleet, probe_slugs, _STALE_TTL_SECONDS
 from core.models import Cli
 from core.discovery.base import CliRecord
 
@@ -426,9 +426,9 @@ def test_probe_one_gives_child_empty_stdin(tmp_path):
     assert out.stdout.decode().strip() == "healthy"
 
 
-def _seed_py(session, slug, path, health_status="unknown", health_checked_at=None):
+def _seed_py(session, slug, path, health_status="unknown", health_checked_at=None, **fields):
     cli = Cli(slug=slug, lang="python", path=str(path), health_status=health_status,
-              health_checked_at=health_checked_at)
+              health_checked_at=health_checked_at, **fields)
     session.add(cli)
     session.commit()
 
@@ -454,6 +454,38 @@ def test_probe_fleet_puts_project_root_on_pythonpath(db, clock, tmp_path):
 
     db.expire_all()
     assert db.get(Cli, "tool").health_status == "healthy"
+
+
+def test_probe_slugs_touches_only_the_named_rows(db, clock, tmp_path):
+    """Named rows run and are written. The rest are neither executed nor
+    rewritten, which is what lets a sweep skip a project under a hold."""
+    from core.adapters.python_adapter import PythonAdapter
+    ran_a, ran_b = tmp_path / "ran_a", tmp_path / "ran_b"
+    _seed_py(db, "a", _argparse_script(tmp_path / "a.py", f"open({str(ran_a)!r}, 'w').close()"))
+    _seed_py(db, "b", _argparse_script(tmp_path / "b.py", f"open({str(ran_b)!r}, 'w').close()"),
+             launch_spec='{"kind": "untouched"}')
+
+    summary = probe_slugs(db, [PythonAdapter()], clock, ["a"])
+
+    assert ran_a.exists() and not ran_b.exists()
+    db.expire_all()
+    assert db.get(Cli, "a").health_status == "healthy"
+    untouched = db.get(Cli, "b")
+    assert (untouched.health_status, untouched.health_checked_at) == ("unknown", None)
+    assert untouched.launch_spec == '{"kind": "untouched"}'
+    assert summary["probed"] == 1
+    assert summary["not_probed"] == []
+
+
+def test_probe_slugs_reports_names_it_did_not_probe(db, clock, tmp_path):
+    """A typo must not read as a clean run that happened to probe nothing."""
+    from core.adapters.python_adapter import PythonAdapter
+    _seed_py(db, "off", _argparse_script(tmp_path / "off.py", "pass"), enabled=False)
+
+    summary = probe_slugs(db, [PythonAdapter()], clock, ["typo", "off"])
+
+    assert summary["probed"] == 0
+    assert summary["not_probed"] == ["off", "typo"]
 
 
 def test_probe_fleet_runs_scripts_in_a_throwaway_cwd(db, clock, tmp_path, monkeypatch):

@@ -12,7 +12,7 @@ except ModuleNotFoundError:          # pragma: no cover
     import tomli as _toml
 
 from core.store.db import init_db, get_session, with_file_lock
-from core.prober.prober import probe_fleet
+from core.prober.prober import probe_fleet, probe_slugs
 from core.catalog import queries
 from core.discovery.cli_audit_source import CliAuditSource
 from core.adapters.python_adapter import PythonAdapter
@@ -138,6 +138,9 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--config", default="examples/reference-fleet/config.toml")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--slug", action="append", default=[],
+                        help="[probe] probe only this row; repeatable. Exits 1 if "
+                             "a named row is absent or disabled")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument(
@@ -382,16 +385,19 @@ def main(argv=None) -> int:
         # concurrent populate's delete/insert so probe never commits stale rows.
         with with_file_lock(_db_lock_path(args.db)):
             with get_session(engine) as session:
-                summary = probe_fleet(
-                    session, _adapters(), _RealClock(),
+                options = dict(
                     concurrency=pc["probe_concurrency"],
                     probe_timeout=pc["probe_timeout"],
                     max_output_bytes=pc["max_probe_output_bytes"],
                     staleness_ttl=pc["staleness_ttl"],
                     dry_run=args.dry_run,
                 )
+                if args.slug:
+                    summary = probe_slugs(session, _adapters(), _RealClock(), args.slug, **options)
+                else:
+                    summary = probe_fleet(session, _adapters(), _RealClock(), **options)
         print(json.dumps(summary))
-        return 0
+        return 1 if summary.get("not_probed") else 0
 
     if args.command == "overview":
         from core.tui.overview import render_overview

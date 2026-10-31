@@ -98,6 +98,46 @@ def test_probe_dry_run_writes_nothing(tmp_path, capsys):
     con.close()
 
 
+def _probe_db(tmp_path, *slugs):
+    from core.models import Cli
+    from core.store.db import get_session, init_db
+    db = tmp_path / "r.db"
+    engine = init_db(str(db))
+    with get_session(engine) as s:
+        for slug in slugs:
+            script = tmp_path / f"{slug}.py"
+            script.write_text("import argparse\nargparse.ArgumentParser().parse_args()\n")
+            s.add(Cli(slug=slug, lang="python", path=str(script)))
+        s.commit()
+    engine.dispose()
+    return db
+
+
+def test_probe_slug_probes_only_the_named_rows(tmp_path, capsys):
+    import sqlite3
+    db = _probe_db(tmp_path, "a", "b", "c")
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+
+    rc = main(["probe", "--db", str(db), "--config", cfg, "--slug", "a", "--slug", "b"])
+
+    out = _json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert out["probed"] == 2
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT health_status FROM cli WHERE slug='c'").fetchone() == ("unknown",)
+    con.close()
+
+
+def test_probe_slug_that_matches_nothing_exits_nonzero(tmp_path, capsys):
+    db = _probe_db(tmp_path, "a")
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+
+    rc = main(["probe", "--db", str(db), "--config", cfg, "--slug", "typo"])
+
+    assert rc == 1
+    assert _json.loads(capsys.readouterr().out)["not_probed"] == ["typo"]
+
+
 def test_populate_command_writes_and_summarizes(tmp_path, capsys):
     # minimal cli-audit fixture
     fleet = tmp_path / "fleet.json"
