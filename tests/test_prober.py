@@ -340,8 +340,8 @@ def test_probe_one_passes_env_so_sibling_package_imports(tmp_path):
 
 
 def test_probe_one_gives_child_empty_stdin(tmp_path):
-    """The caller's stdin must not reach the child: scripts that read it crashed
-    on the caller's bytes (UnicodeDecodeError, 5 rows) or blocked until timeout."""
+    """The caller's stdin must not reach the child: a script that reads it would
+    consume the caller's bytes, or block until the timeout on a terminal."""
     script = tmp_path / "reads_stdin.py"
     script.write_text("import sys\nsys.exit(1 if sys.stdin.buffer.read() else 0)\n")
     driver = ("from core.prober.prober import probe_one; "
