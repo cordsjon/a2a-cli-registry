@@ -420,3 +420,23 @@
 **Justification:** Measured from each --help and source: no ytx verb reads a .vtt, decisions open -p only filters by project name, invoice-fetcher has no inbox input, and this repo is public so a real Gmail id or query cannot be committed. Cost: these passes prove less than real work. YouTube fetch, invoice fetch and attachment listing stay unproven, and each seed says so in its note. Worth the operator checking whether the invoice-fetcher and gmail passes meet the does-real-work bar.
 **Outcome:** assumed
 **Ref:** seed/smoke/*.json
+
+
+## Q39 — docs/plans/2026-10-31-does-real-work.md Task 9 — deviation
+
+**Question:** The plan writes derived seeds under seed/smoke/derived/ without saying whether they are committed. Commit them?
+**Chosen:** Gitignore them. scripts/derive_smoke.py regenerates them, and the DB holds the applied smoke.
+**Decided-by:** agent
+**Justification:** This repo is public, and the seeds would publish the argv of several hundred private scripts across 28 projects. They are generated output with a generator in the repo. Cost: the applied smokes have no git history, so a lost DB needs a re-derive. Also widened the plan regex to accept a [ before --version, since a usage-only help line was missed. Cheap to reverse: drop the ignore line.
+**Outcome:** assumed
+**Ref:** scripts/derive_smoke.py
+
+
+## Q40 — docs/plans/2026-10-31-does-real-work.md Task 10 — gate-resolution
+
+**Question:** Task 10 labels project-test smokes side_effects tmp, so every unattended probe --smoke would run other projects test files. 151 rows in 14 repos qualify. May they run unattended?
+**Chosen:** —
+**Decided-by:** agent
+**Justification:** tmp is a claim about the row that nobody has checked for these suites. They run in checkouts other live sessions are editing, and the set includes 15_belegfluss, which is frozen, so the owner has to decide. Recommendation: label them side_effects project-tests, which the allowlist already gates behind an explicit --allow-network run, and exclude 15_belegfluss. Task 11 waits on this, because its gap list is whatever Task 10 leaves unknown.
+**Outcome:** escalated
+**Ref:** scripts/derive_smoke.py
