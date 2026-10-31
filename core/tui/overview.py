@@ -1,6 +1,10 @@
 """Read-only rich render of the catalog. The ONLY module importing rich."""
+from collections import Counter
+
 from rich.console import Console
 from rich.table import Table
+
+_WORK_STYLE = {"pass": "green", "fail": "red", "unknown": "dim"}
 
 _HEALTH_STYLE = {"healthy": "green", "unhealthy": "red",
                  "stale": "yellow", "unknown": "dim", "not_standalone": "dim cyan",
@@ -13,14 +17,19 @@ def render_overview(clis: list[dict], graph: list[dict], *, console=None) -> Non
         console.print("Registry is empty — run `populate` first.")
         return
 
+    works = Counter(c.get("work_status", "unknown") for c in clis)
+    console.print(f"works: pass {works['pass']} fail {works['fail']} unknown {works['unknown']}")
+
     cli_table = Table(title="CLIs")
-    for col in ("slug", "lang", "health", "description"):
+    for col in ("slug", "lang", "health", "works", "description"):
         cli_table.add_column(col)
     for c in clis:
         hs = (c.get("health_status") or "unknown").lower()
         style = _HEALTH_STYLE.get(hs, "dim")
-        cli_table.add_row(c["slug"], c.get("lang", ""),
-                          f"[{style}]{hs}[/{style}]", c.get("description", ""))
+        ws = c.get("work_status", "unknown")
+        ws_style = _WORK_STYLE.get(ws, "dim")
+        cli_table.add_row(c["slug"], c.get("lang", ""), f"[{style}]{hs}[/{style}]",
+                          f"[{ws_style}]{ws}[/{ws_style}]", c.get("description", ""))
     console.print(cli_table)
 
     cap_table = Table(title="Capabilities")

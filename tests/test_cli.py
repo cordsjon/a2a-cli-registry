@@ -138,6 +138,86 @@ def test_probe_slug_that_matches_nothing_exits_nonzero(tmp_path, capsys):
     assert _json.loads(capsys.readouterr().out)["not_probed"] == ["typo"]
 
 
+def _set_smoke(db, slug, smoke):
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("UPDATE cli SET launch_spec=? WHERE slug=?", (_json.dumps({"smoke": smoke}), slug))
+    con.commit()
+    con.close()
+
+
+def test_probe_smoke_writes_work_status_and_leaves_health(tmp_path, capsys):
+    import sqlite3
+    db = _probe_db(tmp_path, "a")
+    _set_smoke(db, "a", {"argv": ["true"], "side_effects": "none"})
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+
+    rc = main(["probe", "--db", str(db), "--config", cfg, "--smoke", "--slug", "a"])
+
+    assert rc == 0
+    assert _json.loads(capsys.readouterr().out)["pass"] == 1
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT work_status, health_status FROM cli").fetchone() == ("pass", "unknown")
+    con.close()
+
+
+def test_probe_smoke_needs_allow_network_for_a_network_row(tmp_path, capsys):
+    import sqlite3
+    db = _probe_db(tmp_path, "a")
+    _set_smoke(db, "a", {"argv": ["true"], "side_effects": "network"})
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+    con = sqlite3.connect(db)
+
+    main(["probe", "--db", str(db), "--config", cfg, "--smoke"])
+    assert _json.loads(capsys.readouterr().out)["gated_network"] == ["a"]
+    assert con.execute("SELECT work_status FROM cli").fetchone() == ("unknown",)
+
+    main(["probe", "--db", str(db), "--config", cfg, "--smoke", "--allow-network"])
+    assert _json.loads(capsys.readouterr().out)["pass"] == 1
+    assert con.execute("SELECT work_status FROM cli").fetchone() == ("pass",)
+    con.close()
+
+
+def test_populate_keeps_a_rows_smoke_and_work_status(tmp_path, capsys):
+    """populate rewrites launch_spec from the adapter. A smoke is hand-authored,
+    and losing it would turn proven rows unknown on every feed refresh."""
+    import sqlite3
+    fleet = tmp_path / "fleet.json"
+    fleet.write_text(_json.dumps({"clis": [
+        {"slug": "pdf2text", "lang": "python", "path": "/x/pdf2text",
+         "capability": {"intent_tags": ["convert"], "input_types": ["file:pdf"],
+                        "output_types": ["text:doc"], "side_effect": "none"}}]}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'cli_audit_path = "{fleet}"\n[vocabulary]\nregistered = ["file:pdf","text:doc"]\n[vocabulary.aliases]\n')
+    db = tmp_path / "r.db"
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+    _set_smoke(db, "pdf2text", {"argv": ["true"]})
+    con = sqlite3.connect(db)
+    con.execute("UPDATE cli SET work_status='pass'")
+    con.commit()
+
+    assert main(["populate", "--db", str(db), "--config", str(cfg)]) == 0
+
+    spec, status = con.execute("SELECT launch_spec, work_status FROM cli").fetchone()
+    con.close()
+    assert _json.loads(spec)["smoke"] == {"argv": ["true"]}
+    assert status == "pass"
+
+
+def test_overview_counts_work_status_apart_from_health(tmp_path, capsys):
+    import sqlite3
+    db = _probe_db(tmp_path, "a", "b", "c", "d")
+    con = sqlite3.connect(db)
+    con.execute("UPDATE cli SET work_status='pass' WHERE slug IN ('a','b')")
+    con.execute("UPDATE cli SET work_status='fail' WHERE slug='c'")
+    con.commit()
+    con.close()
+
+    assert main(["overview", "--db", str(db)]) == 0
+
+    assert "works: pass 2 fail 1 unknown 1" in capsys.readouterr().out
+
+
 def test_populate_command_writes_and_summarizes(tmp_path, capsys):
     # minimal cli-audit fixture
     fleet = tmp_path / "fleet.json"
