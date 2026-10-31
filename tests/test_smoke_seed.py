@@ -10,8 +10,8 @@ from scripts.apply_smoke_seed import main
 
 REPO = Path(__file__).resolve().parents[1]
 SEEDS = REPO / "seed" / "smoke"
-# consigliere-gaps has no seed: 20_CONSIGLIERE is off limits until the hold lifts.
-SLUGS = ["ytx", "decisions_cli", "invoice-fetcher", "gmail_attachments", "wa-bridge"]
+SLUGS = ["ytx", "decisions_cli", "invoice-fetcher", "gmail_attachments", "wa-bridge",
+         "consigliere-gaps"]
 OFFLINE = ["ytx", "decisions_cli"]
 
 
