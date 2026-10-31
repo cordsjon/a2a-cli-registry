@@ -390,3 +390,23 @@
 **Justification:** 466 of 492 healthy rows carry an env the launcher cannot send, so green does not predict a launch; removing the injection is the only way the probe measures launch truth. The 82 no-parser rows are green because old sweeps ran them for real. Hand smokes for ~490 rows are months, so tiers make the proven part explicit and the tail a backlog. Reverses Q27's keep-status and the launch_spec env field from LAUNCH-01 AC-01.
 **Outcome:** assumed
 **Ref:** 07cb094 (at write time)
+
+
+## Q36 — docs/plans/2026-10-31-does-real-work.md — deviation
+
+**Question:** Chunk 1 as written would break the Consigliere hold and left a dead stub. How to execute it?
+**Chosen:** Build probe --slug before Task 1 and measure over the 540 rows outside the hold; delete health_env rather than leave it returning {}; strip an inherited PYTHONPATH from the probe env; add a summary key naming unhealthy rows; give StubAdapter the shell help guard PythonAdapter already has.
+**Decided-by:** agent
+**Justification:** probe --dry-run still executes every row, only the write is skipped, so the plan step would run the 45 healthy Consigliere rows. A shell caller PYTHONPATH gives the same false green as the injection. make-bundle.sh ignored --help and did real work on every sweep, which falls under fix-what-you-find.
+**Outcome:** applied
+**Ref:** 7b4b47d 76b5b2f 55cba9a 9036cfa
+
+
+## Q37 — docs/plans/2026-10-31-does-real-work.md — deviation
+
+**Question:** The dry run rebuilt kcv-web and wrote a zip that publish-bundle.sh would select by default. What to do with the zip?
+**Chosen:** Move it to port/dist/archive as kcv-web-port-2026-10-31.sweep-artefact.zip. Leave web/dist as rebuilt: gitignored, no tracked file changed.
+**Decided-by:** agent
+**Justification:** Cheapest to reverse. Deleting could not restore any earlier same-day zip, and leaving it makes a bare publish ship an unrequested build instead of the 2026-09-28-d98 one. Owner of 75_Coaching should confirm.
+**Outcome:** assumed
+**Ref:** port/publish-bundle.sh line 18
