@@ -223,3 +223,47 @@
 **Justification:** Operator ruling 2026-10-31 00:2x CET. The probe fix is a deterministic code change with tests (token-frugality); the residual triage of ~150 scripts across projects is agent work and exercises Hermes on a CLI-heavy task. Hermes runs under hermes cron because cron_mode=deny fails closed on dangerous commands, whereas a non-interactive 'hermes chat -q' auto-approves them (tools/approval.py, historical fail-open default). Hermes writes a report, no code and no DB writes.
 **Outcome:** applied
 **Ref:** ~/.hermes/reports/cli-registry-unhealthy-2026-10-31.json; BACKLOG US-CLIREG-SHELLUTIL-01 (sliver of the same gap)
+
+
+## Q21 — US-CLIREG-HERMES-DISCOVERY-01/unhealthy-fix — deviation
+
+**Question:** Handover P3 said probe .sh rows with bash <path> --help. All 8 .sh rows have no help branch, so the flag is ignored and the script does its work (sync-global-*.sh, log-truncate.sh). Follow the plan?
+**Options considered:** bash <path> --help as planned / probe only with a help branch or exec passthrough, else unknown
+**Chosen:** Probe a shell script only if it has a help branch or an exec "$@" passthrough; otherwise health_cmd is empty and the row reads unknown or stale.
+**Decided-by:** agent
+**Justification:** Reading the 12 scripts statically showed the plan would execute real work on every sweep. An unprobed row is honest; an executed sync is not recoverable.
+**Outcome:** applied
+**Ref:** e95b9c1
+
+
+## Q22 — US-CLIREG-HERMES-DISCOVERY-01/unhealthy-fix — deviation
+
+**Question:** Handover P3 said add a [probe] fallback_interpreter pointing at the governance venv for scripts with no project venv (64 rows). Build it?
+**Options considered:** build and enable as planned / build but leave unset / do not build
+**Chosen:** Not built. Rows with no venv stay unhealthy when an import fails.
+**Decided-by:** agent
+**Justification:** Green must predict a launch. No launcher uses that venv: hermes-adapter compose_command runs python -m <slug>, and launch_spec carries no interpreter. Green from a foreign venv would tell Hermes a CLI works when its launch fails. Cost: about 25 rows stay red that the plan would have turned green. Revisit once launch_spec carries the interpreter (backlog story).
+**Outcome:** assumed
+**Ref:** e95b9c1; ~/.hermes/reports/cli-registry-unhealthy-residual-2026-10-31.json
+
+
+## Q23 — US-CLIREG-HERMES-DISCOVERY-01/unhealthy-fix — tradeoff
+
+**Question:** Handover P5 left open where not_standalone is set so populate does not overwrite it: feed flag or protected-path list. Also, how to treat healthy rows that classify no_parser, which every sweep has been executing?
+**Options considered:** feed flag / config path list / classify statically in the prober
+**Chosen:** The prober runs the existing AST classifier before executing. A no_parser script is never run: healthy keeps its status and timestamp, anything else becomes not_standalone. A subapp is only reclassified when not healthy.
+**Decided-by:** agent
+**Justification:** bridge/audit_to_registry.py already uses this classifier at feed build, so a refreshed feed agrees, and the prober re-derives whatever populate resets. Keeps the never-demote guard from scripts/reeval_not_standalone.py. Cost: 34 healthy rows are no longer re-verified, and their status ages.
+**Outcome:** assumed
+**Ref:** e95b9c1
+
+
+## Q24 — US-CLIREG-HERMES-DISCOVERY-01/AC-05 — deviation
+
+**Question:** Handover P4 assumed the 28 dead rows leave through populate. Live populate from demo/cli-audit/latest.json would also delete 6 real rows such as spec_hierarchy_onwrite. How to close AC-05?
+**Options considered:** run populate / hand-edit the feed / disable with provenance, drop at next populate
+**Chosen:** scripts/disable_missing_path_rows.py disables them with fixed_by provenance (dry-run first, own 30 percent limit, backup). populate gains drop_missing_paths so the next feed run removes them. search_clis and the planner now honour enabled.
+**Decided-by:** agent
+**Justification:** AC-05 names disabling with provenance. Search and the planner ignored enabled, so disabling alone would not have stopped Hermes being offered dead rows. Side effect: the 25 already-disabled rows also leave search results. Registry populate stays unrun until the feed is refreshed.
+**Outcome:** assumed
+**Ref:** 2c247e9, e95b9c1
