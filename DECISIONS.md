@@ -472,3 +472,13 @@
 **Justification:** Operator ruling in this session. A scheduled ingest was running at the time, so the agent orders those tests last.
 **Outcome:** applied
 **Ref:** scripts/derive_smoke.py
+
+
+## Q44 — docs/plans/2026-10-31-does-real-work.md Task 11 — deviation
+
+**Question:** The plan commits a gap report and puts a TODO line in each small project's BACKLOG. Where do the lists go, and which rows count?
+**Chosen:** Healthy rows only, not not_standalone. No committed report. Seven stories in 00_Governance/BACKLOG.md, plus one story, US-CLIREG-SMOKE-TAIL-01, with one AC per project below the threshold.
+**Decided-by:** agent
+**Justification:** A parser-less row can never meet AC-01 of those stories. The lists name private scripts and this repo is public (Q39). Several projects (misc, external, (none)) are not repos, so they have no BACKLOG. Trade-off: a small project's owner finds its line in the central backlog, not in its own.
+**Outcome:** assumed
+**Ref:** scripts/smoke_gaps.py
