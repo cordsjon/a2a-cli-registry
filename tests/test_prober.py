@@ -5,7 +5,7 @@ import sys
 import time
 import pytest
 from core.adapters.python_adapter import PythonAdapter
-from core.prober.prober import probe_one, probe_fleet, _STALE_TTL_SECONDS
+from core.prober.prober import probe_one, probe_fleet, probe_slugs, _STALE_TTL_SECONDS
 from core.models import Cli
 from core.discovery.base import CliRecord
 
@@ -426,9 +426,9 @@ def test_probe_one_gives_child_empty_stdin(tmp_path):
     assert out.stdout.decode().strip() == "healthy"
 
 
-def _seed_py(session, slug, path, health_status="unknown", health_checked_at=None):
+def _seed_py(session, slug, path, health_status="unknown", health_checked_at=None, **fields):
     cli = Cli(slug=slug, lang="python", path=str(path), health_status=health_status,
-              health_checked_at=health_checked_at)
+              health_checked_at=health_checked_at, **fields)
     session.add(cli)
     session.commit()
 
@@ -441,19 +441,71 @@ def _argparse_script(path, body=""):
     return path
 
 
-def test_probe_fleet_puts_project_root_on_pythonpath(db, clock, tmp_path):
-    from core.adapters.python_adapter import PythonAdapter
+def _script_needing_its_project_root(tmp_path):
     proj = tmp_path / "proj"
     (proj / "mylib").mkdir(parents=True)
     (proj / "pyproject.toml").write_text("")
     (proj / "mylib" / "__init__.py").write_text("")
-    script = _argparse_script(proj / "scripts" / "tool.py", "import mylib")
+    return proj, _argparse_script(proj / "scripts" / "tool.py", "import mylib")
+
+
+def test_probe_fleet_does_not_lend_a_script_its_project_root(db, clock, tmp_path):
+    """Launchers cannot send PYTHONPATH (DECISIONS Q32). A script that only
+    imports with it would be green here and fail on import at launch."""
+    from core.adapters.python_adapter import PythonAdapter
+    _, script = _script_needing_its_project_root(tmp_path)
+    _seed_py(db, "tool", script)
+
+    summary = probe_fleet(db, [PythonAdapter()], clock)
+
+    db.expire_all()
+    assert db.get(Cli, "tool").health_status == "unhealthy"
+    assert summary["unhealthy_slugs"] == ["tool"]
+
+
+def test_probe_fleet_ignores_the_callers_pythonpath(db, clock, tmp_path, monkeypatch):
+    """Same false green, from whoever's shell started the sweep."""
+    from core.adapters.python_adapter import PythonAdapter
+    proj, script = _script_needing_its_project_root(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", str(proj))
     _seed_py(db, "tool", script)
 
     probe_fleet(db, [PythonAdapter()], clock)
 
     db.expire_all()
-    assert db.get(Cli, "tool").health_status == "healthy"
+    assert db.get(Cli, "tool").health_status == "unhealthy"
+
+
+def test_probe_slugs_touches_only_the_named_rows(db, clock, tmp_path):
+    """Named rows run and are written. The rest are neither executed nor
+    rewritten, which is what lets a sweep skip a project under a hold."""
+    from core.adapters.python_adapter import PythonAdapter
+    ran_a, ran_b = tmp_path / "ran_a", tmp_path / "ran_b"
+    _seed_py(db, "a", _argparse_script(tmp_path / "a.py", f"open({str(ran_a)!r}, 'w').close()"))
+    _seed_py(db, "b", _argparse_script(tmp_path / "b.py", f"open({str(ran_b)!r}, 'w').close()"),
+             launch_spec='{"kind": "untouched"}')
+
+    summary = probe_slugs(db, [PythonAdapter()], clock, ["a"])
+
+    assert ran_a.exists() and not ran_b.exists()
+    db.expire_all()
+    assert db.get(Cli, "a").health_status == "healthy"
+    untouched = db.get(Cli, "b")
+    assert (untouched.health_status, untouched.health_checked_at) == ("unknown", None)
+    assert untouched.launch_spec == '{"kind": "untouched"}'
+    assert summary["probed"] == 1
+    assert summary["not_probed"] == []
+
+
+def test_probe_slugs_reports_names_it_did_not_probe(db, clock, tmp_path):
+    """A typo must not read as a clean run that happened to probe nothing."""
+    from core.adapters.python_adapter import PythonAdapter
+    _seed_py(db, "off", _argparse_script(tmp_path / "off.py", "pass"), enabled=False)
+
+    summary = probe_slugs(db, [PythonAdapter()], clock, ["typo", "off"])
+
+    assert summary["probed"] == 0
+    assert summary["not_probed"] == ["off", "typo"]
 
 
 def test_probe_fleet_runs_scripts_in_a_throwaway_cwd(db, clock, tmp_path, monkeypatch):
@@ -502,21 +554,23 @@ def test_probe_fleet_never_executes_a_no_parser_script(db, clock, tmp_path):
     assert summary["probed"] == 0
 
 
-def test_probe_fleet_keeps_healthy_no_parser_row_without_running_it(db, clock, tmp_path):
-    """Never demote a healthy row (scripts/reeval_not_standalone.py precision
-    guard), and never execute it either."""
+def test_probe_fleet_demotes_healthy_no_parser_row_without_running_it(db, clock, tmp_path):
+    """Its green came from an old sweep running it for real. Healthy means it
+    parses --help and exits 0, so a script with no parser cannot be (Q35)."""
     from core.adapters.python_adapter import PythonAdapter
     sentinel = tmp_path / "ran"
     _seed_py(db, "batch", _no_parser_script(tmp_path / "batch.py", sentinel),
-             health_status="healthy", health_checked_at=123.0)
+             health_status="healthy", health_checked_at=123.0, a2a_invokable=True)
 
     summary = probe_fleet(db, [PythonAdapter()], clock)
 
     assert not sentinel.exists()
     db.expire_all()
     cli = db.get(Cli, "batch")
-    assert cli.health_status == "healthy"
-    assert cli.health_checked_at == 123.0
+    assert cli.health_status == "not_standalone"
+    assert cli.not_standalone is True
+    assert cli.a2a_invokable is False
+    assert summary["not_standalone"] == 1
     assert summary["skipped_no_parser"] == 1
 
 

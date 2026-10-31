@@ -115,6 +115,13 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.not_standalone = rec.not_standalone
         cli.last_seen_at = clock.now()
         cli.updated_at = clock.now()
+        # A smoke is hand-authored; the adapter knows nothing about it.
+        try:
+            old_spec = _json.loads(cli.launch_spec or "{}")
+        except ValueError:
+            old_spec = {}       # 'install:<url>' placeholder rows are not specs
+        if isinstance(old_spec, dict) and "smoke" in old_spec:
+            launch = {**launch, "smoke": old_spec["smoke"]}
         cli.launch_spec = _json.dumps(launch)
         session.add(cli)
 

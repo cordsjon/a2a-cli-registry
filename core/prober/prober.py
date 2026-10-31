@@ -143,11 +143,10 @@ def _find_adapter(cli: Cli, adapters):
     return None, None
 
 
-def _probe_env(adapter, rec) -> dict | None:
-    """The adapter's extra probe environment on top of ours; None inherits."""
-    health_env = getattr(adapter, "health_env", None)
-    extra = health_env(rec) if health_env else {}
-    return {**os.environ, **extra} if extra else None
+def _probe_env() -> dict:
+    """The environment a launcher can send: tirith holds PYTHONPATH (DECISIONS
+    Q32), so a probe that had it would be green for a row that fails at launch."""
+    return {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
 
 
 def _refresh_launch_fields(cli: Cli, adapters) -> None:
@@ -181,8 +180,8 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     - Marks CLIs with no probeable command as unknown; if their
       health_checked_at is older than staleness_ttl, marks stale.
     - Never executes a script with no argument parser: it ignores --help and
-      does its real work. A healthy one keeps its status and timestamp
-      (skipped_no_parser); any other becomes not_standalone.
+      does its real work. It becomes not_standalone; a healthy one is also
+      counted in skipped_no_parser, the rows this sweep demoted.
     - Runs every probe in one throwaway cwd, so a script that writes relative
       to its cwd cannot touch the caller's directory.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
@@ -195,12 +194,32 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     failing probe does not abort others. Session writes are kept on the main
     thread after all futures complete.
     """
+    clis = [c for c in session.exec(select(Cli)).all() if c.enabled]
+    return _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                       max_output_bytes, staleness_ttl, dry_run)
+
+
+def probe_slugs(session, adapters, clock, slugs, concurrency: int = 8,
+                probe_timeout: float = 10.0,
+                max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
+                staleness_ttl: int = _STALE_TTL_SECONDS,
+                dry_run: bool = False) -> dict:
+    """probe_fleet over the named rows only; no other row is run or written.
+    The summary's not_probed lists the names that are absent or disabled."""
+    wanted = set(slugs)
+    clis = [c for c in session.exec(select(Cli).where(Cli.slug.in_(wanted))).all() if c.enabled]
+    summary = _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                          max_output_bytes, staleness_ttl, dry_run)
+    summary["not_probed"] = sorted(wanted - {c.slug for c in clis})
+    return summary
+
+
+def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
+                max_output_bytes, staleness_ttl, dry_run) -> dict:
     now = clock.now()
-    clis = session.exec(select(Cli)).all()
-    clis = [c for c in clis if c.enabled]
 
     # --- Phase 1: partition CLIs into probeable vs. unprobeable ---
-    to_probe: list[tuple[Cli, str, dict | None]] = []   # (cli, cmd, env)
+    to_probe: list[tuple[Cli, str]] = []   # (cli, cmd)
     no_cmd: list[Cli] = []
     # US-CLIAUDIT-83: rows statically known not to be standalone CLIs (Typer/click
     # sub-apps, no-parser batch scripts) are never probed — probing them yields a
@@ -215,6 +234,7 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
         standalone_class = classify_standalone(cli.path or "")
         if standalone_class == "no_parser" and cli.health_status == "healthy":
             skipped_no_parser += 1
+            not_standalone_rows.append(cli)
             continue
         if standalone_class != "standalone" and cli.health_status != "healthy":
             not_standalone_rows.append(cli)
@@ -228,19 +248,20 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
             if not cmd:
                 no_cmd.append(cli)
             else:
-                to_probe.append((cli, cmd, _probe_env(adapter, rec)))
+                to_probe.append((cli, cmd))
         except Exception:
             no_cmd.append(cli)
 
     # --- Phase 2: run probes concurrently, one future per CLI ---
     results: dict[str, str] = {}   # slug -> status string
+    env = _probe_env()
 
     with tempfile.TemporaryDirectory(prefix="clireg-probe-") as probe_cwd:
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             future_to_slug = {
                 pool.submit(probe_one, cmd, probe_timeout, max_output_bytes,
                             cwd=probe_cwd, env=env): cli.slug
-                for cli, cmd, env in to_probe
+                for cli, cmd in to_probe
             }
             for future in as_completed(future_to_slug):
                 slug = future_to_slug[future]
@@ -254,7 +275,7 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     counts = {"probed": 0, "healthy": 0, "unhealthy": 0, "stale": 0, "unknown": 0,
               "not_standalone": 0, "skipped_no_parser": skipped_no_parser}
 
-    for cli, _cmd, _env in to_probe:
+    for cli, _cmd in to_probe:
         status = results.get(cli.slug, "unhealthy")
         counts["probed"] += 1
         counts[status] = counts.get(status, 0) + 1
@@ -281,14 +302,16 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
         if dry_run:
             continue
         cli.not_standalone = True
+        cli.a2a_invokable = False
         cli.health_status = "not_standalone"
         cli.health_checked_at = now
         session.add(cli)
 
     counts["dry_run"] = dry_run
+    counts["unhealthy_slugs"] = sorted(s for s, status in results.items() if status == "unhealthy")
     if not dry_run:
-        # Every enabled row, not only the probed: a healthy no-parser script is
-        # never run here but still launches when Hermes picks it.
+        # Every selected row, not only the probed: a no-parser script is never
+        # run here but the row still records how it would be launched.
         for cli in clis:
             _refresh_launch_fields(cli, adapters)
             session.add(cli)
