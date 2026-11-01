@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import stat
+import subprocess
 import sys
 
 from core.prober.smoke import run_smoke
@@ -91,9 +92,7 @@ def test_a_null_project_is_not_silently_skipped(tmp_path):
 
 def test_rows_outside_the_tier_are_never_executed(tmp_path):
     rows, markers = [], []
-    for name, over in [("held-path", {"path": "/x/20_CONSIGLIERE/tool"}),
-                       ("held-project", {"project": "20_consigliere"}),
-                       ("has-smoke", {"smoke": {"argv": ["/bin/true"]}}),
+    for name, over in [("has-smoke", {"smoke": {"argv": ["/bin/true"]}}),
                        ("disabled", {"enabled": 0}),
                        ("stale", {"health": "stale"}),
                        ("shell", {"kind": "executable"})]:
@@ -103,3 +102,109 @@ def test_rows_outside_the_tier_are_never_executed(tmp_path):
     out = _derive(tmp_path, rows)
     assert _seeded(out) == []
     assert [m.name for m in markers if m.exists()] == []
+
+
+def _repo(tmp_path, tests, name="repo", scripts=("scripts/tool.py",)):
+    """A git repo with the scripts and {tests/<file>: source}, staged, not committed:
+    git grep and ls-files read the index, and no commit means no hooks."""
+    root = tmp_path / name
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for script in scripts:
+        path = root / script
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("VALUE = 1\n")
+    for test, source in tests.items():
+        path = root / "tests" / test
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    return root
+
+
+def _project_tests(tmp_path, root, script="scripts/tool.py", over=None):
+    out = tmp_path / "derived"
+    rows = [("tool", [sys.executable, str(root / script)], {"path": str(root / script), **(over or {})})]
+    assert main(["--tier", "project-tests", "--db", str(_db(tmp_path, rows)), "--out", str(out)]) == 0
+    return out
+
+
+# Only a cwd in the checkout finds scripts.tool: pytest puts just tests/ on sys.path.
+_IMPORTS = "from scripts.tool import VALUE\n\ndef test_it():\n    assert VALUE == {expected}\n"
+_A_TEST = "\ndef test_it():\n    pass\n"
+
+
+def test_a_project_test_seed_is_gated_and_runs_in_its_checkout(tmp_path):
+    root = _repo(tmp_path, {"test_tool.py": _IMPORTS.format(expected=1)})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert seed["tier"] == seed["side_effects"] == "project-tests"
+    assert seed["cwd"] == str(root.resolve())
+    assert seed["argv"][0] == sys.executable and seed["argv"][-1] == "tests/test_tool.py"
+    assert run_smoke({"smoke": seed}, timeout=60) == "unknown"
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "pass"
+
+
+def test_a_failing_project_test_is_a_fail(tmp_path):
+    root = _repo(tmp_path, {"test_tool.py": _IMPORTS.format(expected=2)})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
+
+
+def test_a_project_test_that_skips_everything_is_a_fail(tmp_path):
+    # pytest exits 0 here: only the summary line says nothing ran.
+    source = "import pytest\nfrom scripts.tool import VALUE\n\n@pytest.mark.skip\ndef test_it():\n    pass\n"
+    root = _repo(tmp_path, {"test_tool.py": source})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
+
+
+def test_a_test_the_project_config_deselects_earns_no_seed(tmp_path):
+    # Exit 5 at run time would read as a broken row. It is a row with no proxy.
+    source = "import pytest\nfrom scripts.tool import VALUE\n\n@pytest.mark.slow\ndef test_it():\n    pass\n"
+    root = _repo(tmp_path, {"test_tool.py": source})
+    (root / "pytest.ini").write_text('[pytest]\naddopts = -m "not slow"\nmarkers =\n    slow: slow\n')
+    assert _seeded(_project_tests(tmp_path, root)) == []
+
+
+def test_a_test_file_that_fails_to_collect_still_gets_a_seed_that_fails(tmp_path):
+    root = _repo(tmp_path, {"test_tool.py": "from scripts.tool import VALUE\nimport no_such_module\n"})
+    seed = json.loads((_project_tests(tmp_path, root) / "tool.json").read_text())
+    assert run_smoke({"smoke": seed}, timeout=60, allow_network=True) == "fail"
+
+
+def test_a_test_that_only_mentions_the_stem_earns_no_seed(tmp_path):
+    root = _repo(tmp_path, {"test_other.py": "# the tool is great\ndef test_it():\n    pass\n",
+                            "tool_data.py": "from scripts.tool import VALUE\n"})
+    assert _seeded(_project_tests(tmp_path, root)) == []
+
+
+def test_a_shared_stem_needs_the_full_path_or_module(tmp_path):
+    bare = "from cli import VALUE\n"
+    root = _repo(tmp_path, {"test_cli.py": bare}, scripts=("a/cli.py", "b/cli.py"))
+    assert _seeded(_project_tests(tmp_path, root, "a/cli.py")) == []
+    qualified = _repo(tmp_path, {"test_cli.py": "from a.cli import VALUE\n" + _A_TEST}, name="qualified",
+                      scripts=("a/cli.py", "b/cli.py"))
+    assert _seeded(_project_tests(tmp_path / "qualified", qualified, "a/cli.py")) == ["tool"]
+
+
+def test_a_unique_stem_may_be_imported_bare_or_named_by_file(tmp_path):
+    for name, source in [("bare", "import tool\n"), ("named", "SCRIPT = 'tool.py'\n")]:
+        root = _repo(tmp_path, {"test_x.py": source + _A_TEST}, name=name)
+        assert _seeded(_project_tests(tmp_path / name, root)) == ["tool"], name
+
+
+def test_the_frozen_repo_and_a_seeded_row_get_no_project_test_seed(tmp_path):
+    frozen = _repo(tmp_path, {"test_tool.py": _IMPORTS.format(expected=1)}, name="15_belegfluss")
+    assert _seeded(_project_tests(tmp_path / "15_belegfluss", frozen)) == []
+    root = _repo(tmp_path, {"test_tool.py": _IMPORTS.format(expected=1)})
+    out = _project_tests(tmp_path / "repo", root, over={"smoke": {"argv": ["/bin/true"]}})
+    assert _seeded(out) == []
+
+
+def test_a_script_outside_git_gets_no_seed(tmp_path):
+    script = tmp_path / "loose.py"
+    script.write_text("VALUE = 1\n")
+    out = tmp_path / "derived"
+    rows = [("loose", [sys.executable, str(script)], {"path": str(script)})]
+    assert main(["--tier", "project-tests", "--db", str(_db(tmp_path, rows)), "--out", str(out)]) == 0
+    assert _seeded(out) == []

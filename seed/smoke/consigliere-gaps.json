@@ -1,0 +1,9 @@
+{
+  "argv": ["/Users/jcords-macmini/projects-local/20_CONSIGLIERE/.venv/bin/consigliere", "gaps", "list", "--json"],
+  "expect_exit": 0,
+  "expect_stdout_re": "^\\[",
+  "side_effects": "none",
+  "tier": "hand",
+  "timeout": 60,
+  "note": "A select against the live gap tables, printed as a JSON array. Proves config, DB and schema. The gap loop's fetching and evaluating verbs stay unproven."
+}

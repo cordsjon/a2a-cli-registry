@@ -88,7 +88,8 @@ def run_smoke(spec: dict, *, timeout: float, allow_network: bool = False,
     with tempfile.TemporaryDirectory(prefix="clireg-smoke-") as cwd:
         if not _copy_fixture(smoke.get("fixture"), cwd):
             return "fail"
-        code, stdout = _run(argv, cwd, smoke.get("timeout", timeout), max_output_bytes)
+        code, stdout = _run(argv, smoke.get("cwd") or cwd, smoke.get("timeout", timeout),
+                            max_output_bytes)
         if code != smoke.get("expect_exit", 0):
             return "fail"
         pattern = smoke.get("expect_stdout_re")

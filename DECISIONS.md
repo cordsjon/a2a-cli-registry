@@ -440,3 +440,45 @@
 **Justification:** tmp is a claim about the row that nobody has checked for these suites. They run in checkouts other live sessions are editing, and the set includes 15_belegfluss, which is frozen, so the owner has to decide. Recommendation: label them side_effects project-tests, which the allowlist already gates behind an explicit --allow-network run, and exclude 15_belegfluss. Task 11 waits on this, because its gap list is whatever Task 10 leaves unknown.
 **Outcome:** escalated
 **Ref:** scripts/derive_smoke.py
+
+
+## Q41 — docs/plans/2026-10-31-does-real-work.md Task 10 — gate-resolution
+
+**Question:** Task 10 labels project-test smokes side_effects tmp, so every unattended probe --smoke would run other projects test files. 151 rows in 14 repos qualify. May they run unattended?
+**Chosen:** Label project-test smokes side_effects project-tests, held behind --allow-network, and exclude 15_belegfluss. Agent does the first run, batched with --slug.
+**Decided-by:** human
+**Justification:** Operator ruling 2026-11-01. Unattended sweeps stay safe; the tests run only when someone asks.
+**Outcome:** applied
+**Ref:** scripts/derive_smoke.py
+**Supersedes:** Q40 — resolved
+
+
+## Q42 — docs/plans/2026-10-31-does-real-work.md Task 10 — deviation
+
+**Question:** The plan's git grep on a script basename credits a row with any test file containing that word. Does a filename hit count?
+**Options considered:** any hit / an import or a file name, and a full path when the stem is shared
+**Chosen:** Require an import or a file name in a test_*.py or *_test.py file, and the full path or dotted module when another file in the repo shares the stem.
+**Decided-by:** agent
+**Justification:** cli, main and app recur across directories, so a bare hit would give a row a pass from tests that never touch it. Yield 141 against 151 in the census, which also excludes the frozen repo's 12. A named test still does not prove it exercises the row, and the tier says so.
+**Outcome:** assumed
+**Ref:** scripts/derive_smoke.py
+
+
+## Q43 — docs/plans/2026-10-31-does-real-work.md Task 10 — gate-resolution
+
+**Question:** Operator lifted the 20_CONSIGLIERE hold on 2026-11-01. What does that release?
+**Chosen:** Probe the 50 rows, seed consigliere-gaps, drop the hold filter from derive_smoke. Its project tests are seeded too, run last, after reading its conftest.
+**Decided-by:** human
+**Justification:** Operator ruling in this session. A scheduled ingest was running at the time, so the agent orders those tests last.
+**Outcome:** applied
+**Ref:** scripts/derive_smoke.py
+
+
+## Q44 — docs/plans/2026-10-31-does-real-work.md Task 11 — deviation
+
+**Question:** The plan commits a gap report and puts a TODO line in each small project's BACKLOG. Where do the lists go, and which rows count?
+**Chosen:** Healthy rows only, not not_standalone. No committed report. Seven stories in 00_Governance/BACKLOG.md, plus one story, US-CLIREG-SMOKE-TAIL-01, with one AC per project below the threshold.
+**Decided-by:** agent
+**Justification:** A parser-less row can never meet AC-01 of those stories. The lists name private scripts and this repo is public (Q39). Several projects (misc, external, (none)) are not repos, so they have no BACKLOG. Trade-off: a small project's owner finds its line in the central backlog, not in its own.
+**Outcome:** assumed
+**Ref:** scripts/smoke_gaps.py
