@@ -482,3 +482,15 @@
 **Justification:** A parser-less row can never meet AC-01 of those stories. The lists name private scripts and this repo is public (Q39). Several projects (misc, external, (none)) are not repos, so they have no BACKLOG. Trade-off: a small project's owner finds its line in the central backlog, not in its own.
 **Outcome:** assumed
 **Ref:** scripts/smoke_gaps.py
+
+
+## Q45 — docs/plans/2026-10-31-does-real-work.md Task 12 — deviation
+
+**Question:** The gateway sample passed 60 of 60, but 6 passes printed nothing on --help. Locally 23 of 412 healthy rows exit 0 with no output, and they are exactly the 23 the classifier calls subapp. They define a Typer app and never call it, so every verb does nothing when run as a file. Q23 kept healthy subapps. Keep them, demote them, or point their argv at the parent CLI?
+**Options considered:** keep healthy / demote to not_standalone / rewrite argv to the parent verb
+**Chosen:** Demote to not_standalone, without running them. smoke_rows also treats a not_standalone row as unknown and does not run its smoke, which takes the 8 project-tests passes on these rows back to unknown.
+**Decided-by:** agent
+**Justification:** Q23 rested on a healthy probe being ground truth, which this measurement disproves; Q35 made the same correction for no_parser rows. The parent CLI row is healthy and mounts the same verbs, so nothing becomes unreachable. Static class over an output check because it needs no execution; a scan of all 594 python rows found none classified subapp that calls its app at top level, so no false positive today. Cost: a future no-guard script that calls its app at module level would be demoted wrongly. Pass count falls by 8. Argv rewrite left out: it duplicates the parent row. Reversible from the DB backup.
+**Outcome:** assumed
+**Ref:** afff451 (at write time)
+**Supersedes:** Q23 — superseded

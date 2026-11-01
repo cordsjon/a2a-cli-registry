@@ -24,11 +24,11 @@ def main(argv=None) -> int:
 
     con = sqlite3.connect(args.db)
     con.row_factory = sqlite3.Row
-    # Precision guard (do-no-harm): NEVER demote a currently-healthy row. A
-    # healthy probe is ground truth that the CLI actually runs standalone — it
-    # outranks any static heuristic. AC-03 targets the false-positive UNHEALTHY/
-    # unknown rows, not working CLIs. Scoping here, not in the classifier,
-    # because the classifier is also used at feed-build where no probe exists.
+    # Precision guard (do-no-harm): this script leaves healthy rows alone. AC-03
+    # targets the false-positive UNHEALTHY/unknown rows; the prober demotes healthy
+    # rows the classifier rejects (Q35, Q45), because exit 0 on --help does not prove
+    # a parser ran. Scoping here, not in the classifier, because the classifier is
+    # also used at feed-build where no probe exists.
     rows = con.execute(
         "SELECT slug, path, health_status FROM cli "
         "WHERE enabled = 1 AND health_status != 'healthy'"

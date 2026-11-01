@@ -180,8 +180,9 @@ def probe_fleet(session, adapters, clock, concurrency: int = 8,
     - Marks CLIs with no probeable command as unknown; if their
       health_checked_at is older than staleness_ttl, marks stale.
     - Never executes a script with no argument parser: it ignores --help and
-      does its real work. It becomes not_standalone; a healthy one is also
-      counted in skipped_no_parser, the rows this sweep demoted.
+      does its real work. Nor a mounted sub-app: it exits 0 without calling its
+      app. Both become not_standalone; a healthy one is also counted in
+      skipped_no_parser, the rows this sweep demoted.
     - Runs every probe in one throwaway cwd, so a script that writes relative
       to its cwd cannot touch the caller's directory.
     - DB writes happen on the main thread (SQLModel sessions are not thread-safe).
@@ -223,7 +224,7 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
     no_cmd: list[Cli] = []
     # US-CLIAUDIT-83: rows statically known not to be standalone CLIs (Typer/click
     # sub-apps, no-parser batch scripts) are never probed — probing them yields a
-    # non-zero --help that the audit mislabels broken. Their status is preserved.
+    # non-zero --help that the audit mislabels broken, or a silent exit 0 (Q45).
     not_standalone_rows: list[Cli] = []
     skipped_no_parser = 0
 
@@ -232,11 +233,9 @@ def _probe_rows(session, clis, adapters, clock, concurrency, probe_timeout,
             not_standalone_rows.append(cli)
             continue
         standalone_class = classify_standalone(cli.path or "")
-        if standalone_class == "no_parser" and cli.health_status == "healthy":
-            skipped_no_parser += 1
-            not_standalone_rows.append(cli)
-            continue
-        if standalone_class != "standalone" and cli.health_status != "healthy":
+        if standalone_class != "standalone":
+            if cli.health_status == "healthy":
+                skipped_no_parser += 1
             not_standalone_rows.append(cli)
             continue
         try:
