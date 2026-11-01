@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import stat
 import sys
 
@@ -40,6 +41,34 @@ def test_fail_when_stdout_does_not_match(tmp_path):
 def test_fail_on_missing_file(tmp_path):
     tool = _script(tmp_path / "tool", "pass")
     assert run_smoke(_spec([tool], expect_file="out.pdf"), timeout=10) == "fail"
+
+
+def test_fail_when_file_content_does_not_match(tmp_path):
+    """A file that exists but holds the wrong result is the regression to catch."""
+    tool = _script(tmp_path / "tool", "open('out.txt', 'w').write('total 41')")
+    assert run_smoke(_spec([tool], expect_file="out.txt", expect_file_re="total 41"), timeout=10) == "pass"
+    assert run_smoke(_spec([tool], expect_file="out.txt", expect_file_re="total 42"), timeout=10) == "fail"
+
+
+@pytest.mark.skipif(shutil.which("sandbox-exec") is None, reason="needs the macOS sandbox")
+def test_sandbox_blocks_writes_outside_the_cwd_and_the_network_unless_declared(tmp_path):
+    outside = os.path.expanduser(f"~/.clireg-smoke-sandbox-probe-{os.getpid()}")
+    write = _script(tmp_path / "write", f"open({outside!r}, 'w').close()")
+    connect = _script(tmp_path / "connect", (
+        "import socket\n"
+        "try:\n"
+        "    socket.create_connection(('127.0.0.1', 9), timeout=1)\n"
+        "except ConnectionRefusedError:\n"
+        "    print('reached the network stack')"))
+    try:
+        assert run_smoke(_spec([write]), timeout=10) == "fail"
+        assert not os.path.exists(outside)
+    finally:
+        if os.path.exists(outside):
+            os.unlink(outside)
+    assert run_smoke(_spec([connect], expect_stdout_re="reached"), timeout=10) == "fail"
+    assert run_smoke(_spec([connect], side_effects="network", expect_stdout_re="reached"),
+                     timeout=10, allow_network=True) == "pass"
 
 
 def test_fail_when_the_command_cannot_start(tmp_path):

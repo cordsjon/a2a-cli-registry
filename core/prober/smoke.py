@@ -3,6 +3,7 @@
 Runs a row's launch_spec.smoke against a copy of its fixture in a throwaway cwd,
 with the environment a launcher can send. See docs/launch-spec.md."""
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -18,11 +19,26 @@ from core.prober.prober import _DEFAULT_MAX_OUTPUT_BYTES, _POSIX, _kill_tree, _p
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 # An allowlist: a missing or misspelled side_effects must not run unattended.
 _SAFE_SIDE_EFFECTS = {"none", "tmp"}
+_NETWORK_SIDE_EFFECTS = {"network", "spend"}
 _DEFAULT_TIMEOUT = 60.0
+_WRITABLE = ("/private/tmp", "/private/var/folders", "/dev", "~/.cache", "~/Library/Caches")
 
 
 def _gated(smoke: dict, allow_network: bool) -> bool:
     return not allow_network and smoke.get("side_effects") not in _SAFE_SIDE_EFFECTS
+
+
+def _sandboxed(smoke: dict, argv: list, cwd: str) -> list:
+    """Hold a smoke to what it declares: a tool that hardcodes a live path must fail
+    here, not write to it. macOS only; elsewhere the declaration is only a promise.
+    A smoke with its own cwd is a project's test suite, which writes in its checkout."""
+    exe = shutil.which("sandbox-exec")
+    if exe is None or smoke.get("cwd"):
+        return argv
+    roots = [os.path.realpath(os.path.expanduser(p)) for p in (cwd, *_WRITABLE)]
+    allowed = " ".join(f'(subpath "{root}")' for root in roots)
+    network = "" if smoke.get("side_effects") in _NETWORK_SIDE_EFFECTS else "(deny network*)"
+    return [exe, "-p", f"(version 1)(allow default){network}(deny file-write*)(allow file-write* {allowed})", *argv]
 
 
 def _copy_fixture(fixture, cwd: str) -> bool:
@@ -88,18 +104,22 @@ def run_smoke(spec: dict, *, timeout: float, allow_network: bool = False,
     with tempfile.TemporaryDirectory(prefix="clireg-smoke-") as cwd:
         if not _copy_fixture(smoke.get("fixture"), cwd):
             return "fail"
-        code, stdout = _run(argv, smoke.get("cwd") or cwd, smoke.get("timeout", timeout),
-                            max_output_bytes)
+        code, stdout = _run(_sandboxed(smoke, argv, cwd), smoke.get("cwd") or cwd,
+                            smoke.get("timeout", timeout), max_output_bytes)
         if code != smoke.get("expect_exit", 0):
-            return "fail"
-        pattern = smoke.get("expect_stdout_re")
-        try:
-            if pattern and not re.search(pattern, stdout):
-                return "fail"
-        except re.error:
             return "fail"
         expect_file = smoke.get("expect_file")
         if expect_file and not (Path(cwd) / expect_file).exists():
+            return "fail"
+        pattern, file_pattern = smoke.get("expect_stdout_re"), smoke.get("expect_file_re")
+        try:
+            if pattern and not re.search(pattern, stdout):
+                return "fail"
+            if file_pattern:
+                text = (Path(cwd) / expect_file).read_bytes()[:max_output_bytes].decode("utf-8", "replace")
+                if not re.search(file_pattern, text):
+                    return "fail"
+        except (re.error, OSError, TypeError):      # TypeError: expect_file_re with no expect_file
             return "fail"
     return "pass"
 

@@ -16,6 +16,9 @@
 | `expect_exit` | Default 0. |
 | `expect_stdout_re` | Searched in stdout only, capped at 64 KB. Optional. |
 | `expect_file` | Must exist in the cwd afterwards. Optional. |
+| `expect_file_re` | Searched in the content of `expect_file`, capped at 64 KB. Optional. |
+| `negative` | Keys merged over the smoke so the tool runs cleanly but gives another answer. Read by `scripts/verify_smoke_seed.py`, not the runner. |
+| `negative_why` | Why a seed has no `negative`. Not read by the runner. |
 | `cwd` | Run here instead of the throwaway cwd. Only for `tier: project-tests`, whose suite needs its checkout. Optional. |
 | `side_effects` | `none` or `tmp` run unattended. `network`, `spend`, `project-tests`, or anything else needs `--allow-network`. |
 | `tier` | How much a pass proves: `hand` (real work), `project-tests` (the owning project's tests for this file), `version` (import and entry only). |
@@ -23,6 +26,16 @@
 | `note` | What a pass does not prove. Not read by the runner. |
 
 Seeds live in `seed/smoke/<slug>.json`, and `scripts/apply_smoke_seed.py --apply` writes them to the rows. A fixture holding a `DECISIONS.md` must sit in a dot directory, or the real `decisions` sweep of `~/projects` reads it as a live ledger.
+
+## Sandbox
+
+On macOS every smoke without its own `cwd` runs under `sandbox-exec`: writes go only to the throwaway cwd, temp and cache directories, and the network is denied unless `side_effects` is `network` or `spend`. A tool that hardcodes a live path fails instead of touching it. Reads are not restricted. Elsewhere `side_effects` is only a promise. `sandbox-exec` is deprecated by Apple; if it goes away the smoke runs unsandboxed.
+
+## Regression grade
+
+`scripts/verify_smoke_seed.py --seed-dir <dir>` refuses a seed that passes without proving anything: it must pass twice, assert output that neither `--help` nor empty output satisfies, and fail on its `negative` case. Run it before applying a hand seed.
+
+`probe --smoke` exits 1 when any smoke fails.
 
 ## Results
 

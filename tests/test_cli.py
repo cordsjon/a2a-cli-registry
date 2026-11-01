@@ -161,6 +161,16 @@ def test_probe_smoke_writes_work_status_and_leaves_health(tmp_path, capsys):
     con.close()
 
 
+def test_probe_smoke_exits_1_when_a_smoke_fails(tmp_path, capsys):
+    """A scheduled regression run has only the exit code to go on."""
+    db = _probe_db(tmp_path, "a")
+    _set_smoke(db, "a", {"argv": ["false"], "side_effects": "none"})
+    cfg = str(Path(__file__).parent.parent / "examples/reference-fleet/config.toml")
+
+    assert main(["probe", "--db", str(db), "--config", cfg, "--smoke"]) == 1
+    assert _json.loads(capsys.readouterr().out)["fail_slugs"] == ["a"]
+
+
 def test_probe_smoke_needs_allow_network_for_a_network_row(tmp_path, capsys):
     import sqlite3
     db = _probe_db(tmp_path, "a")

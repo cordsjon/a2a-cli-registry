@@ -505,3 +505,25 @@
 **Outcome:** applied
 **Ref:** 7933c39 (at write time)
 **Supersedes:** Q38 — resolved
+
+
+## Q47 — docs/plans/2026-10-31-does-real-work.md — tradeoff
+
+**Question:** Operator set the bar at 'does real work' for every row. The plan had to settle: how to prove it across ~490 rows, what happens to the probe's injected PYTHONPATH, and what happens to the 82 healthy no-parser rows.
+**Options considered:** row-by-row hand smokes / tiered smokes (hand, --version, project-tests, unknown filed) ; keep injecting PYTHONPATH in probes / probe with the launcher's env ; keep no_parser healthy status (Q27) / demote to not_standalone
+**Chosen:** Keep tiers and work_status. Also write a regression-grade hand smoke for every healthy row that does not need a human, paid calls allowed. Rows that need a person stay listed and unproven.
+**Decided-by:** human
+**Justification:** Operator, 2026-11-01: create test cases for all that do not need a human handler; paid calls are ok; they must work as regression tests. The operator reviewed the held-back list without moving any row.
+**Outcome:** applied
+**Ref:** d454571 (at write time)
+**Supersedes:** Q35 — resolved
+
+
+## Q48 — US-CLIREG-WORKS-01 regression smokes — tradeoff
+
+**Question:** How do hand smokes become regression tests when they cannot be committed here and nothing re-runs them?
+**Chosen:** Seeds and fixtures live in the private 00_Governance repo under registry/smokes. Every smoke runs under the macOS sandbox. verify_smoke_seed.py refuses seeds that cannot fail. A Dagu job re-runs them and alerts when the failing set changes.
+**Decided-by:** agent
+**Justification:** This repo is public and hand seeds cannot be regenerated, so the gitignored derived directory would lose them. side_effects was a promise, and a hardcoded path would have written to live data. probe --smoke exited 0 with failures and had no scheduler. Cost: sandbox-exec is deprecated and macOS only.
+**Outcome:** assumed
+**Ref:** d454571 (at write time)

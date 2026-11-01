@@ -408,7 +408,7 @@ def main(argv=None) -> int:
                 else:
                     summary = probe_fleet(session, _adapters(), _RealClock(), **options)
         print(json.dumps(summary))
-        return 1 if summary.get("not_probed") else 0
+        return 1 if summary.get("not_probed") or summary.get("fail_slugs") else 0
 
     if args.command == "overview":
         from core.tui.overview import render_overview
