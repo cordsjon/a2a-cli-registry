@@ -24,6 +24,7 @@ import os
 import random
 import re
 import sqlite3
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -118,6 +119,11 @@ def main(argv: list | None = None, gateway=_gateway) -> int:
         rows = _select(con.execute(_ROWS).fetchall(), args.slug, args.sample, args.seed)
     finally:
         con.close()
+
+    missing = sorted(set(args.slug or ()) - {r[0] for r in rows})
+    if missing or not rows:
+        print(f"no enabled, healthy row to measure: {', '.join(missing) or 'the table has none'}", file=sys.stderr)
+        return 2
 
     out = Path(args.out)
     report = {"date": today, "method": METHOD, "sample_seed": args.seed if args.sample else None,

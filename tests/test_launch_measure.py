@@ -149,3 +149,15 @@ def test_uncomposable_spec_fails_the_row_without_a_gateway_call(tmp_path):
     assert calls == []
     row = json.loads(out.read_text())["rows"][0]
     assert (row["status"], row["passed"]) == ("uncomposable", False)
+
+
+def test_a_slug_with_no_runnable_row_exits_2_and_measures_nothing(tmp_path):
+    db = _db(tmp_path, ["good", "off"], disabled={"off"})
+    out = tmp_path / "report.json"
+    calls, gateway = _gateway({"good": _ok()})
+
+    assert main(_args(db, out) + ["--slug", "good", "--slug", "typo"], gateway=gateway) == 2
+    assert main(_args(db, out) + ["--slug", "off"], gateway=gateway) == 2
+
+    assert calls == []
+    assert not out.exists()
