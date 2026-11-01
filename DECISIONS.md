@@ -494,3 +494,14 @@
 **Outcome:** assumed
 **Ref:** afff451 (at write time)
 **Supersedes:** Q23 — superseded
+
+
+## Q46 — docs/plans/2026-10-31-does-real-work.md Task 8 — deviation
+
+**Question:** The plan smoke table names commands the CLIs do not have. What should each hand seed run instead?
+**Chosen:** Accept the six agent-callable passes as they stand, tick AC-03, and file a follow-up story for real-work smokes on the jobs they leave unproven.
+**Decided-by:** human
+**Justification:** Operator picked option 1. The passes meet AC-03 as written and each seed note states its limit. Real-work smokes need private fixture storage outside this public repo, which is separate work from this story.
+**Outcome:** applied
+**Ref:** 7933c39 (at write time)
+**Supersedes:** Q38 — resolved
