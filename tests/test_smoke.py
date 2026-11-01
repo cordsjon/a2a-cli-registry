@@ -120,6 +120,14 @@ def test_fail_when_the_fixture_is_missing(tmp_path):
     assert run_smoke(_spec([tool], fixture=str(tmp_path / "absent")), timeout=10) == "fail"
 
 
+def test_a_fixture_with_a_dangling_symlink_fails_the_row_without_aborting_the_sweep(tmp_path):
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "tool.py").symlink_to(tmp_path / "moved-away.py")
+    tool = _script(tmp_path / "tool", "pass")
+    assert run_smoke(_spec([tool], fixture=str(fixture)), timeout=10) == "fail"
+
+
 def test_runs_in_a_throwaway_cwd_without_pythonpath(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", "/only/in/the/prober")
     caller = tmp_path / "caller"

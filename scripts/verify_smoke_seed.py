@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 from core.prober.prober import _DEFAULT_MAX_OUTPUT_BYTES
-from core.prober.smoke import _run, run_smoke
+from core.prober.smoke import _copy_fixture, _run, _sandboxed, run_smoke
 
 DB = os.path.expanduser("~/.hermes/cli-registry.db")
 _DECLARED = {"none", "tmp", "network", "spend"}
@@ -37,6 +37,16 @@ def _help_text(con, slug: str) -> str:
         return ""
     with tempfile.TemporaryDirectory(prefix="clireg-verify-") as cwd:
         return _run([*argv, "--help"], cwd, 30.0, _DEFAULT_MAX_OUTPUT_BYTES)[1]
+
+
+def _evidence(smoke: dict) -> str:
+    """What the command did, so a refused seed can be debugged without running it by hand."""
+    with tempfile.TemporaryDirectory(prefix="clireg-verify-") as cwd:
+        if not _copy_fixture(smoke.get("fixture"), cwd):
+            return "the fixture could not be copied"
+        code, stdout = _run(_sandboxed(smoke, smoke.get("argv") or [], cwd), smoke.get("cwd") or cwd,
+                            smoke.get("timeout", _TIMEOUT), _DEFAULT_MAX_OUTPUT_BYTES)
+    return f"exit {code}, stdout ends {stdout[-400:]!r}"
 
 
 def problems(con, slug: str, smoke: dict) -> list:
@@ -59,7 +69,7 @@ def problems(con, slug: str, smoke: dict) -> list:
     if found:
         return found
     if not (_ok(smoke) and _ok(smoke)):
-        return ["did not pass twice in a row"]
+        return [f"did not pass twice in a row: {_evidence(smoke)}"]
     negative = smoke.get("negative")
     if not negative:
         if not smoke.get("negative_why"):

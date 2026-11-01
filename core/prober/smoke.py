@@ -48,11 +48,14 @@ def _copy_fixture(fixture, cwd: str) -> bool:
     source = Path(fixture)
     if not source.is_absolute():
         source = _REPO_ROOT / source
-    if source.is_dir():
-        shutil.copytree(source, cwd, dirs_exist_ok=True)
-    elif source.is_file():
-        shutil.copy(source, cwd)
-    else:
+    try:
+        if source.is_dir():
+            shutil.copytree(source, cwd, dirs_exist_ok=True)
+        elif source.is_file():
+            shutil.copy(source, cwd)
+        else:
+            return False
+    except OSError:     # shutil.Error too: a symlink whose target moved must fail one row, not the sweep
         return False
     return True
 

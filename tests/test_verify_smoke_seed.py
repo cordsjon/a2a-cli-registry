@@ -49,6 +49,12 @@ def test_refuses_a_regex_the_help_text_or_empty_output_satisfies(tmp_path, capsy
     assert any("empty output" in p for p in _problems(capsys))
 
 
+def test_a_seed_that_does_not_pass_reports_the_exit_code_and_output(tmp_path, capsys):
+    assert main(_setup(tmp_path, expect_stdout_re="answer 43")) == 1
+    problem = _problems(capsys)[0]
+    assert "exit 0" in problem and "answer 42" in problem
+
+
 def test_refuses_a_negative_case_that_still_passes(tmp_path, capsys):
     tool_args = _setup(tmp_path, negative={"argv": [str(tmp_path / "tool"), "21"]})
     assert main(tool_args) == 1
