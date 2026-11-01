@@ -2,7 +2,8 @@
 fields backlog_add.py add takes. One story at 10 or more unknown rows, a TODO line
 below that.
 
-A not_standalone row is left out: it has no parser, so it can never carry a smoke.
+A not_standalone row is left out: no launcher can reach a parser in it, so it can
+never carry a smoke.
 A failing row is listed but not counted: it has a smoke, and it needs a fix.
 
 Prints slugs of private scripts, so the output stays out of this public repo

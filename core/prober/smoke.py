@@ -116,14 +116,16 @@ def smoke_rows(session, clock, slugs=(), timeout: float = _DEFAULT_TIMEOUT,
                allow_network: bool = False, dry_run: bool = False) -> dict:
     """Write work_status for the enabled rows, or the named ones. Never touches
     health_status. A gated row is not written at all: not running it says nothing
-    about it, and a dated operator pass has to survive the next sweep."""
+    about it, and a dated operator pass has to survive the next sweep. A
+    not_standalone row is unknown and its smoke does not run: no launcher can reach
+    the row, so a pass would only prove a test file."""
     now = clock.now()
     query = select(Cli).where(Cli.slug.in_(set(slugs))) if slugs else select(Cli)
     clis = [c for c in session.exec(query).all() if c.enabled]
     counts = {"pass": 0, "fail": 0, "unknown": 0, "dry_run": dry_run,
               "fail_slugs": [], "gated_network": []}
     for cli in sorted(clis, key=lambda c: c.slug):
-        spec = _load_spec(cli)
+        spec = {} if cli.not_standalone else _load_spec(cli)
         smoke = spec.get("smoke")
         if smoke and _gated(smoke, allow_network):
             counts["gated_network"].append(cli.slug)

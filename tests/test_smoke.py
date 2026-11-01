@@ -155,6 +155,22 @@ def test_gated_row_keeps_a_recorded_pass(db, clock, tmp_path):
     assert summary["gated_network"] == ["net"]
 
 
+def test_not_standalone_row_is_unknown_and_its_smoke_does_not_run(db, clock, tmp_path):
+    """Its smoke can only prove a test file: no launcher can reach the row (Q45)."""
+    ran = tmp_path / "ran"
+    tool = _script(tmp_path / "tool", f"open({str(ran)!r}, 'w').close()")
+    _row(db, "sub", {"argv": [tool], "side_effects": "project-tests"},
+         not_standalone=True, health_status="not_standalone",
+         work_status="pass", work_checked_at=123.0)
+
+    summary = smoke_rows(db, clock)
+
+    assert not ran.exists()
+    db.expire_all()
+    assert db.get(Cli, "sub").work_status == "unknown"
+    assert (summary["unknown"], summary["gated_network"]) == (1, [])
+
+
 def test_smoke_rows_dry_run_runs_but_writes_nothing(db, clock, tmp_path):
     tool = _script(tmp_path / "tool", "pass")
     _row(db, "good", {"argv": [tool], "side_effects": "none"})

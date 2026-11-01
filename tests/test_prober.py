@@ -574,23 +574,29 @@ def test_probe_fleet_demotes_healthy_no_parser_row_without_running_it(db, clock,
     assert summary["skipped_no_parser"] == 1
 
 
-def test_probe_fleet_subapp_keeps_probing_when_healthy(db, clock, tmp_path):
-    """Importing a mounted sub-app is harmless, so a healthy one stays probed;
-    an unhealthy one is the false positive the classifier exists for."""
+def test_probe_fleet_demotes_healthy_subapp_without_running_it(db, clock, tmp_path):
+    """Run as a file, a mounted sub-app defines its app, never calls it and exits 0
+    with no output, so its verbs do nothing there. That exit 0 is not a launch (Q45)."""
     from core.adapters.python_adapter import PythonAdapter
-    src = "import typer\napp = typer.Typer()\n"
+    sentinel = tmp_path / "ran"
     good = tmp_path / "good.py"
-    good.write_text("Typer = lambda: None\napp = Typer()\n")
+    good.write_text(f"open({str(sentinel)!r}, 'w').close()\n"
+                    "Typer = lambda: None\napp = Typer()\n")
     bad = tmp_path / "bad.py"
-    bad.write_text(src)
-    _seed_py(db, "good", good, health_status="healthy")
+    bad.write_text("import typer\napp = typer.Typer()\n")
+    _seed_py(db, "good", good, health_status="healthy", a2a_invokable=True)
     _seed_py(db, "bad", bad, health_status="unhealthy")
 
-    probe_fleet(db, [PythonAdapter()], clock)
+    summary = probe_fleet(db, [PythonAdapter()], clock)
 
+    assert not sentinel.exists()
     db.expire_all()
-    assert db.get(Cli, "good").health_checked_at == clock.now()
+    cli = db.get(Cli, "good")
+    assert cli.health_status == "not_standalone"
+    assert cli.not_standalone is True
+    assert cli.a2a_invokable is False
     assert db.get(Cli, "bad").health_status == "not_standalone"
+    assert summary["skipped_no_parser"] == 1
 
 
 def test_probe_fleet_dry_run_leaves_gated_row_untouched(db, clock, tmp_path):
