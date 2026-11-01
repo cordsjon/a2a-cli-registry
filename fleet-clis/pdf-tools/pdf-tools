@@ -22,7 +22,7 @@ verbs:
   split    <in.pdf> --pages <n[,n-m]> -o <out.pdf>     split after given pages
   compress <in.pdf> [--level 1-9] -o <out.pdf>         shrink file size
   convert  <in.pdf> [--to png|jpg] -o <out>            pdf -> image(s)
-  redact   <in.pdf> --words "<a,b>" -o <out.pdf>       true redaction (removes text)
+  redact   <in.pdf> --words "<a,b>" -o <out.pdf>       removes text; exit 7 if any stays extractable
   form-fill <in.pdf> --data <fields.json> -o <out.pdf> fill AcroForm fields
   bundle   <in1.pdf> <in2.pdf> ... -o <out.pdf>        merge + embed manifest (reversible)
   unbundle <in.pdf> -o <outdir>                        split back per embedded manifest
@@ -112,8 +112,35 @@ case "$cmd" in
     esac; done
     [ -f "$infile" ] || _die "input not found: ${infile:-<none>}" 2
     [ -n "$words" ] && [ -n "$out" ] || usage
-    _run_op "/api/v1/security/auto-redact" "$out" \
-      -F "fileInput=@$infile" -F "listOfText=$words" -F "convertPDFToImage=false"
+    command -v pdftotext >/dev/null 2>&1 || _die "redact needs pdftotext to check its result" 5
+    dest=$out # _run_op overwrites $out: POSIX sh has no local variables
+    work=$(mktemp -d "$dest.redact.XXXXXX")
+    trap 'rm -rf "$work"' EXIT
+    # One pass per word: in a single multi-word pass Stirling misplaces every
+    # box after the first, which leaves that word in and blacks out other text.
+    # --form-string: curl -F would read a word starting with @ or < as a file.
+    cur=$infile; n=0
+    old_ifs=$IFS; IFS=,; set -f; set -- $words; set +f; IFS=$old_ifs
+    for word in "$@"; do
+      [ -n "$word" ] || continue
+      n=$((n + 1))
+      _run_op "/api/v1/security/auto-redact" "$work/$n.pdf" \
+        -F "fileInput=@$cur" --form-string "listOfText=$word" -F "convertPDFToImage=false" >/dev/null
+      cur=$work/$n.pdf
+    done
+    [ "$n" -gt 0 ] || usage
+    # Stirling answers 200 even when it only draws a box over the text, as it
+    # does on embedded CID fonts (WeasyPrint), so check the output itself.
+    pdftotext "$cur" "$work/text.txt" || _die "cannot read the redacted output to check it" 7
+    text=$(tr -s '[:space:]' ' ' <"$work/text.txt")
+    left=0
+    for word in "$@"; do
+      [ -n "$word" ] || continue
+      case "$text" in *"$word"*) left=$((left + 1)) ;; esac
+    done
+    [ "$left" -eq 0 ] || _die "$left of $n word(s) still extractable, no output written: redact the source and re-render" 7
+    mv -f "$cur" "$dest"
+    echo "$dest"
     ;;
 
   form-fill)

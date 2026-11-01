@@ -26,9 +26,16 @@ partial output) on failure.
 **Note on `split`:** splitting into multiple parts returns a **ZIP** of the
 resulting PDFs, not a single PDF. Name the output accordingly (`-o out.zip`).
 
-**Note on `redact`:** performs *true* redaction — the underlying text is
-removed, not just visually covered (verified: a redacted word is absent from
-the output's text layer).
+**Note on `redact`:** removes the underlying text rather than covering it, and
+checks the output with `pdftotext`. If any word is still extractable it writes
+no output and exits 7. PDFs with embedded CID fonts, which includes everything
+WeasyPrint generates, always hit this: Stirling only draws a box over their
+text, and its image conversion leaves the word's first and last letters visible
+beside the box. Redact those in the source and re-render.
+
+It checks the text layer only, for the exact words given. It cannot see words
+inside images, or a word the PDF stores split across a line break. It does not
+touch metadata or attachments.
 
 **Note on `bundle`/`unbundle`:** stolen from
 [github.com/AlexandrosGounis/pdfx](https://github.com/AlexandrosGounis/pdfx)'s
