@@ -527,3 +527,227 @@
 **Justification:** This repo is public and hand seeds cannot be regenerated, so the gitignored derived directory would lose them. side_effects was a promise, and a hardcoded path would have written to live data. probe --smoke exited 0 with failures and had no scheduler. Cost: sandbox-exec is deprecated and macOS only.
 **Outcome:** assumed
 **Ref:** d454571 (at write time)
+
+
+## Q49 — diar1/seed — deviation
+
+**Question:** The 75_Coaching handover of 2026-10-12 12:17 carried the item "verify that `populate` is upsert-only; if so, run `fleet-clis/diar1/seed/apply.sh` and commit the vocabulary change". `populate` is not upsert-only. What happens to the item?
+**Options considered:** run `apply.sh` against the live powerbook64 config (`~/.local/share/powerbook64/cli-registry/`) / run it against the tracked `demo/config.toml` with `populate` pointed at a scratch DB and commit only the vocabulary change / carry the item a sixth session.
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q1 — resolved
+
+
+## Q50 — US-CLIREG-CAPMAP-01 — deviation
+
+**Question:** populate() reverts backfilled descriptions and capability rows on its next run; change populate although the design says the 07-03 plan is the design?
+**Options considered:** extend populate's preserved provenance set to static/llm and keep llm descriptions / leave populate alone and re-run the backfill after every populate / accept the risk
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q5 — resolved
+
+
+## Q51 — US-CLIREG-CAPMAP-01 — deviation
+
+**Question:** Task 5 Step 4 live search probe returned 0 (expected >=1): 'overview --query file:pdf' does not list generate_pdf/generate-pdf. The backfill writes coarse capability types (path 201, text 136, json 51 rows; only 8/614 rows carry file:<ext>), so a file:pdf vocab query cannot reach backfilled producers. The plan does not say whether Step 4 blocks Steps 5-6.
+**Options considered:** flip the foundation on AC-02..AC-04 and record Step 4 as failed / hold FOUNDATIONS open until typed vocabulary lands
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q8 — resolved
+
+
+## Q52 — US-CAPLOOP-04 plan review (Plan B, Codex-authored). Spec says the 37 enabled unknown-purpose rows have gone sources; live probe: 27 gone, 10 live tools (causa, invoice-fetcher, oc, nk, ...). — deviation
+
+**Question:** How are the 10 placeholder rows whose source still exists resolved?
+**Options considered:** a) disable them too; b) reviewed one-sentence descriptions from a committed JSON, written as manual; c) LLM regeneration run
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q9 — resolved
+
+
+## Q53 — Plan B Task 3 guards register_cli.py ON CONFLICT description assignment by cli.description_provenance. — tradeoff
+
+**Question:** Which description owners does re-registration protect, and does an explicit --description override them?
+**Options considered:** a) manual only; b) manual, static, llm — explicit --description does not override; c) add a --force flag
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q10 — resolved
+
+
+## Q54 — Plan B Task 1 moves description_provenance from capability to cli; init_db migrates on open. — tradeoff
+
+**Question:** How are multiple legacy capability markers collapsed onto cli, and when is the live DB backed up?
+**Options considered:** a) first row wins; b) manual > llm > static > other, copied once on column creation; backup in Task 1 Step 0 before auto-migrating code lands; c) reject conflicts
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q11 — resolved
+
+
+## Q55 — US-CLIREG-MD2PDF-CATALOG-01/AC-02 — deviation
+
+**Question:** Q12 ruled pandoc+weasyprint. Unsettled: how the entry reaches the live DB, and the wrapper's argv contract.
+**Options considered:** fleet seed + populate (pdf-tools/funroadtrip pattern) / fleet seed + register_cli.py + manual-provenance capability row, no populate (bf-batch pattern) / register_cli.py only
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q14 — resolved
+
+
+## Q56 — US-CLIREG-HERMES-DISCOVERY-01/unhealthy-fix — deviation
+
+**Question:** Handover P3 said add a [probe] fallback_interpreter pointing at the governance venv for scripts with no project venv (64 rows). Build it?
+**Options considered:** build and enable as planned / build but leave unset / do not build
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q22 — resolved
+
+
+## Q57 — US-CLIREG-HERMES-DISCOVERY-01/AC-05 — deviation
+
+**Question:** Handover P4 assumed the 28 dead rows leave through populate. Live populate from demo/cli-audit/latest.json would also delete 6 real rows such as spec_hierarchy_onwrite. How to close AC-05?
+**Options considered:** run populate / hand-edit the feed / disable with provenance, drop at next populate
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q24 — resolved
+
+
+## Q58 — US-CLIREG-LAUNCH-01 — tradeoff
+
+**Question:** AC-01 says launch_spec carries the interpreter and PYTHONPATH. Which fields, given that 3 healthy rows are package __main__ files and 10 are shell or extensionless, where interpreter + script_path is the wrong command?
+**Options considered:** interpreter field, consumer assembles / argv and env fields from the invocation the probe runs
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q25 — resolved
+
+
+## Q59 — US-CLIREG-LAUNCH-01 — deviation
+
+**Question:** Q23 says parser-less scripts never run, but classify_standalone returned standalone for no guard and no parser, so every sweep executed 11 live rows (eventlog, core_api, ics_*). Close it?
+**Options considered:** leave / classify as no_parser
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q27 — resolved
+
+
+## Q60 — US-CLIREG-LAUNCH-01 — tradeoff
+
+**Question:** The classifier decides what a sweep may execute, and it read m.group(1), Tk .command() and any sys.argv read as a CLI parser. Sweeps ran batch scripts for real: heise_login, apply_body_fixes, task_reconciler, inject-theme. An earlier revision of bridge/test_standalone.py called categorize_ai standalone on purpose because it reads --dry-run. Tighten, given installing deps would arm more of them?
+**Options considered:** tighten / leave and rely on import crashes / per-row denylist
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q31 — resolved
+
+
+## Q61 — CLIREG-UNHEALTHY-ROWS-2026-10-31 — tradeoff
+
+**Question:** Three calls while clearing the 7 unhealthy rows: mistral_ocr pin or code fix, publish-bundle status, and how to re-probe with a job running on Consigliere
+**Options considered:** pin mistralai below 2 / fix imports for blessed 3.6.0 ; fix the script / mark it not_standalone ; full sweep / named rows only
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q34 — resolved
+
+
+## Q62 — docs/plans/2026-10-31-does-real-work.md — deviation
+
+**Question:** The dry run rebuilt kcv-web and wrote a zip that publish-bundle.sh would select by default. What to do with the zip?
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q37 — resolved
+
+
+## Q63 — docs/plans/2026-10-31-does-real-work.md Task 9 — deviation
+
+**Question:** The plan writes derived seeds under seed/smoke/derived/ without saying whether they are committed. Commit them?
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q39 — resolved
+
+
+## Q64 — docs/plans/2026-10-31-does-real-work.md Task 10 — deviation
+
+**Question:** The plan's git grep on a script basename credits a row with any test file containing that word. Does a filename hit count?
+**Options considered:** any hit / an import or a file name, and a full path when the stem is shared
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q42 — resolved
+
+
+## Q65 — docs/plans/2026-10-31-does-real-work.md Task 11 — deviation
+
+**Question:** The plan commits a gap report and puts a TODO line in each small project's BACKLOG. Where do the lists go, and which rows count?
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q44 — resolved
+
+
+## Q66 — docs/plans/2026-10-31-does-real-work.md Task 12 — deviation
+
+**Question:** The gateway sample passed 60 of 60, but 6 passes printed nothing on --help. Locally 23 of 412 healthy rows exit 0 with no output, and they are exactly the 23 the classifier calls subapp. They define a Typer app and never call it, so every verb does nothing when run as a file. Q23 kept healthy subapps. Keep them, demote them, or point their argv at the parent CLI?
+**Options considered:** keep healthy / demote to not_standalone / rewrite argv to the parent verb
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q45 — resolved
+
+
+## Q67 — US-CLIREG-WORKS-01 regression smokes — tradeoff
+
+**Question:** How do hand smokes become regression tests when they cannot be committed here and nothing re-runs them?
+**Chosen:** confirmed: keep the assumed default as recorded
+**Decided-by:** human
+**Justification:** operator wholesale /unblock 2026-11-02: all review items per recommendation
+**Outcome:** applied
+**Ref:** 532c9f3 (at write time)
+**Supersedes:** Q48 — resolved
