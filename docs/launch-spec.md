@@ -46,3 +46,17 @@ On macOS every smoke without its own `cwd` runs under `sandbox-exec`: writes go 
 A smoke the run was not allowed to execute leaves the row as it is and lists it under `gated_network`. So a dated operator pass on a network smoke survives later sweeps.
 
 `populate` keeps the `smoke` key when it rewrites `launch_spec`.
+
+## HiQual
+
+`scripts/parity_report.py` grades every in-scope row against five gates. A row is in scope when `enabled=1`, `health_status` is not `not_standalone` or `retired`, and `launch_spec` is valid JSON.
+
+| Gate | Holds when |
+|---|---|
+| H1 classified | `health_status == 'healthy'` |
+| H2 proven | `work_status == 'pass'`, `smoke.tier == 'hand'`, and the smoke has `negative` or `negative_why` |
+| H3 watched | `work_checked_at` is less than 8 days old |
+| H4 real work | `a2a_invokable == 0`, or `smoke.proves` names the row's main job (non-empty string) |
+| H5 wired | the consumer index lists at least one consumer, or `launch_spec.operator_run` is `true` |
+
+Some rows hold an `install:<url>` placeholder in `launch_spec`, which is not JSON. Any query over `launch_spec` must guard with `json_valid()` in SQL, or a try/except around `json.loads` in Python.
