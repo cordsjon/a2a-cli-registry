@@ -19,15 +19,19 @@ import tempfile
 from pathlib import Path
 
 from core.prober.prober import _DEFAULT_MAX_OUTPUT_BYTES
-from core.prober.smoke import _copy_fixture, _run, _sandboxed, run_smoke
+from core.prober.smoke import _run, smoke_result
 
 DB = os.path.expanduser("~/.hermes/cli-registry.db")
 _DECLARED = {"none", "tmp", "network", "spend"}
 _TIMEOUT = 120.0
 
 
+def _result(smoke: dict) -> tuple:
+    return smoke_result({"smoke": smoke}, timeout=_TIMEOUT, allow_network=True)
+
+
 def _ok(smoke: dict) -> bool:
-    return run_smoke({"smoke": smoke}, timeout=_TIMEOUT, allow_network=True) == "pass"
+    return _result(smoke)[0] == "pass"
 
 
 def _help_text(con, slug: str) -> str:
@@ -39,14 +43,12 @@ def _help_text(con, slug: str) -> str:
         return _run([*argv, "--help"], cwd, 30.0, _DEFAULT_MAX_OUTPUT_BYTES)[1]
 
 
-def _evidence(smoke: dict) -> str:
-    """What the command did, so a refused seed can be debugged without running it by hand."""
-    with tempfile.TemporaryDirectory(prefix="clireg-verify-") as cwd:
-        if not _copy_fixture(smoke.get("fixture"), cwd):
-            return "the fixture could not be copied"
-        code, stdout = _run(_sandboxed(smoke, smoke.get("argv") or [], cwd), smoke.get("cwd") or cwd,
-                            smoke.get("timeout", _TIMEOUT), _DEFAULT_MAX_OUTPUT_BYTES)
-    return f"exit {code}, stdout ends {stdout[-400:]!r}"
+def _evidence(status: str, reason: str, tails: dict) -> str:
+    """What the failing run did, so a refused seed can be debugged without running it by
+    hand. From that run, not a rerun: a rerun of a flaky seed can pass and say nothing."""
+    parts = [reason or status]
+    parts += [f"{name} ends {tails[name][-400:]!r}" for name in ("stdout", "stderr") if tails.get(name)]
+    return ", ".join(parts)
 
 
 def problems(con, slug: str, smoke: dict) -> list:
@@ -68,8 +70,10 @@ def problems(con, slug: str, smoke: dict) -> list:
             found.append(f"regex {pattern!r} does not compile: {exc}")
     if found:
         return found
-    if not (_ok(smoke) and _ok(smoke)):
-        return [f"did not pass twice in a row: {_evidence(smoke)}"]
+    for _ in range(2):
+        result = _result(smoke)
+        if result[0] != "pass":
+            return [f"did not pass twice in a row: {_evidence(*result)}"]
     negative = smoke.get("negative")
     if not negative:
         if not smoke.get("negative_why"):

@@ -49,10 +49,23 @@ def test_refuses_a_regex_the_help_text_or_empty_output_satisfies(tmp_path, capsy
     assert any("empty output" in p for p in _problems(capsys))
 
 
-def test_a_seed_that_does_not_pass_reports_the_exit_code_and_output(tmp_path, capsys):
+def test_a_seed_that_does_not_pass_reports_the_failed_check_and_output(tmp_path, capsys):
     assert main(_setup(tmp_path, expect_stdout_re="answer 43")) == 1
     problem = _problems(capsys)[0]
-    assert "exit 0" in problem and "answer 42" in problem
+    assert "stdout did not match expect_stdout_re" in problem and "answer 42" in problem
+
+
+def test_a_seed_that_fails_once_reports_the_run_that_failed(tmp_path, capsys):
+    """A rerun for evidence can pass where the checked run failed, and then says nothing."""
+    args = _setup(tmp_path)
+    marker = tmp_path / "ran"
+    (tmp_path / "tool").write_text(
+        f"#!{sys.executable}\nimport os, sys\n"
+        f"if '--help' not in sys.argv and not os.path.exists({str(marker)!r}):\n"
+        f"    open({str(marker)!r}, 'w').close(); sys.exit('first run flaked')\n{_TOOL}\n")
+    assert main(args) == 1
+    problem = _problems(capsys)[0]
+    assert "exit 1, expected 0" in problem and "first run flaked" in problem
 
 
 def test_refuses_a_negative_case_that_still_passes(tmp_path, capsys):
