@@ -44,6 +44,7 @@ _SHELL_EXEC_PASSTHROUGH = re.compile(r'^\s*exec\s.*"\$@"', re.MULTILINE)
 _SHELL_SHEBANG = re.compile(rb"^#!.*\b(ba|z|da|k)?sh\b")
 _UNPROBEABLE_SUFFIXES = (".ts", ".js", ".mjs", ".cjs")
 _PEP723_BLOCK = re.compile(r"^# /// script\s*$", re.MULTILINE)
+_CONSOLE_IMPORT = re.compile(r"^from ([\w.]+) import \w+", re.MULTILINE)
 
 
 def _read_text(path: str) -> str:
@@ -51,6 +52,18 @@ def _read_text(path: str) -> str:
         return Path(path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def _console_script(venv_python: str, slug: str, path: str) -> Optional[str]:
+    """The venv's [project.scripts] wrapper named `slug`, when it imports from the
+    module file `path`. Running that file instead runs its __main__, not the named
+    function (11 bf-* rows exited 2 that way, 2026-11-04)."""
+    wrapper = os.path.join(os.path.dirname(venv_python), slug)
+    if not (os.path.isfile(wrapper) and os.access(wrapper, os.X_OK)):
+        return None
+    m = _CONSOLE_IMPORT.search(_read_text(wrapper))
+    module = Path(path).with_suffix("").as_posix()
+    return wrapper if m and module.endswith("/" + m.group(1).replace(".", "/")) else None
 
 
 def _is_shell_script(path: str) -> bool:
@@ -106,6 +119,9 @@ class PythonAdapter:
             return f"python -m {rec.slug}"
         if path.endswith(".py"):
             venv_python = project_interpreter(path, stop)
+            wrapper = venv_python and _console_script(venv_python, rec.slug, path)
+            if wrapper:
+                return shlex.quote(wrapper)
             interpreter = shlex.quote(venv_python or "python")
             if os.path.basename(path) == "__main__.py":
                 # Run by path, a package's __main__ fails its relative imports.
