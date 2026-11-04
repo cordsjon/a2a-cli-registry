@@ -288,6 +288,32 @@ def test_pep723_invocation_runs_under_real_uv(tmp_path):
     assert subprocess.run(shlex.split(cmd), cwd=tmp_path, capture_output=True).returncode == 0
 
 
+_CONSOLE_SCRIPT = "#!/x/.venv/bin/python\nimport sys\nfrom pkg.cli import tool_status\nsys.exit(tool_status())\n"
+
+
+def test_console_script_runs_through_its_venv_wrapper(tmp_path):
+    """A [project.scripts] row (`tool = pkg.cli:tool_status`) points at the module
+    file. `python cli.py` runs its __main__, not the named function: 11 bf-* rows
+    exited 2 (stage required) as an agent launched them, 2026-11-04."""
+    _executable(tmp_path / ".venv" / "bin" / "python", "#!/bin/sh\n")
+    wrapper = _executable(tmp_path / ".venv" / "bin" / "tool", _CONSOLE_SCRIPT)
+    script = tmp_path / "src" / "pkg" / "cli.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    adapter = PythonAdapter()
+    assert adapter.launch_spec(_path_rec(script), stop=tmp_path.parent)["argv"] == [str(wrapper)]
+    assert adapter.health_cmd(_path_rec(script), stop=tmp_path.parent) == f"{wrapper} --help"
+
+
+def test_a_same_named_venv_binary_from_another_module_is_not_the_script(tmp_path):
+    venv_py = _executable(tmp_path / ".venv" / "bin" / "python", "#!/bin/sh\n")
+    _executable(tmp_path / ".venv" / "bin" / "tool", _CONSOLE_SCRIPT.replace("pkg.cli", "other.main"))
+    script = tmp_path / "src" / "pkg" / "cli.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    assert PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path.parent)["argv"] == [str(venv_py), str(script)]
+
+
 def test_launch_spec_has_no_argv_when_the_probe_has_no_safe_invocation(tmp_path):
     script = _executable(tmp_path / "sync.sh", "#!/usr/bin/env bash\nrm -f \"$1\"\n")
     spec = PythonAdapter().launch_spec(_path_rec(script), stop=tmp_path)
