@@ -45,6 +45,8 @@ On macOS every smoke without its own `cwd` runs under `sandbox-exec`: writes go 
 
 A smoke the run was not allowed to execute leaves the row as it is and lists it under `gated_network`. So a dated operator pass on a network smoke survives later sweeps.
 
+For each failing row, the printed summary's `fail_detail` holds `reason` (the first check that failed, e.g. `exit 1, expected 0` or `timed out after 180s`) and the last 2000 characters of `stdout` and `stderr`. stderr never counts toward `expect_stdout_re`. The registry stores neither in the DB; the caller decides where they go, and they can name private paths.
+
 `populate` keeps the `smoke` key when it rewrites `launch_spec`.
 
 ## HiQual

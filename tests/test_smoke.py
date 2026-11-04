@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from core.models import Cli
-from core.prober.smoke import run_smoke, smoke_rows
+from core.prober.smoke import run_smoke, smoke_result, smoke_rows
 
 
 def _script(path, body):
@@ -148,6 +148,44 @@ def test_runs_in_a_throwaway_cwd_without_pythonpath(tmp_path, monkeypatch):
     assert list(caller.iterdir()) == []
 
 
+@pytest.mark.parametrize("body, smoke, timeout, reason", [
+    ("raise SystemExit(3)", {"expect_exit": 0}, 10, "exit 3, expected 0"),
+    ("pass", {"expect_file": "out.pdf"}, 10, "expect_file out.pdf not written"),
+    ("print('nothing')", {"expect_stdout_re": "wrote"}, 10, "stdout did not match expect_stdout_re"),
+    ("open('out.txt', 'w').write('total 41')", {"expect_file": "out.txt", "expect_file_re": "total 42"}, 10,
+     "out.txt did not match expect_file_re"),
+    ("import time; time.sleep(30)", {}, 0.5, "timed out after 0.5s"),
+])
+def test_a_failure_says_which_check_failed(tmp_path, body, smoke, timeout, reason):
+    tool = _script(tmp_path / "tool", body)
+    assert smoke_result(_spec([tool], **smoke), timeout=timeout)[:2] == ("fail", reason)
+
+
+def test_a_failure_that_never_ran_says_why(tmp_path):
+    """A smoke with its own cwd is not sandboxed, so a missing command fails to start;
+    under sandbox-exec it is an exit code instead, with the cause in the stderr tail."""
+    unsandboxed = _spec([str(tmp_path / "absent")], cwd=str(tmp_path))
+    assert smoke_result(unsandboxed, timeout=10)[1].startswith("did not start: ")
+    assert smoke_result(_spec(["true"], fixture=str(tmp_path / "gone")), timeout=10)[1] == \
+        f"fixture not copied: {tmp_path / 'gone'}"
+    assert smoke_result({"smoke": {"side_effects": "none"}}, timeout=10)[1] == "smoke has no argv"
+
+
+def test_a_failure_keeps_the_tails_of_stdout_and_stderr(tmp_path):
+    """stderr is kept for the reader only: it still never satisfies expect_stdout_re."""
+    tool = _script(tmp_path / "tool", "import sys; print('x' * 9000 + 'END-OUT'); "
+                                      "sys.stderr.write('Traceback: boom'); raise SystemExit(1)")
+    status, reason, tails = smoke_result(_spec([tool], expect_stdout_re="boom"), timeout=10)
+    assert (status, reason) == ("fail", "exit 1, expected 0")
+    assert tails["stdout"].rstrip().endswith("END-OUT") and len(tails["stdout"]) <= 2000
+    assert tails["stderr"] == "Traceback: boom"
+
+
+def test_a_pass_carries_no_reason(tmp_path):
+    tool = _script(tmp_path / "tool", "print('ok')")
+    assert smoke_result(_spec([tool]), timeout=10) == ("pass", "", {})
+
+
 def _row(db, slug, smoke=None, **fields):
     spec = {"kind": "x"}
     if smoke:
@@ -173,6 +211,7 @@ def test_smoke_rows_writes_work_status_and_never_health(db, clock, tmp_path):
     assert {db.get(Cli, s).health_status for s in ("good", "bad", "bare")} == {"healthy"}
     assert (summary["pass"], summary["fail"], summary["unknown"]) == (1, 1, 1)
     assert summary["fail_slugs"] == ["bad"]
+    assert summary["fail_detail"] == {"bad": {"reason": "exit 1, expected 0", "stdout": "", "stderr": ""}}
 
 
 def test_gated_row_keeps_a_recorded_pass(db, clock, tmp_path):

@@ -22,6 +22,7 @@ _SAFE_SIDE_EFFECTS = {"none", "tmp"}
 _NETWORK_SIDE_EFFECTS = {"network", "spend"}
 _DEFAULT_TIMEOUT = 60.0
 _WRITABLE = ("/private/tmp", "/private/var/folders", "/dev", "~/.cache", "~/Library/Caches")
+_TAIL_CHARS = 2000      # per stream, kept for a failing smoke only
 
 
 def _gated(smoke: dict, allow_network: bool) -> bool:
@@ -73,58 +74,89 @@ def _read_bounded(pipe, max_bytes: int, out: list) -> None:
 
 def _run(argv: list, cwd: str, timeout: float, max_output_bytes: int):
     """(exit code, stdout). Exit code None means it did not start or timed out."""
+    return _run_detail(argv, cwd, timeout, max_output_bytes)[:2]
+
+
+def _run_detail(argv: list, cwd: str, timeout: float, max_output_bytes: int):
+    """(exit code, stdout, stderr, error). Exit code None means it did not start or
+    timed out, and error says which. stderr is for the reader of a failure only."""
     try:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, cwd=cwd, env=_probe_env(),
+                                stderr=subprocess.PIPE, cwd=cwd, env=_probe_env(),
                                 start_new_session=_POSIX)
-    except (OSError, ValueError):
-        return None, ""
-    chunks: list = []
-    reader = threading.Thread(target=_read_bounded, args=(proc.stdout, max_output_bytes, chunks),
-                              daemon=True)
-    reader.start()
+    except (OSError, ValueError) as exc:
+        return None, "", "", f"did not start: {exc}"
+    streams = {"stdout": [], "stderr": []}
+    readers = [threading.Thread(target=_read_bounded, args=(getattr(proc, name), max_output_bytes, chunks),
+                                daemon=True) for name, chunks in streams.items()]
+    for reader in readers:
+        reader.start()
+    error = ""
     try:
         code = proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(proc)
         proc.wait()
-        code = None
-    reader.join(timeout=2.0)
+        code, error = None, f"timed out after {timeout}s"
+    for reader in readers:
+        reader.join(timeout=2.0)
     proc.stdout.close()
-    return code, b"".join(chunks).decode("utf-8", errors="replace")
+    proc.stderr.close()
+    out, err = (b"".join(c).decode("utf-8", errors="replace") for c in streams.values())
+    return code, out, err, error
 
 
 def run_smoke(spec: dict, *, timeout: float, allow_network: bool = False,
               max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES) -> str:
     """'pass', 'fail', or 'unknown' when there is no smoke or it was not allowed
     to run. A broken spec is a 'fail': unknown would hide it among the unproven."""
+    return smoke_result(spec, timeout=timeout, allow_network=allow_network,
+                        max_output_bytes=max_output_bytes)[0]
+
+
+def smoke_result(spec: dict, *, timeout: float, allow_network: bool = False,
+                 max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES) -> tuple:
+    """(status, reason, tails) as run_smoke. For a 'fail', reason names the check that
+    failed and tails holds the last _TAIL_CHARS of stdout and stderr once the command
+    ran; otherwise both are empty. A transient failure is only diagnosable from these."""
     smoke = spec.get("smoke")
     if not smoke or _gated(smoke, allow_network):
-        return "unknown"
+        return "unknown", "", {}
     argv = smoke.get("argv")
     if not argv:
-        return "fail"
+        return "fail", "smoke has no argv", {}
     with tempfile.TemporaryDirectory(prefix="clireg-smoke-") as cwd:
         if not _copy_fixture(smoke.get("fixture"), cwd):
-            return "fail"
-        code, stdout = _run(_sandboxed(smoke, argv, cwd), smoke.get("cwd") or cwd,
-                            smoke.get("timeout", timeout), max_output_bytes)
-        if code != smoke.get("expect_exit", 0):
-            return "fail"
-        expect_file = smoke.get("expect_file")
-        if expect_file and not (Path(cwd) / expect_file).exists():
-            return "fail"
-        pattern, file_pattern = smoke.get("expect_stdout_re"), smoke.get("expect_file_re")
-        try:
-            if pattern and not re.search(pattern, stdout):
-                return "fail"
-            if file_pattern:
-                text = (Path(cwd) / expect_file).read_bytes()[:max_output_bytes].decode("utf-8", "replace")
-                if not re.search(file_pattern, text):
-                    return "fail"
-        except (re.error, OSError, TypeError):      # TypeError: expect_file_re with no expect_file
-            return "fail"
-    return "pass"
+            return "fail", f"fixture not copied: {smoke.get('fixture')}", {}
+        code, stdout, stderr, error = _run_detail(_sandboxed(smoke, argv, cwd), smoke.get("cwd") or cwd,
+                                                  smoke.get("timeout", timeout), max_output_bytes)
+        reason = _failed_check(smoke, cwd, code, error, stdout, max_output_bytes)
+    if not reason:
+        return "pass", "", {}
+    return "fail", reason, {"stdout": stdout[-_TAIL_CHARS:], "stderr": stderr[-_TAIL_CHARS:]}
+
+
+def _failed_check(smoke: dict, cwd: str, code, error: str, stdout: str, max_output_bytes: int) -> str:
+    """The first check the run fails, or "" when it passes them all."""
+    expect_exit = smoke.get("expect_exit", 0)
+    if error:
+        return error
+    if code != expect_exit:
+        return f"exit {code}, expected {expect_exit}"
+    expect_file = smoke.get("expect_file")
+    if expect_file and not (Path(cwd) / expect_file).exists():
+        return f"expect_file {expect_file} not written"
+    pattern, file_pattern = smoke.get("expect_stdout_re"), smoke.get("expect_file_re")
+    try:
+        if pattern and not re.search(pattern, stdout):
+            return "stdout did not match expect_stdout_re"
+        if file_pattern:
+            text = (Path(cwd) / expect_file).read_bytes()[:max_output_bytes].decode("utf-8", "replace")
+            if not re.search(file_pattern, text):
+                return f"{expect_file} did not match expect_file_re"
+    except (re.error, OSError, TypeError) as exc:      # TypeError: expect_file_re with no expect_file
+        return f"check could not run: {exc}"
+    return ""
 
 
 def _load_spec(cli: Cli) -> dict:
@@ -146,17 +178,18 @@ def smoke_rows(session, clock, slugs=(), timeout: float = _DEFAULT_TIMEOUT,
     query = select(Cli).where(Cli.slug.in_(set(slugs))) if slugs else select(Cli)
     clis = [c for c in session.exec(query).all() if c.enabled]
     counts = {"pass": 0, "fail": 0, "unknown": 0, "dry_run": dry_run,
-              "fail_slugs": [], "gated_network": []}
+              "fail_slugs": [], "fail_detail": {}, "gated_network": []}
     for cli in sorted(clis, key=lambda c: c.slug):
         spec = {} if cli.not_standalone else _load_spec(cli)
         smoke = spec.get("smoke")
         if smoke and _gated(smoke, allow_network):
             counts["gated_network"].append(cli.slug)
             continue
-        status = run_smoke(spec, timeout=timeout, allow_network=allow_network)
+        status, reason, tails = smoke_result(spec, timeout=timeout, allow_network=allow_network)
         counts[status] += 1
         if status == "fail":
             counts["fail_slugs"].append(cli.slug)
+            counts["fail_detail"][cli.slug] = {"reason": reason, "stdout": "", "stderr": "", **tails}
         if dry_run:
             continue
         cli.work_status = status
