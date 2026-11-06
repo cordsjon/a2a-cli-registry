@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import portalocker
 from sqlmodel import SQLModel, Session, create_engine
 from sqlalchemy.pool import StaticPool
-from core.store.migrations import ensure_work_status_columns
+from core.store.migrations import ensure_work_status_columns, migrate_description_provenance
 
 
 def init_db(path: str):
@@ -20,6 +20,17 @@ def init_db(path: str):
         connect_args={"check_same_thread": False, "timeout": 5.0},
         poolclass=StaticPool,
     )
+    connection = engine.raw_connection()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        migrate_description_provenance(connection)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        engine.dispose()
+        raise
+    finally:
+        connection.close()
     SQLModel.metadata.create_all(engine)   # idempotent, transactional per-table
     ensure_work_status_columns(path)
     return engine
