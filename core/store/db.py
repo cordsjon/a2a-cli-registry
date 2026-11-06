@@ -20,17 +20,23 @@ def init_db(path: str):
         connect_args={"check_same_thread": False, "timeout": 5.0},
         poolclass=StaticPool,
     )
+    # Take the write lock only when the migration has work to do: an
+    # already-migrated DB must open for read-only commands (serve, probe,
+    # okf-produce, remediate) while populate or backfill holds the lock.
+    # migrate_description_provenance re-checks the column inside the lock.
     connection = engine.raw_connection()
     try:
-        connection.execute('BEGIN IMMEDIATE')
-        migrate_description_provenance(connection)
-        connection.commit()
+        cli_columns = {r[1] for r in connection.execute('PRAGMA table_info(cli)')}
+        if cli_columns and 'description_provenance' not in cli_columns:
+            connection.execute('BEGIN IMMEDIATE')
+            migrate_description_provenance(connection)
+            connection.commit()
     except Exception:
         connection.rollback()
+        connection.close()
         engine.dispose()
         raise
-    finally:
-        connection.close()
+    connection.close()
     SQLModel.metadata.create_all(engine)   # idempotent, transactional per-table
     ensure_work_status_columns(path)
     return engine

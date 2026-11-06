@@ -145,3 +145,19 @@ def test_fresh_memory_schema_has_only_parent_marker():
         assert 'description_provenance' not in cap_cols
     finally:
         engine.dispose()
+
+
+def test_migrated_db_opens_while_another_writer_holds_the_lock(tmp_path):
+    # Final review: init_db took BEGIN IMMEDIATE on every open, so a read-only
+    # command (serve, probe, okf-produce, remediate) failed with "database is
+    # locked" whenever populate or backfill held the write lock.
+    path = tmp_path / 'registry.db'
+    init_db(str(path)).dispose()
+    holder = sqlite3.connect(path)
+    holder.execute('BEGIN IMMEDIATE')
+    try:
+        engine = init_db(str(path))
+        engine.dispose()
+    finally:
+        holder.rollback()
+        holder.close()
