@@ -762,3 +762,15 @@
 **Justification:** (1) Baseline: plan's 27 missing + 10 live measured on 2026-11-06 as 0 missing enabled + 9 live; the 27 were already enabled=0 with descriptions kept, coaching-publish-bundle already had a real description. Applied with --expect-missing 0 and 9 reviewed descriptions; fixtures unchanged because they test the mechanism. Cost if wrong: none to data, a stale count only makes --apply refuse. (2) The shared checkout is the live server's editable install, so feature work moved to a worktree after Task 1 and main stayed on master until the merge. (3) populate.py carried a description_marker keyed on capability.description_provenance through row recreation; replaced with a cli.description_provenance guard and the carry-over dropped (87/87 incl. router integration). (4) Final review declined to judge: revert safety of the inert legacy column, stale llm description after a path change, the old-server window, symlinked-DB lock path, populate lock hold time — rollback/ops concerns outside the ACs, none live (DB is a regular file). A revert would need markers re-copied from cli. Live apply 2026-11-06: AC probe PASS, preview 0 0 0.
 **Outcome:** assumed
 **Ref:** docs/superpowers/plans/2026-10-20-caploop-registry-hygiene.md Task 5; registry 1e0e50f; Governance 6c3de3fe2
+
+
+## Q69 — US-CAPLOOP-04 execution (plan 2026-10-20-caploop-registry-hygiene, sessions 2ad4c6fd + ffc38822) — deviation
+
+**Question:** Execution rulings the plan did not settle: live baseline drift, where feature work runs, the populate adaptation, and which final-review findings to leave unjudged
+**Options considered:** follow plan text / follow live measurement
+**Chosen:** Confirm all four execution rulings: follow live counts (--expect-missing 0, 9 descriptions); feature work in a worktree; populate guarded on cli.description_provenance; ops-only review findings left unjudged (pre-change backup covers revert)
+**Decided-by:** human
+**Justification:** Operator blanket approval 2026-11-06: "/assumed" after Q68 was presented with recommendation "confirm all four"
+**Outcome:** applied
+**Ref:** d6f3574 (at write time)
+**Supersedes:** Q68 — resolved
