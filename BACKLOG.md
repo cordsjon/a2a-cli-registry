@@ -10,6 +10,22 @@ US-CLIREG-CAPMAP-01 — capability map with real can-do descriptions — AC-01..
 
 ## Ideation
 
+### US-CLIREG-CAPLOOP04-MINORS-01: CAPLOOP-04 final-review minors: typed-output extension filter, NULL-marker semantics, marker agreement [0d]
+
+> Origin: US-CAPLOOP-04 final review (fresh Opus reviewer, 2026-11-06): 6 Minor deferred, 1 fixed incidentally inside the Important fix; the 5 open ones are below. Execution rulings: DECISIONS Q68.
+
+**As a** maintainer of the capability registry,
+**I want** the five deferred CAPLOOP-04 review minors resolved or explicitly ruled out,
+**so that** typed outputs and description provenance stay correct as discovery and re-registration keep running.
+
+**Acceptance Criteria:**
+- [ ] AC-01: typed_file_outputs rejects non-artifact extensions (file:log/tmp/bak/lock) and numeric pseudo-extensions (file:2 from cache.save("v1.2")), and writes inside test/__main__ blocks do not count — with one fixture per case
+- [ ] AC-02: registry_hygiene either skips provenance-NULL capability rows (populate recreates them from the feed, so the addition is lost on next discover; 14 NULL rows live, 0 of the 7 targets) or the addition is made to survive populate — decided and tested
+- [ ] AC-03: All description writers (migration, backfill, populate, Governance register_cli) agree on how an unknown description_provenance marker is treated; live markers are only llm/manual/NULL
+- [ ] AC-04: registry_hygiene placeholder matching uses the same whitespace rule as the SQLite trim() probe (leading-newline placeholder); currently fails safe, live count 0
+- [ ] AC-05: Decide and record in DECISIONS: NULL marker currently means both feed-owned and register_cli-set, so a re-register overwrites feed descriptions — should register_cli stamp its own marker?
+
+**Priority:** P2 · **Effort:** S · **State:** Ideation · **Tags:** `[a2a-cli-registry]` `[capability-map]` `[tech-debt]`
 ### US-CLIREG-PIPELINE-CLI-01: Expose the discover→probe→capture→remediate pipeline as thin CLI subcommands
 
 > Origin: Automation debt analysis (2026-07-20) — 3 pending.jsonl entries (2026-06-25 populate→probe→capture→extract→set-health run-by-hand; 2026-06-25 audit-md→json inline transform; 2026-06-26 remediate-run.sh ran `python3 -c 'from core.cli import main'` 4×) all share one root cause: the registry's real pipeline logic lives in internal modules (core/populate.py, core/prober/prober.py, core/discovery/, core/remediation/, core/capability/) with no thin CLI wrappers, so each run is hand-assembled inline Python instead of one reproducible command.
