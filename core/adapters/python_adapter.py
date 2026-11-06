@@ -39,7 +39,14 @@ def project_interpreter(script_path: str, stop: Optional[Path] = None) -> Option
 # A shell script is only safe to call with --help if it reads that flag, or hands
 # its arguments to another program with `exec`. Anything else ignores --help and
 # does its real work: sync-global-hooks.sh syncs, log-truncate.sh truncates.
-_SHELL_HELP_BRANCH = re.compile(r"--help|getopts|^\s*-h\)", re.MULTILINE)
+# "--help" must be read, not merely written: a case label or a test on an argument.
+# ppv-verify.sh passes --help to a child (`builder.py --help | grep`) and was run.
+_SHELL_HELP_BRANCH = re.compile(
+    r"""getopts|^\s*-h\)"""
+    r"""|--help["']?\s*\)|--help["']?\|"""                 # case label: --help)  -h|--help)  "--help"|-h)
+    r"""|\$\{?[1@*]\}?["']?\s*={1,2}\s*["']?--help""",      # test: [ "$1" = "--help" ]
+    re.MULTILINE,
+)
 _SHELL_EXEC_PASSTHROUGH = re.compile(r'^\s*exec\s.*"\$@"', re.MULTILINE)
 _SHELL_SHEBANG = re.compile(rb"^#!.*\b(ba|z|da|k)?sh\b")
 _UNPROBEABLE_SUFFIXES = (".ts", ".js", ".mjs", ".cjs")

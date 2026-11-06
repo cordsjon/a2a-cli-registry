@@ -127,6 +127,29 @@ def test_health_cmd_never_runs_a_shell_script_without_a_help_branch(tmp_path):
     assert PythonAdapter().health_cmd(_path_rec(script)) == ""
 
 
+def test_health_cmd_does_not_count_help_passed_to_a_child_as_a_help_branch(tmp_path):
+    """ppv-verify.sh calls `"$PYTHON" builder.py --help | grep` and reads $1 as its
+    report dir. The 2026-11-06 sweep ran it with --help as that dir; only a failed
+    log write stopped a paid LLM verification run."""
+    script = _executable(tmp_path / "verify.sh",
+                         '#!/usr/bin/env bash\nDIR="${1:-.}"\n'
+                         'python3 build.py --help 2>&1 | grep -q mode\ncurl "$DIR"\n')
+    assert PythonAdapter().health_cmd(_path_rec(script)) == ""
+
+
+@pytest.mark.parametrize("branch", [
+    'case "$1" in --help) echo u ;; esac',
+    'case "$1" in -h|--help) echo u ;; esac',
+    'case "$1" in "--help"|-h) echo u ;; esac',
+    'if [ "$1" = "--help" ]; then echo u; fi',
+    'if [[ $1 == --help ]]; then echo u; fi',
+    'while getopts h opt; do :; done',
+])
+def test_health_cmd_accepts_the_real_help_branch_forms(tmp_path, branch):
+    script = _executable(tmp_path / "tool.sh", f"#!/bin/sh\n{branch}\n")
+    assert PythonAdapter().health_cmd(_path_rec(script)) == f"bash {script} --help"
+
+
 def test_health_cmd_does_not_count_a_function_call_as_a_passthrough(tmp_path):
     """log-truncate.sh uses "$@" inside a function and acts on its arguments."""
     script = _executable(tmp_path / "trunc.sh",
