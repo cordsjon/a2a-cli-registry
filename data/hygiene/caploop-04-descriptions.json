@@ -1,0 +1,11 @@
+{
+  "artemis-launchpad": "Run the ARTEMIS Android agent from any directory: resolves its Python 3.12+ venv and checks the planner's Gemini/Google API key before run or batch, with distinct exit codes for setup failures.",
+  "causa": "Interactive causal-graph analysis tool (FastAPI + SQLModel + Typer) whose LLM calls go through the Hermes api-router.",
+  "coaching-make-bundle": "Build and verify the kcv-web v0.3 corporate transfer bundle: one HTML file plus its papers, zipped into port/dist only if the artefact passes verification.",
+  "invoice-fetcher": "Fetch invoice and receipt attachments from Gmail or IMAP into an organized local folder (patched local build of visnia-ai/invoice-fetcher).",
+  "nk": "Check German Nebenkosten (service charge) statements: PDF to drafts, reconcile and repair cells, freeze, then write findings.json and tenant or landlord reports in HTML and PDF.",
+  "oc": "Turn websites into a compact CLI so AI agents can open, read and act on pages without the token cost of raw HTML.",
+  "pdf-tools-redact": "Remove given words from a PDF's text layer through the local Stirling PDF backend (pdf-tools redact); exits 7 if any word stays extractable.",
+  "pdf-tools-safe": "Bundle several PDFs into one with an embedded manifest and unbundle them back losslessly; the same pdf-tools binary also splits, compresses and converts PDFs through the local Stirling backend.",
+  "prefab": "Export a Prefab UI app (file.py:app) to a standalone HTML page; also serves it and runs a playground."
+}
