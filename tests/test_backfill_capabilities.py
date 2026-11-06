@@ -579,3 +579,42 @@ def test_each_manual_capability_row_is_protected(drifted_db):
     }])
     with sqlite3.connect(drifted_db) as con:
         assert con.execute("SELECT output_types, provenance FROM capability WHERE cli_slug='csv2json' ORDER BY id").fetchall() == [('file:pdf', 'static'), ('curated', 'manual')]
+
+
+@pytest.mark.parametrize('fallback', [False, True])
+@pytest.mark.parametrize('repair', [False, True])
+def test_pipeline_keeps_typed_outputs_before_each_sanity_check(
+    drifted_db, monkeypatch, tmp_path, fallback, repair
+):
+    coarse = {'input_types': [] if fallback else ['path'], 'output_types': ['path'],
+              'intent_tags': ['generate'], 'side_effect': 'none',
+              'confidence': 'inferred', 'provenance': 'static'}
+    _patch_pipeline(monkeypatch, cap_result=coarse)
+    monkeypatch.setattr(backfill, '_read_source', lambda path: 'open("out.pdf", "wb")')
+    monkeypatch.setattr(backfill, '_run_calibration', lambda: (True, 'unit fixture'))
+    monkeypatch.setattr(backfill.capability_llm_fallback, 'infer_capability_llm',
+                        lambda *args: {**coarse, 'input_types': ['path'], 'provenance': 'llm'})
+    seen = []
+
+    def check(slug, description, capability):
+        if slug != 'csv2json':
+            return {'ok': True, 'reason': ''}
+        seen.append(list(capability['output_types']))
+        return {'ok': not repair or description == 'Repaired', 'reason': 'repair fixture'}
+
+    monkeypatch.setattr(backfill.sanity_check, 'check_row', check)
+    monkeypatch.setattr(backfill.capability_repair, 'repair_row', lambda slug, *args: {
+        'slug': slug, 'description': 'Repaired',
+        'capability': {**coarse, 'output_types': ['path'], 'provenance': 'llm'},
+    })
+    monkeypatch.chdir(tmp_path)
+    result = backfill.run_pipeline(drifted_db, persist_sanity=False)
+    proposal = next(p for p in result['proposals'] if p['slug'] == 'csv2json')
+    assert proposal['capability']['output_types'] == ['path', 'file:pdf']
+    assert seen == [['path', 'file:pdf']] * (2 if repair else 1)
+    assert result['summary']['fallback_count'] == int(fallback)
+    assert result['summary']['repaired_count'] == int(repair)
+    backfill.ensure_provenance_columns(drifted_db)
+    backfill.write_commit(drifted_db, [proposal])
+    with sqlite3.connect(drifted_db) as con:
+        assert con.execute("SELECT output_types FROM capability WHERE cli_slug='csv2json'").fetchone() == ('path,file:pdf',)

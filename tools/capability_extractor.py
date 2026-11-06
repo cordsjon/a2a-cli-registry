@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import re
+from pathlib import PurePath
 
 _TYPE_MAP = {
     "Path": "path",
@@ -214,6 +215,98 @@ def extract_inputs(source: str) -> list[str]:
     return seen
 
 
+def _scope_nodes(root: ast.AST):
+    """Walk one lexical scope without borrowing a writer from another."""
+    yield root
+    for child in ast.iter_child_nodes(root):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        yield from _scope_nodes(child)
+
+
+def _literal_path(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        if node.func.id in ('Path', 'PurePath') and len(node.args) == 1:
+            return _literal_path(node.args[0])
+    return None
+
+
+def _argument(call: ast.Call, index: int, name: str) -> ast.AST | None:
+    if len(call.args) > index:
+        return call.args[index]
+    return next((kw.value for kw in call.keywords if kw.arg == name), None)
+
+
+def typed_file_outputs(source: str) -> list[str]:
+    """US-CAPLOOP-04: source-evidenced `file:<ext>` output ports.
+
+    Two producer shapes only: a writer call whose destination is a string
+    literal (open in w/a/x mode, write_text/write_bytes, save/savefig), and a
+    ReportLab canvas constructed and saved in the same lexical scope. Input
+    filenames, reader imports, slugs and prose are never evidence."""
+    if not source.strip():
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    found = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        destination = None
+        if isinstance(node.func, ast.Name) and node.func.id == 'open':
+            mode = _literal_path(_argument(node, 1, 'mode')) or 'r'
+            if any(flag in mode for flag in ('w', 'a', 'x')):
+                destination = _argument(node, 0, 'file')
+        elif isinstance(node.func, ast.Attribute):
+            if node.func.attr in ('write_text', 'write_bytes'):
+                destination = node.func.value
+            elif node.func.attr in ('save', 'savefig'):
+                destination = _argument(node, 0, 'fname' if node.func.attr == 'savefig' else 'filename')
+        path = _literal_path(destination)
+        if path:
+            extension = PurePath(path).suffix.removeprefix('.').lower()
+            if re.fullmatch(r'[a-z0-9]{1,12}', extension):
+                found.add(f'file:{extension}')
+
+    module_nodes = list(_scope_nodes(tree))
+    scopes = [tree] + [n for n in ast.walk(tree)
+                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for scope in scopes:
+        nodes = list(_scope_nodes(scope))
+        constructors = set()
+        for node in module_nodes + nodes:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            for alias in node.names:
+                name = alias.asname or alias.name
+                if node.module == 'reportlab.pdfgen' and alias.name == 'canvas':
+                    constructors.add(f'{name}.Canvas')
+                elif node.module == 'reportlab.pdfgen.canvas' and alias.name == 'Canvas':
+                    constructors.add(name)
+        canvases = set()
+        for node in nodes:
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                if ast.unparse(node.value.func) in constructors:
+                    canvases.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == 'save' and isinstance(n.func.value, ast.Name)
+               and n.func.value.id in canvases for n in nodes):
+            found.add('file:pdf')
+    return sorted(found)
+
+
+def with_typed_outputs(capability: dict | None, source: str) -> dict | None:
+    """Additively merge typed_file_outputs into a capability; never mutates it."""
+    if capability is None:
+        return None
+    outputs = list(dict.fromkeys(capability.get('output_types', []) + typed_file_outputs(source)))
+    return {**capability, 'output_types': outputs}
+
+
 def extract_outputs(source: str) -> list[str]:
     if not source.strip():
         return []
@@ -246,6 +339,11 @@ def extract_outputs(source: str) -> list[str]:
                 mode = kw.value
                 if isinstance(mode, ast.Constant) and isinstance(mode.value, str) and any(m in mode.value for m in ("w", "a")):
                     outputs.append("path")
+
+    typed = typed_file_outputs(source)
+    if typed:
+        outputs.append("path")
+        outputs.extend(typed)
 
     is_json_stdout = False
     is_bare_print = False

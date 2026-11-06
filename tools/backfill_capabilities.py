@@ -218,6 +218,9 @@ def run_pipeline(db_path: str, persist_sanity: bool = True) -> dict:
             if not capability["input_types"] or not capability["output_types"]:
                 capability = capability_llm_fallback.infer_capability_llm(slug, description, source)
                 fallback_count += 1
+        # Deterministic source evidence supplies typed ports after any LLM
+        # fallback; non-Python None stays None.
+        capability = capability_extractor.with_typed_outputs(capability, source)
 
         proposals.append({"slug": slug, "description": description, "capability": capability})
 
@@ -254,6 +257,9 @@ def run_pipeline(db_path: str, persist_sanity: bool = True) -> dict:
         )
         if repaired is None:
             continue
+        repaired['capability'] = capability_extractor.with_typed_outputs(
+            repaired['capability'], source
+        )
         recheck = sanity_check.check_row(
             repaired["slug"], repaired["description"], repaired["capability"] or {}
         )
