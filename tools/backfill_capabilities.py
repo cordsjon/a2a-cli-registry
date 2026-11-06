@@ -19,6 +19,7 @@ from pathlib import Path
 
 from core.okf.serialize import _atomic_write
 from core.store.db import with_file_lock
+from core.store.migrations import ensure_description_provenance
 
 import tools.capability_extractor as capability_extractor
 import tools.capability_llm_fallback as capability_llm_fallback
@@ -75,10 +76,12 @@ def _add_column_guarded(con, table: str, column: str, coltype: str) -> None:
 
 
 def ensure_provenance_columns(db_path: str) -> None:
+    # Description ownership lives on cli (US-CAPLOOP-04); the legacy
+    # capability.description_provenance column is left inert, never created.
+    ensure_description_provenance(db_path)
     con = sqlite3.connect(db_path)
     try:
         _add_column_guarded(con, "capability", "provenance", "TEXT")
-        _add_column_guarded(con, "capability", "description_provenance", "TEXT")
         # Drift-only, same pattern as the two provenance columns above: guarded
         # ALTER, no core.models.Capability class change. Persists the last
         # sanity_check.check_row verdict per CLI (see _persist_sanity below).
@@ -215,6 +218,9 @@ def run_pipeline(db_path: str, persist_sanity: bool = True) -> dict:
             if not capability["input_types"] or not capability["output_types"]:
                 capability = capability_llm_fallback.infer_capability_llm(slug, description, source)
                 fallback_count += 1
+        # Deterministic source evidence supplies typed ports after any LLM
+        # fallback; non-Python None stays None.
+        capability = capability_extractor.with_typed_outputs(capability, source)
 
         proposals.append({"slug": slug, "description": description, "capability": capability})
 
@@ -251,6 +257,9 @@ def run_pipeline(db_path: str, persist_sanity: bool = True) -> dict:
         )
         if repaired is None:
             continue
+        repaired['capability'] = capability_extractor.with_typed_outputs(
+            repaired['capability'], source
+        )
         recheck = sanity_check.check_row(
             repaired["slug"], repaired["description"], repaired["capability"] or {}
         )
@@ -308,41 +317,36 @@ def _run_calibration() -> tuple[bool, str]:
 def write_commit(db_path: str, proposals: list[dict]) -> None:
     con = sqlite3.connect(db_path)
     try:
+        con.execute("BEGIN IMMEDIATE")
         for p in proposals:
             slug, description, capability = p["slug"], p["description"], p["capability"]
             if not _cli_exists(con, slug):
                 continue  # slug left the registry since generation: never create an orphan
+            # Parent and capability ownership are independent guards.
+            con.execute(
+                """UPDATE cli SET description=?, description_provenance='llm'
+                   WHERE slug=? AND (description_provenance IS NULL
+                                     OR description_provenance IN ('static','llm'))""",
+                (description, slug),
+            )
+            if capability is None:
+                continue  # a description-only write never creates a capability row
             _ensure_capability_row(con, slug)
-
-            row = con.execute(
-                "SELECT provenance, description_provenance FROM capability WHERE cli_slug=?",
-                (slug,),
-            ).fetchone()
-            cap_provenance, desc_provenance = (row if row else (None, None))
-
-            if desc_provenance in (None, "static", "llm"):
-                con.execute(
-                    "UPDATE cli SET description=? WHERE slug=?", (description, slug)
-                )
-                con.execute(
-                    "UPDATE capability SET description_provenance='llm' WHERE cli_slug=?",
-                    (slug,),
-                )
-
-            if capability is not None and cap_provenance in (None, "static", "llm"):
-                con.execute(
-                    """UPDATE capability SET input_types=?, output_types=?, intent_tags=?,
-                       side_effect=?, confidence=?, provenance=? WHERE cli_slug=?""",
-                    (
-                        ",".join(capability["input_types"]),
-                        ",".join(capability["output_types"]),
-                        ",".join(capability["intent_tags"]),
-                        capability["side_effect"],
-                        capability["confidence"],
-                        capability["provenance"],
-                        slug,
-                    ),
-                )
+            # Per-row guard: each manual capability row stays untouched.
+            con.execute(
+                """UPDATE capability SET input_types=?, output_types=?, intent_tags=?,
+                   side_effect=?, confidence=?, provenance=?
+                   WHERE cli_slug=? AND (provenance IS NULL OR provenance IN ('static','llm'))""",
+                (
+                    ",".join(capability["input_types"]),
+                    ",".join(capability["output_types"]),
+                    ",".join(capability["intent_tags"]),
+                    capability["side_effect"],
+                    capability["confidence"],
+                    capability["provenance"],
+                    slug,
+                ),
+            )
         con.commit()
     except Exception:
         con.rollback()

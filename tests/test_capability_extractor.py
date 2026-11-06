@@ -523,3 +523,51 @@ def test_extract_outputs_library_save_call_is_path():
 def test_extract_outputs_savefig_is_path():
     source = "def main(out):\n    plt.savefig(out)\n"
     assert extract_outputs(source) == ["path"]
+
+
+@pytest.mark.parametrize(('source', 'token'), [
+    ('open("out.PDF", "wb").write(b"pdf")', 'file:pdf'),
+    ('Path("out.csv").write_text("a,b")', 'file:csv'),
+    ('Path("out.png").write_bytes(b"png")', 'file:png'),
+    ('presentation.save("deck.pptx")', 'file:pptx'),
+    ('plot.savefig("chart.svg")', 'file:svg'),
+    ('open(file="out.json", mode="x").write("{}")', 'file:json'),
+])
+def test_typed_output_from_literal_writer_destination(source, token):
+    outputs = extract_outputs(source)
+    assert token in outputs
+    assert 'path' in outputs
+    assert outputs.count(token) == 1
+
+
+def test_generate_pdf_reportlab_shape_has_typed_output():
+    source = '''
+def render(output_path):
+    from reportlab.pdfgen import canvas as rl_canvas
+    c = rl_canvas.Canvas(str(output_path), pagesize=A4)
+    c.drawString(1, 1, "hello")
+    c.save()
+'''
+    assert extract_outputs(source) == ['path', 'file:pdf']
+    assert extract_capability('generate_pdf', 'Renders a document.', source)['output_types'] == ['path', 'file:pdf']
+
+
+@pytest.mark.parametrize('source', [
+    '"""Convert a PDF input to text."""\nprint(open("input.pdf").read())',
+    'from pypdf import PdfReader\nprint(PdfReader("in.pdf").pages)',
+    'from reportlab.pdfgen import canvas\nc = canvas.Canvas("out.pdf")',
+    'from reportlab.pdfgen import canvas\ndef first():\n c=canvas.Canvas("a.pdf")\ndef second():\n c.save()',
+    'def broken(:',
+])
+def test_consumers_unsaved_canvases_and_unrelated_scopes_do_not_emit_pdf(source):
+    assert 'file:pdf' not in extract_outputs(source)
+
+
+def test_output_normalization_is_additive_and_does_not_mutate_input():
+    from tools.capability_extractor import with_typed_outputs
+    original = {'output_types': ['path', 'file:pdf'], 'provenance': 'llm'}
+    result = with_typed_outputs(original, 'open("out.pdf", "wb")')
+    assert result == original
+    assert result is not original
+    assert original['output_types'] == ['path', 'file:pdf']
+    assert with_typed_outputs(None, 'open("out.pdf", "wb")') is None

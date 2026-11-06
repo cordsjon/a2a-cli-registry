@@ -10,6 +10,8 @@ class Cli(SQLModel, table=True):
     path: Optional[str] = None                      # data, not identity
     launch_spec: str = "{}"                         # JSON: {kind, entrypoint, args_schema}
     description: str = ""
+    # Independent of Capability.provenance; NULL means discovery-owned.
+    description_provenance: Optional[str] = None
     source_class: Optional[str] = None              # opaque, except populate()'s removal guard (FEED_OWNED_SOURCE_CLASSES)
     health_cmd: Optional[str] = None
     health_status: str = "unknown"                   # healthy/unhealthy/unknown/stale/not_standalone
@@ -33,16 +35,9 @@ class Capability(SQLModel, table=True):
     output_types: str = ""                          # CSV registered typed ports
     side_effect: str = "unknown"                    # none/writes-fs/network/external/destructive/unknown
     confidence: str = "declared"                    # declared/inferred
-    # Who owns these values. None/"static"/"llm" are feed- or tool-owned and get
-    # overwritten freely; "manual" means an operator hand-set the row and
-    # populate() must preserve it across its delete+recreate. Same marker
-    # tools/backfill_capabilities.py already honours — it added this column at
-    # runtime via ensure_provenance_columns(), which is why populate (going
-    # through the ORM) never saw it and erased hand-fixes anyway.
+    # Discovery preserves manual/static/llm capabilities. Regeneration may
+    # refresh static/llm values, but never manual values.
     provenance: Optional[str] = None
-    # Who owns the parent Cli.description. "llm" (the capability-map backfill)
-    # and "manual" mean populate() must not overwrite it from the feed.
-    description_provenance: Optional[str] = None
 
 
 class CliEdge(SQLModel, table=True):

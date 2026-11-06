@@ -96,10 +96,6 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         old_caps = session.exec(
             select(Capability).where(Capability.cli_slug == rec.slug)
         ).all()
-        # The description guard is keyed on description_provenance alone, never
-        # on the capability row's provenance (the two are owned independently).
-        description_owned = any(
-            c.description_provenance in PRESERVED_PROVENANCE for c in old_caps)
 
         cli = session.get(Cli, rec.slug)
         if cli is None:
@@ -108,7 +104,9 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
         cli.path = rec.path
         cli.bucket = rec.bucket
         cli.project = rec.project
-        if not description_owned:
+        # The description guard is keyed on the parent's description_provenance
+        # alone, never on the capability row's provenance (owned independently).
+        if cli.description_provenance not in PRESERVED_PROVENANCE:
             cli.description = rec.description
         cli.source_class = rec.source_class
         cli.source_run_id = rec.source_run_id
@@ -127,13 +125,9 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
 
         # Scoped to this block rather than `continue`, so that anything added
         # later in the loop body still runs for a preserved row.
+        # The description marker lives on the Cli row, so recreating the
+        # capability row no longer has to carry it over.
         if not any(c.provenance in PRESERVED_PROVENANCE for c in old_caps):
-            # A feed-owned row whose only backfilled field is the description
-            # (e.g. a shell CLI) is recreated, so its marker must be carried
-            # over or the next run overwrites the description.
-            description_marker = next(
-                (c.description_provenance for c in old_caps
-                 if c.description_provenance in PRESERVED_PROVENANCE), None)
             for old in old_caps:
                 session.delete(old)
             session.add(Capability(
@@ -143,7 +137,6 @@ def populate(session, source, adapters, vocab, clock, mass_removal_threshold=0.3
                 output_types=",".join(merged.output_types),
                 side_effect=merged.side_effect,
                 confidence=merged.confidence,
-                description_provenance=description_marker,
             ))
 
     for slug in to_remove:

@@ -176,7 +176,7 @@ def test_manual_description_provenance_protected_independently_of_capability(dri
     monkeypatch.chdir(tmp_path)
     backfill.ensure_provenance_columns(drifted_db)
     con = sqlite3.connect(drifted_db)
-    con.execute("UPDATE capability SET description_provenance='manual' WHERE cli_slug='csv2json'")
+    con.execute("UPDATE cli SET description_provenance='manual' WHERE slug='csv2json'")
     con.execute("UPDATE cli SET description='Hand-written accurate description.' WHERE slug='csv2json'")
     con.commit()
     con.close()
@@ -210,19 +210,13 @@ def test_backup_failure_aborts_write(drifted_db, monkeypatch, tmp_path):
 
 
 def test_both_provenance_columns_auto_added_when_missing(drifted_db):
-    con = sqlite3.connect(drifted_db)
-    cols_before = {r[1] for r in con.execute("PRAGMA table_info(capability)")}
-    con.close()
-    assert "provenance" not in cols_before
-    assert "description_provenance" not in cols_before
-
     backfill.ensure_provenance_columns(drifted_db)
-
-    con = sqlite3.connect(drifted_db)
-    cols_after = {r[1] for r in con.execute("PRAGMA table_info(capability)")}
-    con.close()
-    assert "provenance" in cols_after
-    assert "description_provenance" in cols_after
+    with sqlite3.connect(drifted_db) as con:
+        cli_cols = {r[1] for r in con.execute('PRAGMA table_info(cli)')}
+        cap_cols = {r[1] for r in con.execute('PRAGMA table_info(capability)')}
+    assert 'description_provenance' in cli_cols
+    assert 'provenance' in cap_cols
+    assert 'description_provenance' not in cap_cols
 
 
 def test_sanity_columns_auto_added_when_missing_and_idempotent(drifted_db):
@@ -440,11 +434,11 @@ def test_commit_inserts_capability_row_when_missing(drifted_db, monkeypatch, tmp
     monkeypatch.chdir(tmp_path)
     backfill.main(["--db", drifted_db, "--commit"])
     con = sqlite3.connect(drifted_db)
-    cap = con.execute("SELECT input_types, provenance, description_provenance FROM capability WHERE cli_slug='orphan'").fetchone()
-    desc = con.execute("SELECT description FROM cli WHERE slug='orphan'").fetchone()[0]
+    cap = con.execute("SELECT input_types, provenance FROM capability WHERE cli_slug='orphan'").fetchone()
+    desc = con.execute("SELECT description, description_provenance FROM cli WHERE slug='orphan'").fetchone()
     con.close()
-    assert cap == ("path", "static", "llm")
-    assert desc == "A test CLI that converts things."
+    assert cap == ("path", "static")
+    assert desc == ("A test CLI that converts things.", "llm")
 
 
 @needs_router
@@ -531,3 +525,96 @@ def test_plain_commit_backs_up_before_any_write(drifted_db, monkeypatch, tmp_pat
     monkeypatch.chdir(tmp_path)
     backfill.main(["--db", drifted_db, "--commit"])
     assert order == ["backup", "persist"]
+
+
+@pytest.mark.parametrize('description_owner', [None, 'static', 'llm', 'manual'])
+@pytest.mark.parametrize('capability_owner', [None, 'static', 'llm', 'manual'])
+def test_write_commit_uses_independent_parent_and_capability_guards(
+    drifted_db, description_owner, capability_owner
+):
+    backfill.ensure_provenance_columns(drifted_db)
+    with sqlite3.connect(drifted_db) as con:
+        con.execute("UPDATE cli SET description='Curated', description_provenance=? WHERE slug='csv2json'",
+                    (description_owner,))
+        con.execute("UPDATE capability SET output_types='old', provenance=? WHERE cli_slug='csv2json'",
+                    (capability_owner,))
+    backfill.write_commit(drifted_db, [{
+        'slug': 'csv2json', 'description': 'Generated',
+        'capability': {'input_types': ['path'], 'output_types': ['file:pdf'],
+                       'intent_tags': ['generate'], 'side_effect': 'none',
+                       'confidence': 'inferred', 'provenance': 'static'},
+    }])
+    with sqlite3.connect(drifted_db) as con:
+        desc = con.execute("SELECT description, description_provenance FROM cli WHERE slug='csv2json'").fetchone()
+        cap = con.execute("SELECT output_types, provenance FROM capability WHERE cli_slug='csv2json'").fetchone()
+    assert desc == (('Curated', 'manual') if description_owner == 'manual' else ('Generated', 'llm'))
+    assert cap == (('old', 'manual') if capability_owner == 'manual' else ('file:pdf', 'static'))
+
+
+def test_description_only_commit_needs_no_capability_row(drifted_db):
+    with sqlite3.connect(drifted_db) as con:
+        con.execute("DELETE FROM capability WHERE cli_slug='shellwrap'")
+    backfill.ensure_provenance_columns(drifted_db)
+    backfill.write_commit(drifted_db, [
+        {'slug': 'shellwrap', 'description': 'Runs a shell tool.', 'capability': None},
+        {'slug': 'never-registered', 'description': 'Absent.', 'capability': None},
+    ])
+    with sqlite3.connect(drifted_db) as con:
+        assert con.execute("SELECT description, description_provenance FROM cli WHERE slug='shellwrap'").fetchone() == ('Runs a shell tool.', 'llm')
+        assert con.execute("SELECT COUNT(*) FROM capability WHERE cli_slug IN ('shellwrap','never-registered')").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM cli WHERE slug='never-registered'").fetchone()[0] == 0
+
+
+def test_each_manual_capability_row_is_protected(drifted_db):
+    backfill.ensure_provenance_columns(drifted_db)
+    with sqlite3.connect(drifted_db) as con:
+        con.execute("""INSERT INTO capability
+            (cli_slug,intent_tags,input_types,output_types,side_effect,confidence,provenance)
+            VALUES ('csv2json','','','curated','none','declared','manual')""")
+    backfill.write_commit(drifted_db, [{
+        'slug': 'csv2json', 'description': 'Generated',
+        'capability': {'input_types': [], 'output_types': ['file:pdf'],
+                       'intent_tags': [], 'side_effect': 'none',
+                       'confidence': 'inferred', 'provenance': 'static'},
+    }])
+    with sqlite3.connect(drifted_db) as con:
+        assert con.execute("SELECT output_types, provenance FROM capability WHERE cli_slug='csv2json' ORDER BY id").fetchall() == [('file:pdf', 'static'), ('curated', 'manual')]
+
+
+@pytest.mark.parametrize('fallback', [False, True])
+@pytest.mark.parametrize('repair', [False, True])
+def test_pipeline_keeps_typed_outputs_before_each_sanity_check(
+    drifted_db, monkeypatch, tmp_path, fallback, repair
+):
+    coarse = {'input_types': [] if fallback else ['path'], 'output_types': ['path'],
+              'intent_tags': ['generate'], 'side_effect': 'none',
+              'confidence': 'inferred', 'provenance': 'static'}
+    _patch_pipeline(monkeypatch, cap_result=coarse)
+    monkeypatch.setattr(backfill, '_read_source', lambda path: 'open("out.pdf", "wb")')
+    monkeypatch.setattr(backfill, '_run_calibration', lambda: (True, 'unit fixture'))
+    monkeypatch.setattr(backfill.capability_llm_fallback, 'infer_capability_llm',
+                        lambda *args: {**coarse, 'input_types': ['path'], 'provenance': 'llm'})
+    seen = []
+
+    def check(slug, description, capability):
+        if slug != 'csv2json':
+            return {'ok': True, 'reason': ''}
+        seen.append(list(capability['output_types']))
+        return {'ok': not repair or description == 'Repaired', 'reason': 'repair fixture'}
+
+    monkeypatch.setattr(backfill.sanity_check, 'check_row', check)
+    monkeypatch.setattr(backfill.capability_repair, 'repair_row', lambda slug, *args: {
+        'slug': slug, 'description': 'Repaired',
+        'capability': {**coarse, 'output_types': ['path'], 'provenance': 'llm'},
+    })
+    monkeypatch.chdir(tmp_path)
+    result = backfill.run_pipeline(drifted_db, persist_sanity=False)
+    proposal = next(p for p in result['proposals'] if p['slug'] == 'csv2json')
+    assert proposal['capability']['output_types'] == ['path', 'file:pdf']
+    assert seen == [['path', 'file:pdf']] * (2 if repair else 1)
+    assert result['summary']['fallback_count'] == int(fallback)
+    assert result['summary']['repaired_count'] == int(repair)
+    backfill.ensure_provenance_columns(drifted_db)
+    backfill.write_commit(drifted_db, [proposal])
+    with sqlite3.connect(drifted_db) as con:
+        assert con.execute("SELECT output_types FROM capability WHERE cli_slug='csv2json'").fetchone() == ('path,file:pdf',)

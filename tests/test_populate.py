@@ -230,19 +230,35 @@ def test_populate_preserves_backfilled_capability_row(db, clock):
     assert [(c.provenance, c.intent_tags, c.input_types) for c in caps] == [("llm", "export", "path")]
 
 
-@pytest.mark.parametrize("marker", ["llm", "manual"])
-def test_populate_keeps_description_when_backfilled(db, clock, marker):
-    _seed_cli(db, "Exports things to JSON.")
-    db.add(Capability(cli_slug="tool", intent_tags="", input_types="", output_types="",
-                      side_effect="unknown", confidence="inferred", description_provenance=marker))
+@pytest.mark.parametrize('marker', ['static', 'llm', 'manual'])
+@pytest.mark.parametrize('has_capability', [False, True])
+def test_populate_keeps_description_when_backfilled(db, clock, marker, has_capability):
+    db.add(Cli(slug='tool', lang='python', description='Exports things to JSON.',
+               description_provenance=marker))
+    if has_capability:
+        db.add(Capability(cli_slug='tool', output_types='old'))
     db.commit()
-    rec = _rec("tool", ["text"], ["text"]); rec.description = "scripts/tool.py"
-    vocab = VocabularyRegistry(registered={"text"}, aliases={})
-    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
-    assert db.get(Cli, "tool").description == "Exports things to JSON."
-    populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)  # second run: the marker must survive the row recreation
-    assert db.get(Cli, "tool").description == "Exports things to JSON."
-    assert db.exec(select(Capability).where(Capability.cli_slug == "tool")).one().description_provenance == marker
+    rec = _rec('tool', ['text'], ['text'])
+    rec.description = 'scripts/tool.py'
+    vocab = VocabularyRegistry(registered={'text'}, aliases={})
+    for _ in range(2):
+        populate(db, FakeSource([rec]), [PythonAdapter()], vocab, clock)
+        row = db.get(Cli, 'tool')
+        assert row.description == 'Exports things to JSON.'
+        assert row.description_provenance == marker
+        assert db.exec(select(Capability).where(Capability.cli_slug == 'tool')).one().output_types == 'text'
+
+
+def test_manual_capability_does_not_freeze_feed_description(db, clock):
+    db.add(Cli(slug='tool', lang='python', description='Old description.'))
+    db.add(Capability(cli_slug='tool', output_types='manual-output', provenance='manual'))
+    db.commit()
+    rec = _rec('tool', ['text'], ['text'])
+    rec.description = 'Updated feed description.'
+    populate(db, FakeSource([rec]), [PythonAdapter()],
+             VocabularyRegistry(registered={'text'}, aliases={}), clock)
+    assert db.get(Cli, 'tool').description == 'Updated feed description.'
+    assert db.exec(select(Capability).where(Capability.cli_slug == 'tool')).one().output_types == 'manual-output'
 
 
 def test_populate_still_overwrites_feed_owned_rows(db, clock):

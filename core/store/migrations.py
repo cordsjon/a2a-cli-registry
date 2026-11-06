@@ -65,3 +65,35 @@ def ensure_fixed_by_column(db_path: str) -> None:
                     raise
     finally:
         con.close()
+
+
+def migrate_description_provenance(con: sqlite3.Connection) -> None:
+    """Caller owns an IMMEDIATE transaction. Never drop the legacy column."""
+    if not _table_exists(con, 'cli') or _column_exists(con, 'cli', 'description_provenance'):
+        return
+    con.execute('ALTER TABLE cli ADD COLUMN description_provenance TEXT')
+    if not _table_exists(con, 'capability') or not _column_exists(con, 'capability', 'description_provenance'):
+        return
+    con.execute("""
+        UPDATE cli SET description_provenance = (
+            SELECT c.description_provenance FROM capability AS c
+            WHERE c.cli_slug = cli.slug AND c.description_provenance IS NOT NULL
+            ORDER BY CASE c.description_provenance
+                WHEN 'manual' THEN 0 WHEN 'llm' THEN 1 WHEN 'static' THEN 2 ELSE 3
+            END, c.description_provenance
+            LIMIT 1
+        )
+    """)
+
+
+def ensure_description_provenance(db_path: str) -> None:
+    con = sqlite3.connect(db_path, timeout=5.0)
+    try:
+        con.execute('BEGIN IMMEDIATE')
+        migrate_description_provenance(con)
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
